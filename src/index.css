@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-cinzel: 'Cinzel', serif;
+    --font-jakarta: 'Plus Jakarta Sans', sans-serif;
+  }
+}
+
+.font-luxury {
+  font-family: 'Cinzel', Georgia, serif;
+}
+
+.font-sans-clean {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Luxury Gold Text & Surface Gradients */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #F8E7B6 0%, #D8AF44 50%, #9F7922 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-gold-bright {
+  background: linear-gradient(135deg, #FFF5D2 0%, #E9C66B 50%, #C49B38 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.bg-gold-gradient {
+  background: linear-gradient(135deg, #ECC86A 0%, #CFA53E 50%, #977421 100%);
+}
+
+.bg-gold-gradient-hover {
+  background: linear-gradient(135deg, #F5D67D 0%, #DCB24A 50%, #A88328 100%);
+}
+
+.border-gold-subtle {
+  border-color: rgba(212, 175, 55, 0.22);
+}
+
+.border-gold-medium {
+  border-color: rgba(212, 175, 55, 0.45);
+}
+
+.shadow-gold-subtle {
+  box-shadow: 0 10px 30px -10px rgba(212, 175, 55, 0.15);
+}
+
+.shadow-gold-glow {
+  box-shadow: 0 0 35px -5px rgba(212, 175, 55, 0.25);
+}
+
+/* Luxury Glass & Surface Backgrounds */
+.bg-obsidian-card {
+  background: rgba(16, 16, 22, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.bg-obsidian-solid {
+  background-color: #0D0D12;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #08080A;
+}
+::-webkit-scrollbar-thumb {
+  background: #2A2A33;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444452;
+}

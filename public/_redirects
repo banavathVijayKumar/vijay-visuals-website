@@ -1,0 +1,3 @@
+# Cloudflare Pages SPA Redirect Rules
+# Ensures client-side routing works on refresh for all paths (e.g. ?portal=delivery, /builder, etc.)
+/*    /index.html   200

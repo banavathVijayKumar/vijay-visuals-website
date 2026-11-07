@@ -1,0 +1,10 @@
+# Cloudflare Pages Configuration for VIJAY VISUALS
+name = "vijay-visuals"
+pages_build_output_dir = "dist"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# In production, set GEMINI_API_KEY as an encrypted secret in Cloudflare Pages dashboard
+# Settings > Environment variables > Production > Add variable (Encrypt)
+PLATFORM_NAME = "VIJAY VISUALS Multi-Tenant Platform"
