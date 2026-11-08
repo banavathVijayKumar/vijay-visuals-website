@@ -716,93 +716,425 @@ function notifyListeners() {
 // ============================================================================
 // AUTH & SERVICE LAYER
 // ============================================================================
-export const authService = {
-  // Current active user
-  getCurrentUser(): UserProfile | null {
-    return getFromStorage<UserProfile | null>(STORAGE_KEYS.CURRENT_USER, null);
-  },
+export const authService = (() => {
+  const getProfileFromSupabase = async (
+    authUser: {
+      id: string;
+      email?: string;
+      created_at?: string;
+      email_confirmed_at?: string | null;
+      user_metadata?: Record<string, unknown>;
+    }
+  ): Promise<UserProfile | null> => {
+    if (!supabase) return null;
 
-  // Login with role validation
-  login(email: string, password?: string, expectedRole?: UserRole): { user: UserProfile; error?: string } {
-    const profiles = getFromStorage<UserProfile[]>(STORAGE_KEYS.PROFILES, SEED_PROFILES);
-    const cleanEmail = email.trim().toLowerCase();
-    const user = profiles.find(p => p.email.toLowerCase() === cleanEmail);
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, role, created_at')
+      .eq('id', authUser.id)
+      .single();
 
-    if (!user) {
-      return { user: null as any, error: 'No account found matching this email address. Please verify your credentials or contact administrator.' };
+    if (error || !data) {
+      console.error('Profile lookup failed:', error?.message);
+      return null;
     }
 
-    // Role-specific check: Delivery Boy Login
-    if (expectedRole === 'delivery_boy') {
-      if (user.role !== 'delivery_boy') {
-        return {
-          user: null as any,
-          error: `Access Denied: The Delivery Boy portal is restricted exclusively to authorized delivery staff. This email is registered as "${user.role.replace('_', ' ').toUpperCase()}".`
-        };
-      }
-      if (user.status === 'inactive') {
-        return {
-          user: null as any,
-          error: 'Your Delivery Boy account has been deactivated by the administrator. Please contact Vijay Visuals support.'
-        };
-      }
-      if (user.status === 'pending_invite') {
-        return {
-          user: null as any,
-          error: 'Your invitation is pending activation. Please use the secure invitation link provided by the administrator to set your password.'
-        };
-      }
+    const allowedRoles: UserRole[] = [
+      'super_admin',
+      'admin',
+      'shop_owner',
+      'delivery_boy',
+      'customer',
+      'support_agent',
+    ];
+
+    if (!allowedRoles.includes(data.role as UserRole)) {
+      console.error('Invalid role found in profiles table.');
+      return null;
     }
 
-    // Role-specific check: Admin Login
-    if (expectedRole === 'admin' && user.role !== 'admin') {
+    return {
+      id: data.id,
+      email: authUser.email || '',
+      full_name:
+        data.full_name ||
+        String(authUser.user_metadata?.full_name || 'User'),
+      phone: '',
+      role: data.role as UserRole,
+      status: 'active',
+      email_verified: Boolean(authUser.email_confirmed_at),
+      created_at: data.created_at || authUser.created_at || new Date().toISOString(),
+    };
+  };
+
+  return {
+    // Current user: demo mode only.
+    // Real Supabase sessions are restored using getAuthenticatedUser().
+    getCurrentUser(): UserProfile | null {
+      if (isSupabaseConfigured) return null;
+
+      return getFromStorage<UserProfile | null>(
+        STORAGE_KEYS.CURRENT_USER,
+        null
+      );
+    },
+
+    // Restore the currently authenticated Supabase user.
+    async getAuthenticatedUser(): Promise<UserProfile | null> {
+      if (!supabase) {
+        return getFromStorage<UserProfile | null>(
+          STORAGE_KEYS.CURRENT_USER,
+          null
+        );
+      }
+
+      const { data, error } = await supabase.auth.getUser();
+
+      if (error || !data.user) return null;
+
+      const profile = await getProfileFromSupabase(data.user);
+
+      if (!profile) {
+        console.error(
+          'Your login exists, but your profile is missing or could not be loaded.'
+        );
+        return null;
+      }
+
+      return profile;
+    },
+
+    // Register a new public customer account.
+    async signUp(
+      email: string,
+      password: string,
+      fullName: string
+    ): Promise<{
+      user: UserProfile | null;
+      error?: string;
+      requiresEmailConfirmation?: boolean;
+      message?: string;
+    }> {
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanName = fullName.trim();
+
+      if (!cleanEmail || !password || password.length < 6) {
+        return {
+          user: null,
+          error: 'Enter a valid email and a password with at least 6 characters.',
+        };
+      }
+
+      if (!cleanName) {
+        return {
+          user: null,
+          error: 'Please enter your full name.',
+        };
+      }
+
+      // Local demo mode when Supabase is not configured.
+      if (!supabase) {
+        const profiles = getFromStorage<UserProfile[]>(
+          STORAGE_KEYS.PROFILES,
+          SEED_PROFILES
+        );
+
+        if (profiles.some(p => p.email.toLowerCase() === cleanEmail)) {
+          return {
+            user: null,
+            error: 'An account with this email already exists.',
+          };
+        }
+
+        const demoUser: UserProfile = {
+          id: 'usr-' + Date.now().toString(36),
+          email: cleanEmail,
+          full_name: cleanName,
+          phone: '',
+          role: 'customer',
+          status: 'active',
+          created_at: new Date().toISOString(),
+        };
+
+        profiles.push(demoUser);
+        saveToStorage(STORAGE_KEYS.PROFILES, profiles);
+        saveToStorage(STORAGE_KEYS.CURRENT_USER, demoUser);
+        notifyListeners();
+
+        return { user: demoUser, message: 'Account created successfully.' };
+      }
+
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          data: {
+            full_name: cleanName,
+          },
+          emailRedirectTo: window.location.origin,
+        },
+      });
+
+      if (error) {
+        return { user: null, error: error.message };
+      }
+
+      if (!data.user) {
+        return {
+          user: null,
+          error: 'Registration could not be completed. Please try again.',
+        };
+      }
+
+      // Email confirmation is enabled: user must verify email first.
+      if (!data.session) {
+        return {
+          user: null,
+          requiresEmailConfirmation: true,
+          message:
+            'Registration successful! Please check your email and confirm your account before signing in.',
+        };
+      }
+
+      const profile = await getProfileFromSupabase(data.user);
+
+      if (!profile) {
+        return {
+          user: null,
+          error:
+            'Your account was created, but your profile could not be loaded. Please contact support.',
+        };
+      }
+
+      notifyListeners();
+
       return {
-        user: null as any,
-        error: 'Access Denied: Only platform administrators can access this control panel.'
+        user: profile,
+        message: 'Your account has been created successfully.',
       };
-    }
+    },
 
-    // Set active session
-    saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
-    notifyListeners();
-    return { user };
-  },
+    // Login using real Supabase Auth when configured.
+    async login(
+      email: string,
+      password?: string,
+      expectedRole?: UserRole
+    ): Promise<{ user: UserProfile | null; error?: string }> {
+      const cleanEmail = email.trim().toLowerCase();
 
-  // Logout
-  logout(): void {
-    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-    notifyListeners();
-  },
+      if (!cleanEmail || !password) {
+        return {
+          user: null,
+          error: 'Please enter your email and password.',
+        };
+      }
 
-  // Forgot password flow
-  requestPasswordReset(email: string): { success: boolean; message: string; resetToken?: string } {
-    const profiles = getFromStorage<UserProfile[]>(STORAGE_KEYS.PROFILES, SEED_PROFILES);
-    const user = profiles.find(p => p.email.toLowerCase() === email.trim().toLowerCase());
+      // Local demo login fallback.
+      if (!supabase) {
+        const profiles = getFromStorage<UserProfile[]>(
+          STORAGE_KEYS.PROFILES,
+          SEED_PROFILES
+        );
+        const user = profiles.find(
+          p => p.email.toLowerCase() === cleanEmail
+        );
 
-    if (!user) {
-      return { success: false, message: 'If this email is registered in our system, a password reset link has been dispatched.' };
-    }
+        if (!user) {
+          return {
+            user: null,
+            error: 'No demo account found for this email address.',
+          };
+        }
 
-    const resetToken = 'rst_' + Math.random().toString(36).substring(2, 10);
-    // In production, Supabase Auth sends an email with this token.
-    return {
-      success: true,
-      message: `Password reset link generated securely. An email has been simulated for ${user.email}.`,
-      resetToken
-    };
-  },
+        if (expectedRole === 'delivery_boy' && user.role !== 'delivery_boy') {
+          return {
+            user: null,
+            error: 'This account is not authorized for the Delivery Boy portal.',
+          };
+        }
 
-  // Reset password with token
-  resetPassword(email: string, token: string, newPassword: string): { success: boolean; message: string } {
-    if (!newPassword || newPassword.length < 6) {
-      return { success: false, message: 'Password must be at least 6 characters long.' };
-    }
-    return {
-      success: true,
-      message: 'Password updated successfully! You can now log in with your new credentials.'
-    };
-  }
-};
+        if (
+          expectedRole === 'admin' &&
+          user.role !== 'admin' &&
+          user.role !== 'super_admin'
+        ) {
+          return {
+            user: null,
+            error: 'Only platform administrators can access this control panel.',
+          };
+        }
+
+        if (
+          expectedRole &&
+          expectedRole !== 'admin' &&
+          user.role !== expectedRole
+        ) {
+          return {
+            user: null,
+            error: 'This account is not authorized for the selected portal.',
+          };
+        }
+
+        if (user.status === 'inactive' || user.status === 'suspended') {
+          return {
+            user: null,
+            error: 'This account is currently inactive. Please contact support.',
+          };
+        }
+
+        if (user.status === 'pending_invite') {
+          return {
+            user: null,
+            error: 'Your invitation is still pending activation.',
+          };
+        }
+
+        saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
+        notifyListeners();
+
+        return { user };
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
+
+      if (error || !data.user) {
+        return {
+          user: null,
+          error: error?.message || 'Unable to sign in. Please try again.',
+        };
+      }
+
+      const profile = await getProfileFromSupabase(data.user);
+
+      if (!profile) {
+        await supabase.auth.signOut();
+
+        return {
+          user: null,
+          error:
+            'Your account profile was not found. Please contact the administrator.',
+        };
+      }
+
+      if (expectedRole === 'admin') {
+        if (profile.role !== 'admin' && profile.role !== 'super_admin') {
+          await supabase.auth.signOut();
+
+          return {
+            user: null,
+            error: 'Only platform administrators can access this control panel.',
+          };
+        }
+      } else if (expectedRole && profile.role !== expectedRole) {
+        await supabase.auth.signOut();
+
+        return {
+          user: null,
+          error: 'This account is not authorized for the selected portal.',
+        };
+      }
+
+      notifyListeners();
+
+      return { user: profile };
+    },
+
+    // Logout from Supabase or local demo mode.
+    async logout(): Promise<void> {
+      if (supabase) {
+        const { error } = await supabase.auth.signOut();
+
+        if (error) {
+          console.error('Supabase logout error:', error.message);
+        }
+      }
+
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+      notifyListeners();
+    },
+
+    // Send a real password reset email.
+    async requestPasswordReset(
+      email: string
+    ): Promise<{ success: boolean; message: string }> {
+      const cleanEmail = email.trim().toLowerCase();
+
+      if (!cleanEmail) {
+        return {
+          success: false,
+          message: 'Please enter your email address.',
+        };
+      }
+
+      if (!supabase) {
+        return {
+          success: false,
+          message: 'Password reset requires Supabase configuration.',
+        };
+      }
+
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        cleanEmail,
+        {
+          redirectTo: window.location.origin,
+        }
+      );
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message,
+        };
+      }
+
+      return {
+        success: true,
+        message:
+          'If an account exists for this email, a password reset link has been sent. Please check your inbox.',
+      };
+    },
+
+    // Update password after the user opens a valid recovery link.
+    async resetPassword(
+      _email: string,
+      _token: string,
+      newPassword: string
+    ): Promise<{ success: boolean; message: string }> {
+      if (!newPassword || newPassword.length < 6) {
+        return {
+          success: false,
+          message: 'Password must be at least 6 characters long.',
+        };
+      }
+
+      if (!supabase) {
+        return {
+          success: false,
+          message: 'Password update requires Supabase configuration.',
+        };
+      }
+
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message,
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Password updated successfully. You can now sign in.',
+      };
+    },
+  };
+})();
 
 // ============================================================================
 // DELIVERY BOY SERVICE
