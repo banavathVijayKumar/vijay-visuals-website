@@ -27,11 +27,20 @@ import { PublicStorefront } from './components/storefront/PublicStorefront';
 import { OrderTrackingModal } from './components/tracking/OrderTrackingModal';
 import { LegalModal } from './components/legal/LegalModals';
 import { AuthModal } from './components/auth/AuthModal';
-import { authService, UserProfile, subscribeToStore } from './lib/supabase';
-import { Sparkles, Bike, Shield, Store, Globe, ArrowLeft } from 'lucide-react';
+import {
+  authService,
+  UserProfile,
+  subscribeToStore,
+  supabase,
+  isSupabaseConfigured,
+} from './lib/supabase';
+import { Bike, Shield, Store, Globe, ArrowLeft } from 'lucide-react';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(authService.getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(
+    () => (isSupabaseConfigured ? null : authService.getCurrentUser())
+  );
+  const [isAuthReady, setIsAuthReady] = useState(!isSupabaseConfigured);
   const [currentPortal, setCurrentPortal] = useState<'studio' | 'delivery' | 'admin' | 'builder' | 'shop'>('studio');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -44,12 +53,77 @@ export default function App() {
     setToastMessage(msg);
   };
 
-  // Sync auth state
+  // Restore the real Supabase session and keep the UI in sync with auth changes.
   useEffect(() => {
-    const unsub = subscribeToStore(() => {
+    let active = true;
+    let syncVersion = 0;
+
+    const restoreSession = async () => {
+      const version = ++syncVersion;
+
+      try {
+        const user = await authService.getAuthenticatedUser();
+
+        if (active && version === syncVersion) {
+          setCurrentUser(user);
+        }
+      } catch (error) {
+        console.error('Session restoration failed:', error);
+
+        if (active && version === syncVersion) {
+          setCurrentUser(null);
+        }
+      } finally {
+        if (active && version === syncVersion) {
+          setIsAuthReady(true);
+        }
+      }
+    };
+
+    let unsubscribeAuth: (() => void) | undefined;
+
+    if (isSupabaseConfigured && supabase) {
+      const { data } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_OUT') {
+          syncVersion += 1;
+          if (active) {
+            setCurrentUser(null);
+            setIsAuthReady(true);
+          }
+          return;
+        }
+
+        // Do profile/session work after Supabase finishes its auth callback.
+        // This prevents waiting on Supabase auth operations while its lock is held.
+        Promise.resolve().then(() => {
+          if (active) {
+            void restoreSession();
+          }
+        });
+      });
+
+      unsubscribeAuth = () => data.subscription.unsubscribe();
+
+      // Also restore any session already saved in the browser.
+      void restoreSession();
+    } else {
       setCurrentUser(authService.getCurrentUser());
+      setIsAuthReady(true);
+    }
+
+    // Keep the existing local demo/business/order store subscription.
+    const unsubscribeStore = subscribeToStore(() => {
+      if (!isSupabaseConfigured) {
+        setCurrentUser(authService.getCurrentUser());
+      }
     });
-    return () => unsub();
+
+    return () => {
+      active = false;
+      syncVersion += 1;
+      unsubscribeAuth?.();
+      unsubscribeStore();
+    };
   }, []);
 
   // Check URL params on initial load (support ?site=slug, ?tenant=slug, ?tracking=ORD-..., ?portal=...)
@@ -79,11 +153,16 @@ export default function App() {
     }
   }, []);
 
-  const handleLogout = () => {
-    authService.logout();
-    setCurrentUser(null);
-    setCurrentPortal('studio');
-    showToast('Signed out successfully.');
+  const handleLogout = async () => {
+    try {
+      await authService.logout();
+      setCurrentUser(null);
+      setCurrentPortal('studio');
+      showToast('Signed out successfully.');
+    } catch (error) {
+      console.error('Logout failed:', error);
+      showToast('Unable to sign out. Please try again.');
+    }
   };
 
   const handleDeliveryLoginSuccess = (user: UserProfile) => {
@@ -93,7 +172,9 @@ export default function App() {
 
   const handleGeneralAuthSuccess = (user: UserProfile) => {
     setCurrentUser(user);
+    setShowAuthModal(false);
     showToast(`Welcome back, ${user.full_name}!`);
+
     if (user.role === 'admin' || user.role === 'super_admin') {
       setCurrentPortal('admin');
     } else if (user.role === 'delivery_boy') {
@@ -105,7 +186,7 @@ export default function App() {
     }
   };
 
-  // If a public standalone site is requested via ?site=slug or ?tenant=slug
+  // Public tenant storefronts do not need a customer login session.
   if (activeStorefrontSlug) {
     return (
       <PublicStorefront
@@ -115,9 +196,21 @@ export default function App() {
     );
   }
 
+  // Prevent protected portals from briefly showing a signed-out state during session restore.
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen bg-[#08080A] text-[#E8E8ED] flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <div className="mx-auto h-10 w-10 rounded-full border-2 border-[#DFBA5A]/30 border-t-[#DFBA5A] animate-spin" />
+          <p className="text-sm text-[#DFBA5A]">Restoring your secure session…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#08080A] text-[#E8E8ED] font-sans antialiased selection:bg-[#D4AF37]/30 selection:text-[#F7E7B4] flex flex-col justify-between">
-      
+
       {/* 1. PORTAL: DEDICATED DELIVERY BOY SECTION */}
       {currentPortal === 'delivery' && (
         currentUser && currentUser.role === 'delivery_boy' && currentUser.status === 'active' ? (
@@ -136,7 +229,10 @@ export default function App() {
 
       {/* 2. PORTAL: ADMIN DASHBOARD */}
       {currentPortal === 'admin' && (
-        currentUser && currentUser.role === 'admin' ? (
+        currentUser && (
+          currentUser.role === 'admin' ||
+          currentUser.role === 'super_admin'
+        ) ? (
           <AdminDashboard
             currentUser={currentUser}
             onLogout={handleLogout}
@@ -174,7 +270,6 @@ export default function App() {
       {/* 3. PORTAL: MULTI-TENANT WEBSITE BUILDER */}
       {currentPortal === 'builder' && (
         <div className="min-h-screen bg-[#08080A] text-[#E8E8ED] flex flex-col">
-          {/* Top Bar for Builder */}
           <Navbar
             currentUser={currentUser}
             currentPortal={currentPortal}
@@ -247,10 +342,9 @@ export default function App() {
         )
       )}
 
-      {/* 4. PORTAL: MAIN CORPORATE FLAGSHIP SHOWCASE (Preserves all existing features) */}
+      {/* 4. PORTAL: MAIN CORPORATE FLAGSHIP SHOWCASE */}
       {currentPortal === 'studio' && (
         <>
-          {/* Navigation Bar */}
           <Navbar
             currentUser={currentUser}
             currentPortal={currentPortal}
@@ -260,9 +354,7 @@ export default function App() {
             onOpenTracking={() => setShowTrackingModal(true)}
           />
 
-          {/* Main Content Sections */}
           <main>
-            {/* 1. Hero with split-screen interactive showcase */}
             <Hero />
 
             {/* Quick Multi-Tenant Platform Discovery Banner */}
@@ -300,55 +392,36 @@ export default function App() {
               </div>
             </section>
 
-            {/* 2. Services Section (All 5 services) */}
             <ServicesSection onSelectService={(title) => showToast(`Selected "${title}". Scroll to contact or book on WhatsApp!`)} />
-
-            {/* 3. Multi-Tenant Builder Section */}
             <section id="builder" className="border-b border-[#1E1E26] bg-[#09090E]">
               <WebsiteBuilder
                 currentUser={currentUser}
                 onShowToast={showToast}
               />
             </section>
-
-            {/* 4. Portfolio Showcase (Interactive Filter & Case Study Lightbox) */}
             <PortfolioSection />
-
-            {/* 5. Interactive Project Cost Estimator */}
             <CostCalculator />
-
-            {/* 6. Pricing Tiers */}
             <PricingSection />
-
-            {/* 7. About Us & Founder */}
             <AboutSection />
-
-            {/* 8. Client Testimonials & FAQ */}
             <TestimonialsSection />
-
-            {/* 9. Contact Section with WhatsApp, Email & Instagram */}
             <ContactSection onShowToast={showToast} />
           </main>
 
-          {/* Footer */}
           <Footer
             onOpenLegal={(type) => setActiveLegalModal(type)}
             onOpenTracking={() => setShowTrackingModal(true)}
           />
 
-          {/* Floating WhatsApp Quick Action Button */}
           <FloatingWhatsApp />
         </>
       )}
 
-      {/* Customer & Shop Owner Auth Modal */}
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         onSuccess={handleGeneralAuthSuccess}
       />
 
-      {/* 11-Stage Order Tracking Modal */}
       <OrderTrackingModal
         isOpen={showTrackingModal}
         initialOrderNumber={trackingNumber}
@@ -358,13 +431,11 @@ export default function App() {
         }}
       />
 
-      {/* Legal & Policy Modals */}
       <LegalModal
         type={activeLegalModal}
         onClose={() => setActiveLegalModal(null)}
       />
 
-      {/* Toast Feedback */}
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
     </div>
   );
