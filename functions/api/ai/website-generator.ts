@@ -3,11 +3,11 @@ import {
   CloudflareEnv,
   jsonResponse,
   handleOptions,
-  checkAndIncrementQuota,
   callGeminiEdge,
   safeParseJson,
   formatAiError
 } from '../_shared';
+import { requireAiEntitlement, isAiAccessResponse, recordAiUsage } from '../marketplace/_entitlements';
 
 export async function onRequestOptions() {
   return handleOptions();
@@ -21,16 +21,9 @@ export async function onRequestPost(context: { request: Request; env: Cloudflare
     if (!businessName || !businessType) {
       return jsonResponse({ error: 'businessName and businessType are required.' }, 400);
     }
-
-    const quota = checkAndIncrementQuota(tenantId);
-    if (!quota.allowed) {
-      return jsonResponse({
-        error: 'Daily AI usage limit reached for your business account.',
-        details: `Your daily quota of ${quota.limit} AI calls has been exhausted. Admin can increase this limit in Platform Controls.`,
-        remaining: 0,
-        limit: quota.limit,
-      }, 429);
-    }
+    const access = await requireAiEntitlement(context.request, context.env, 'ai-website-builder');
+    if (isAiAccessResponse(access)) return access;
+    const quota = { allowed: true, remaining: access.remaining, limit: access.limit };
 
     const prompt = `You are an expert luxury web designer and copywriter for Vijay Visuals Multi-Tenant Website Builder.
 Generate a complete, high-converting business website content plan for:
@@ -71,6 +64,7 @@ Return ONLY a valid JSON object matching this structure:
     });
 
     const parsed = safeParseJson(text);
+    await recordAiUsage(context.env, access, 'success');
     return jsonResponse({ success: true, data: parsed, quota });
   } catch (error: any) {
     console.error('Edge Website Generator Error:', error);

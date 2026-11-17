@@ -3,10 +3,10 @@ import {
   CloudflareEnv,
   jsonResponse,
   handleOptions,
-  checkAndIncrementQuota,
   callGeminiEdge,
   formatAiError
 } from '../_shared';
+import { requireAiEntitlement, isAiAccessResponse, recordAiUsage } from '../marketplace/_entitlements';
 
 export async function onRequestOptions() {
   return handleOptions();
@@ -20,16 +20,9 @@ export async function onRequestPost(context: { request: Request; env: Cloudflare
     if (!message) {
       return jsonResponse({ error: 'message is required.' }, 400);
     }
-
-    const quota = checkAndIncrementQuota(tenantId);
-    if (!quota.allowed) {
-      return jsonResponse({
-        error: 'Daily AI usage limit reached for your business account.',
-        details: `Your daily quota of ${quota.limit} AI calls has been exhausted. Admin can increase this limit in Platform Controls.`,
-        remaining: 0,
-        limit: quota.limit,
-      }, 429);
-    }
+    const access = await requireAiEntitlement(context.request, context.env, 'customer-support-ai');
+    if (isAiAccessResponse(access)) return access;
+    const quota = { allowed: true, remaining: access.remaining, limit: access.limit };
 
     const bizName = businessContext?.name || 'Vijay Visuals';
     const bizCategory = businessContext?.category || 'Digital Services';
@@ -62,6 +55,7 @@ Business Details:
       systemInstruction,
     });
 
+    await recordAiUsage(context.env, access, 'success');
     return jsonResponse({
       success: true,
       reply: reply || 'I am here to assist you with any questions about our products and services!',

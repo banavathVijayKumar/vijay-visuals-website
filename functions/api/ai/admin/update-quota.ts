@@ -1,27 +1,19 @@
-// Cloudflare Pages Function: POST /api/ai/admin/update-quota
-import { CloudflareEnv, jsonResponse, handleOptions, edgeUsageStore } from '../../_shared';
+// Legacy endpoint retained for compatibility. Plan usage limits are managed in D1 plans.
+import { CloudflareEnv, jsonResponse, handleOptions } from '../../_shared';
+import { requireUser, isResponse } from '../../marketplace/_auth';
 
 export async function onRequestOptions() {
   return handleOptions();
 }
 
 export async function onRequestPost(context: { request: Request; env: CloudflareEnv }) {
-  try {
-    const body: any = await context.request.json().catch(() => ({}));
-    const { tenantId, dailyLimit } = body;
-
-    if (!tenantId || typeof dailyLimit !== 'number') {
-      return jsonResponse({ error: 'tenantId and dailyLimit (number) required.' }, 400);
-    }
-
-    if (!edgeUsageStore[tenantId]) {
-      edgeUsageStore[tenantId] = { requestsCount: 0, dailyLimit, lastReset: new Date().toISOString() };
-    } else {
-      edgeUsageStore[tenantId].dailyLimit = dailyLimit;
-    }
-
-    return jsonResponse({ success: true, updated: edgeUsageStore[tenantId] });
-  } catch (err: any) {
-    return jsonResponse({ error: err?.message || 'Failed to update quota.' }, 500);
+  const user = await requireUser(context.request, context.env);
+  if (isResponse(user)) return user;
+  if (user.role !== 'admin') {
+    return jsonResponse({ error: 'Admin access is required.', code: 'FORBIDDEN' }, 403);
   }
+  return jsonResponse({
+    error: 'Tenant-level in-memory quotas are retired. Configure usage_limit on the service plan in Marketplace Admin.',
+    code: 'USE_D1_PLAN_LIMITS',
+  }, 409);
 }

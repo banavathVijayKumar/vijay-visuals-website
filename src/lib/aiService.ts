@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 // Client AI Service communicating securely with the server-side proxy routes
 // NEVER exposes API keys to the browser bundle
 
@@ -57,6 +59,15 @@ export interface AiQuotaInfo {
   limit: number;
 }
 
+
+async function authorizedFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const { data } = await supabase?.auth.getSession() || { data: { session: null } };
+  const token = data.session?.access_token;
+  const headers = new Headers(init.headers || {});
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  return fetch(input, { ...init, headers });
+}
+
 export const aiService = {
   // 1. Generate Complete Website Content
   async generateWebsite(params: {
@@ -67,7 +78,7 @@ export const aiService = {
     specialFeatures?: string;
     tenantId?: string;
   }): Promise<{ data: AiWebsiteResult; quota?: AiQuotaInfo }> {
-    const res = await fetch('/api/ai/website-generator', {
+    const res = await authorizedFetch('/api/ai/website-generator', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -90,7 +101,7 @@ export const aiService = {
     topic?: string;
     tenantId?: string;
   }): Promise<{ data: AiContentResult; quota?: AiQuotaInfo }> {
-    const res = await fetch('/api/ai/content-writer', {
+    const res = await authorizedFetch('/api/ai/content-writer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -111,7 +122,7 @@ export const aiService = {
     primaryColor?: string;
     tenantId?: string;
   }): Promise<{ data: AiLogoResult; quota?: AiQuotaInfo }> {
-    const res = await fetch('/api/ai/logo-generator', {
+    const res = await authorizedFetch('/api/ai/logo-generator', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -133,7 +144,7 @@ export const aiService = {
     language?: 'en' | 'te' | 'hi';
     tenantId?: string;
   }): Promise<{ data: AiProductResult; quota?: AiQuotaInfo }> {
-    const res = await fetch('/api/ai/product-description', {
+    const res = await authorizedFetch('/api/ai/product-description', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -154,7 +165,7 @@ export const aiService = {
     context?: string;
     tenantId?: string;
   }): Promise<{ data: AiTranslateResult; quota?: AiQuotaInfo }> {
-    const res = await fetch('/api/ai/translate', {
+    const res = await authorizedFetch('/api/ai/translate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -179,7 +190,7 @@ export const aiService = {
     };
     tenantId?: string;
   }): Promise<{ reply: string; quota?: AiQuotaInfo }> {
-    const res = await fetch('/api/ai/support-chatbot', {
+    const res = await authorizedFetch('/api/ai/support-chatbot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -200,7 +211,7 @@ export const aiService = {
     keyOfferings?: string;
     tenantId?: string;
   }): Promise<{ data: AiSeoResult; quota?: AiQuotaInfo }> {
-    const res = await fetch('/api/ai/seo-generator', {
+    const res = await authorizedFetch('/api/ai/seo-generator', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -215,13 +226,13 @@ export const aiService = {
 
   // 8. Get Tenant Usage Stats
   async getUsageStats(tenantId: string = 'default-tenant') {
-    const res = await fetch(`/api/ai/usage-stats?tenantId=${encodeURIComponent(tenantId)}`);
+    const res = await authorizedFetch(`/api/ai/usage-stats?tenantId=${encodeURIComponent(tenantId)}`);
     return await res.json();
   },
 
   // 9. Admin Quota Update
   async updateQuota(tenantId: string, dailyLimit: number) {
-    const res = await fetch('/api/ai/admin/update-quota', {
+    const res = await authorizedFetch('/api/ai/admin/update-quota', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tenantId, dailyLimit }),

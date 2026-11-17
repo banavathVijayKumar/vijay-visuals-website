@@ -3,11 +3,11 @@ import {
   CloudflareEnv,
   jsonResponse,
   handleOptions,
-  checkAndIncrementQuota,
   callGeminiEdge,
   safeParseJson,
   formatAiError
 } from '../_shared';
+import { requireAiEntitlement, isAiAccessResponse, recordAiUsage } from '../marketplace/_entitlements';
 
 export async function onRequestOptions() {
   return handleOptions();
@@ -17,16 +17,9 @@ export async function onRequestPost(context: { request: Request; env: Cloudflare
   try {
     const body: any = await context.request.json().catch(() => ({}));
     const { businessName, category, city = 'Hyderabad', keyOfferings, tenantId = 'default-tenant' } = body;
-
-    const quota = checkAndIncrementQuota(tenantId);
-    if (!quota.allowed) {
-      return jsonResponse({
-        error: 'Daily AI usage limit reached for your business account.',
-        details: `Your daily quota of ${quota.limit} AI calls has been exhausted. Admin can increase this limit in Platform Controls.`,
-        remaining: 0,
-        limit: quota.limit,
-      }, 429);
-    }
+    const access = await requireAiEntitlement(context.request, context.env, 'ai-content-generator');
+    if (isAiAccessResponse(access)) return access;
+    const quota = { allowed: true, remaining: access.remaining, limit: access.limit };
 
     const prompt = `Generate Google-optimized SEO metadata for:
 Business: "${businessName}"
@@ -49,6 +42,7 @@ Output strict JSON:
     });
 
     const data = safeParseJson(text);
+    await recordAiUsage(context.env, access, 'success');
     return jsonResponse({ success: true, data, quota });
   } catch (error: any) {
     console.error('Edge SEO Generator Error:', error);

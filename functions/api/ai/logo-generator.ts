@@ -3,11 +3,11 @@ import {
   CloudflareEnv,
   jsonResponse,
   handleOptions,
-  checkAndIncrementQuota,
   callGeminiEdge,
   safeParseJson,
   formatAiError
 } from '../_shared';
+import { requireAiEntitlement, isAiAccessResponse, recordAiUsage } from '../marketplace/_entitlements';
 
 export async function onRequestOptions() {
   return handleOptions();
@@ -17,16 +17,9 @@ export async function onRequestPost(context: { request: Request; env: Cloudflare
   try {
     const body: any = await context.request.json().catch(() => ({}));
     const { businessName, category, style = 'minimalist-gold', primaryColor = '#DFBA5A', tenantId = 'default-tenant' } = body;
-
-    const quota = checkAndIncrementQuota(tenantId);
-    if (!quota.allowed) {
-      return jsonResponse({
-        error: 'Daily AI usage limit reached for your business account.',
-        details: `Your daily quota of ${quota.limit} AI calls has been exhausted. Admin can increase this limit in Platform Controls.`,
-        remaining: 0,
-        limit: quota.limit,
-      }, 429);
-    }
+    const access = await requireAiEntitlement(context.request, context.env, 'ai-content-generator');
+    if (isAiAccessResponse(access)) return access;
+    const quota = { allowed: true, remaining: access.remaining, limit: access.limit };
 
     const prompt = `You are a world-class luxury brand identity designer.
 Generate SVG code and visual brand guidelines for:
@@ -49,6 +42,7 @@ Create a clean, scalable vector SVG logo (viewBox="0 0 200 200") with gold metal
     });
 
     const data = safeParseJson(text);
+    await recordAiUsage(context.env, access, 'success');
     return jsonResponse({ success: true, data, quota });
   } catch (error: any) {
     console.error('Edge Logo Generator Error:', error);

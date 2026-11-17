@@ -69,7 +69,7 @@ async function callGemini(contents: any, config?: any) {
     throw new Error('Gemini API key is not configured.');
   }
   // Try supported fast models in order
-  const models = ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+  const models = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite'];
   let lastErr: any = null;
   for (const model of models) {
     try {
