@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   UserProfile,
   DeliveryBoyProfile,
@@ -410,7 +410,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {/* Stats */}
                             <td className="py-3.5 px-4 font-mono">
                               <p className="text-white font-semibold">{details.total_deliveries} Delivered</p>
-                              <span className="text-[11px] text-[#DFBA5A]">★ {details.rating}</span>
+                              <span className="text-[11px] text-[#DFBA5A]">â˜… {details.rating}</span>
                             </td>
 
                             {/* Actions */}
@@ -480,13 +480,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
 
                         <p className="text-xs text-[#C8C8D6]">
-                          Customer: <strong>{order.customer_name}</strong> ({order.customer_phone}) · {order.delivery_address}
+                          Customer: <strong>{order.customer_name}</strong> ({order.customer_phone}) Â· {order.delivery_address}
                         </p>
 
                         <div className="text-[11px] text-[#7A7A8E] flex items-center gap-2">
                           <span>Items: {order.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}</span>
-                          <span>·</span>
-                          <span className="font-mono text-white font-bold">Total: ₹{order.total_amount.toLocaleString('en-IN')}</span>
+                          <span>Â·</span>
+                          <span className="font-mono text-white font-bold">Total: â‚¹{order.total_amount.toLocaleString('en-IN')}</span>
                         </div>
                       </div>
 
@@ -559,15 +559,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="bg-[#0E0E16] border border-[#1E1E2A] rounded-xl p-4 text-xs space-y-2">
                 {[
-                  { name: 'Rahul Sharma', email: 'rahul@gmail.com', phone: '+91 98765 43210', city: 'Hyderabad', orders: 4, spend: '₹46,390' },
-                  { name: 'Pooja Reddy', email: 'pooja.reddy@outlook.com', phone: '+91 97011 88990', city: 'Hyderabad', orders: 2, spend: '₹3,450' },
-                  { name: 'Dr. Anand Verma', email: 'dranand@vermaclinic.com', phone: '+91 99499 77889', city: 'Hyderabad', orders: 6, spend: '₹84,000' },
-                  { name: 'Karthik Raju', email: 'karthik@techcorp.in', phone: '+91 98888 22114', city: 'Hyderabad', orders: 1, spend: '₹640' },
+                  { name: 'Rahul Sharma', email: 'rahul@gmail.com', phone: '+91 98765 43210', city: 'Hyderabad', orders: 4, spend: 'â‚¹46,390' },
+                  { name: 'Pooja Reddy', email: 'pooja.reddy@outlook.com', phone: '+91 97011 88990', city: 'Hyderabad', orders: 2, spend: 'â‚¹3,450' },
+                  { name: 'Dr. Anand Verma', email: 'dranand@vermaclinic.com', phone: '+91 99499 77889', city: 'Hyderabad', orders: 6, spend: 'â‚¹84,000' },
+                  { name: 'Karthik Raju', email: 'karthik@techcorp.in', phone: '+91 98888 22114', city: 'Hyderabad', orders: 1, spend: 'â‚¹640' },
                 ].map((c, i) => (
                   <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-[#12121D] border border-[#1C1C28]">
                     <div>
                       <p className="font-semibold text-white">{c.name}</p>
-                      <span className="text-[11px] font-mono text-[#8C8C9E]">{c.email} · {c.phone}</span>
+                      <span className="text-[11px] font-mono text-[#8C8C9E]">{c.email} Â· {c.phone}</span>
                     </div>
                     <div className="text-right">
                       <p className="font-mono font-bold text-[#DFBA5A]">{c.spend}</p>
@@ -652,15 +652,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-[#0E0E16] border border-[#1E1E2A] p-4 rounded-xl">
                   <span className="text-[10px] font-mono uppercase text-[#79798C] block">Total Gross Volume</span>
-                  <p className="font-luxury text-2xl font-bold text-white mt-1">₹1,84,200</p>
+                  <p className="font-luxury text-2xl font-bold text-white mt-1">â‚¹1,84,200</p>
                 </div>
                 <div className="bg-[#0E0E16] border border-[#1E1E2A] p-4 rounded-xl">
                   <span className="text-[10px] font-mono uppercase text-[#79798C] block">Platform Commissions (5%)</span>
-                  <p className="font-luxury text-2xl font-bold text-[#DFBA5A] mt-1">₹9,210</p>
+                  <p className="font-luxury text-2xl font-bold text-[#DFBA5A] mt-1">â‚¹9,210</p>
                 </div>
                 <div className="bg-[#0E0E16] border border-[#1E1E2A] p-4 rounded-xl">
                   <span className="text-[10px] font-mono uppercase text-[#79798C] block">Fleet Payouts Dispatched</span>
-                  <p className="font-luxury text-2xl font-bold text-[#25D366] mt-1">₹4,260</p>
+                  <p className="font-luxury text-2xl font-bold text-[#25D366] mt-1">â‚¹4,260</p>
                 </div>
               </div>
             </div>
@@ -676,9 +676,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
-                  { name: 'Starter Launch', price: '₹999/mo', desc: '1 Website, standard templates, WhatsApp orders, manual delivery.' },
-                  { name: 'Professional Growth', price: '₹2,499/mo', desc: 'Online cart, payment gateway, custom domain, automated delivery fleet dispatch.' },
-                  { name: 'VIP Enterprise', price: '₹5,999/mo', desc: 'Unlimited products, dedicated delivery boys fleet management, Telugu/Hindi/English SEO.' }
+                  { name: 'Starter Launch', price: 'â‚¹999/mo', desc: '1 Website, standard templates, WhatsApp orders, manual delivery.' },
+                  { name: 'Professional Growth', price: 'â‚¹2,499/mo', desc: 'Online cart, payment gateway, custom domain, automated delivery fleet dispatch.' },
+                  { name: 'VIP Enterprise', price: 'â‚¹5,999/mo', desc: 'Unlimited products, dedicated delivery boys fleet management, Telugu/Hindi/English SEO.' }
                 ].map((p, i) => (
                   <div key={i} className="bg-[#0E0E16] border border-[#1E1E2A] p-5 rounded-xl space-y-3">
                     <h4 className="font-luxury font-bold text-white text-base">{p.name}</h4>
@@ -730,11 +730,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div className="p-3 bg-[#13131E] rounded-lg border border-[#20202E]">
                   <span className="text-[#848496] block text-[11px]">Supported Languages</span>
-                  <p className="font-bold text-white text-sm mt-0.5">English, Telugu (తెలుగు), Hindi (हिन्दी)</p>
+                  <p className="font-bold text-white text-sm mt-0.5">English, Telugu (à°¤à±†à°²à±à°—à±), Hindi (à¤¹à¤¿à¤¨à¥à¤¦à¥€)</p>
                 </div>
                 <div className="p-3 bg-[#13131E] rounded-lg border border-[#20202E]">
                   <span className="text-[#848496] block text-[11px]">Primary Currency</span>
-                  <p className="font-bold text-[#DFBA5A] text-sm mt-0.5">₹ INR (Indian Rupee)</p>
+                  <p className="font-bold text-[#DFBA5A] text-sm mt-0.5">â‚¹ INR (Indian Rupee)</p>
                 </div>
                 <div className="p-3 bg-[#13131E] rounded-lg border border-[#20202E]">
                   <span className="text-[#848496] block text-[11px]">Default Delivery Radius</span>
@@ -757,7 +757,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <h2 className="font-luxury text-xl font-bold text-white">AI Neural Engines & Tenant Quota Controls</h2>
                   </div>
                   <p className="text-xs text-[#848496] mt-1">
-                    Manage server-side Gemini AI models, monitor tenant prompt usage, enforce rate limits, and audit security isolation.
+                    Manage server-side OpenAI models, monitor tenant prompt usage, enforce rate limits, and audit security isolation.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -774,7 +774,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       try {
                         const res = await fetch('/api/health');
                         const data = await res.json();
-                        onShowToast(`Server AI Health: ${data.status.toUpperCase()} (Gemini Key Configured: ${data.hasGeminiKey ? 'YES' : 'NO'})`);
+                        onShowToast(`Server AI Health: ${data.status.toUpperCase()} (OpenAI Key Configured: ${data.hasOpenAIKey ? 'YES' : 'NO'})`);
                       } catch {
                         onShowToast('Server health check failed.');
                       }
@@ -794,7 +794,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <span className="uppercase font-mono text-[10px]">AI Model Core</span>
                     <Cpu className="w-4 h-4 text-[#DFBA5A]" />
                   </div>
-                  <p className="font-luxury text-lg font-bold text-white">Gemini 2.5 Flash</p>
+                  <p className="font-luxury text-lg font-bold text-white">OpenAI GPT-4o mini</p>
                   <span className="text-[11px] text-[#25D366] flex items-center gap-1 mt-1 font-mono">
                     <CheckCircle2 className="w-3 h-3" /> Server-side Proxy Active
                   </span>
@@ -871,7 +871,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <tr key={biz.id} className="hover:bg-[#12121C]/50 transition-colors">
                             <td className="py-3 px-4">
                               <p className="font-bold text-white text-sm">{biz.business_name}</p>
-                              <span className="font-mono text-[10px] text-[#707080]">ID: {biz.id} · {biz.subdomain}</span>
+                              <span className="font-mono text-[10px] text-[#707080]">ID: {biz.id} Â· {biz.subdomain}</span>
                             </td>
                             <td className="py-3 px-4">
                               <span className="px-2 py-0.5 rounded bg-[#181826] text-[#DFBA5A] font-mono text-[10px] uppercase">
@@ -951,7 +951,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="bg-[#0E0E16] border border-[#1E1E2A] rounded-xl p-5 space-y-4">
                 <div>
                   <h3 className="font-luxury text-base font-bold text-white">7 Production AI Engines Specifications</h3>
-                  <p className="text-xs text-[#848496] mt-0.5">High-speed endpoints powered by Gemini 2.5 Flash on server-side architecture.</p>
+                  <p className="text-xs text-[#848496] mt-0.5">High-speed endpoints powered by OpenAI GPT-4o mini on server-side architecture.</p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -983,7 +983,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {
                       title: '5. Regional AI Translator',
                       route: '/api/ai/translate',
-                      desc: 'Deep contextual translations between English, Telugu (తెలుగు), and Hindi (हिन्दी) for retail & wedding services.',
+                      desc: 'Deep contextual translations between English, Telugu (à°¤à±†à°²à±à°—à±), and Hindi (à¤¹à¤¿à¤¨à¥à¤¦à¥€) for retail & wedding services.',
                       badge: '3 Languages',
                     },
                     {
@@ -1014,7 +1014,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span className="text-[#25D366] flex items-center gap-1">
                           <Check className="w-2.5 h-2.5" /> Ready
                         </span>
-                        <span className="text-[#646478]">Gemini 2.5 Flash</span>
+                        <span className="text-[#646478]">OpenAI GPT-4o mini</span>
                       </div>
                     </div>
                   ))}
@@ -1276,3 +1276,4 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     </div>
   );
 };
+
