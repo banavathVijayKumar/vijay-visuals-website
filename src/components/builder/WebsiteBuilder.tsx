@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  supabase,
   TEMPLATES_DATA,
   BusinessTemplate,
   BusinessTenant,
@@ -49,7 +50,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   onOpenStorefrontModal,
 }) => {
   const [builderView, setBuilderView] = useState<'editor' | 'ai_studio'>('editor');
-  const [selectedTemplate, setSelectedTemplate] = useState<BusinessTemplate>(TEMPLATES_DATA[0]);
+  const [selectedTemplate, setSelectedTemplate] = useState<BusinessTemplate>(TEMPLATES_DATA.find((template) => template.id === 'restaurant') || TEMPLATES_DATA[0]);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [previewLanguage, setPreviewLanguage] = useState<'en' | 'te' | 'hi'>('en');
   const [deviceMode, setDeviceMode] = useState<'desktop' | 'mobile'>('desktop');
@@ -79,9 +80,12 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   const [bookingTime, setBookingTime] = useState('11:00 AM');
   const [bookingService, setBookingService] = useState('VIP Table / Consultation Slot');
 
-  // Unique Subdomain
-  const slug = businessName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-  const liveUrl = `https://${slug || 'my-shop'}.vijayvisuals.com`;
+  // Public website URL on the existing Cloudflare Pages domain
+  const slug = businessName.toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 70);
+  const liveUrl = `https://vijay-visuals-site.pages.dev/sites/${slug || 'my-shop'}`;
 
   // Categories list
   const categories = ['all', ...Array.from(new Set(TEMPLATES_DATA.map((t) => t.category)))];
@@ -90,29 +94,93 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     ? TEMPLATES_DATA
     : TEMPLATES_DATA.filter((t) => t.category === activeCategory);
 
-  const handlePublishWebsite = () => {
-    const newBiz: BusinessTenant = {
-      id: 'biz-' + Date.now().toString(36),
-      owner_id: currentUser ? currentUser.id : 'usr-shop-01',
-      business_name: businessName,
-      slug: slug || 'my-shop',
-      category: selectedTemplate.category,
-      tagline: tagline,
-      phone: phone,
-      whatsapp: whatsapp,
-      email: 'owner@' + (slug || 'myshop') + '.com',
-      address: 'Shop No 14, Main Road, ' + city,
-      city: city,
-      theme_color: themeColor,
-      font_family: fontFamily,
-      language: previewLanguage,
-      status: 'active',
-      subdomain: `${slug || 'my-shop'}.vijayvisuals.com`,
-      created_at: new Date().toISOString(),
-    };
+  const handlePublishWebsite = async () => {
+    if (!businessName.trim()) {
+      onShowToast('Please enter your business name.');
+      return;
+    }
 
-    businessService.saveBusiness(newBiz);
-    onShowToast(`Website published successfully at: ${liveUrl}`);
+    if (!slug || slug.length < 2) {
+      onShowToast('Business name must contain at least 2 letters or numbers.');
+      return;
+    }
+
+    if (!supabase) {
+      onShowToast('Login service is not configured.');
+      return;
+    }
+
+    try {
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      const session = data?.session;
+
+      if (sessionError || !session?.access_token || !session.user?.id) {
+        onShowToast('Please log in again before publishing.');
+        return;
+      }
+
+      const website = {
+        businessName: businessName.trim(),
+        tagline,
+        city,
+        phone,
+        whatsapp,
+        category: selectedTemplate.category,
+        template: {
+          name: selectedTemplate.name,
+          features: selectedTemplate.features || []
+        },
+        themeColor,
+        language: previewLanguage,
+        fontFamily
+      };
+
+      const response = await fetch('/api/sites/publish', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          slug,
+          businessName: businessName.trim(),
+          website
+        })
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok || !result.success) {
+        onShowToast(result.error || 'Website publishing failed.');
+        return;
+      }
+
+      const newBiz: BusinessTenant = {
+        id: 'biz-' + Date.now().toString(36),
+        owner_id: session.user.id,
+        business_name: businessName.trim(),
+        slug,
+        category: selectedTemplate.category,
+        tagline,
+        phone,
+        whatsapp,
+        email: 'owner@' + slug + '.com',
+        address: 'Shop No 14, Main Road, ' + city,
+        city,
+        theme_color: themeColor,
+        font_family: fontFamily,
+        language: previewLanguage,
+        status: 'active',
+        subdomain: liveUrl,
+        created_at: new Date().toISOString(),
+      };
+
+      businessService.saveBusiness(newBiz);
+      onShowToast(`Website published successfully: ${liveUrl}`);
+    } catch (error) {
+      console.error('Website publishing error:', error);
+      onShowToast('Could not publish website. Please try again.');
+    }
   };
 
   const addToCart = (name: string, price: number) => {
@@ -327,8 +395,6 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                   key={t.id}
                   onClick={() => {
                     setSelectedTemplate(t);
-                    setBusinessName(t.name);
-                    setTagline(t.description);
                     setThemeColor(t.accent_color);
                   }}
                   className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
@@ -549,12 +615,11 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                 </a>
               </div>
             </div>
-
-            {/* Catalog Items Showcase */}
+            {/* Template Highlights */}
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between pb-2 border-b border-[#1A1A24]">
                 <h4 className="font-luxury font-bold text-white text-sm">
-                  {t.menuHeader}
+                  Template Highlights
                 </h4>
                 <span className="text-[11px] text-[#79798C] font-mono">
                   Category: {selectedTemplate.category}
@@ -562,28 +627,17 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                {[
-                  { name: selectedTemplate.features[0] || 'Premium Package 01', price: 1250, desc: 'Highest rated choice by local customers.' },
-                  { name: selectedTemplate.features[1] || 'Express Service Edition', price: 799, desc: 'Fast turnaround with certified quality.' },
-                  { name: selectedTemplate.features[2] || 'Family / Business Bundle', price: 2100, desc: 'Complete comprehensive package.' },
-                  { name: selectedTemplate.features[3] || 'Bespoke Custom Booking', price: 1500, desc: 'Tailored to your exact specifications.' }
-                ].map((item, idx) => (
-                  <div key={idx} className="bg-[#0E0E16] border border-[#1E1E2A] rounded-xl p-3.5 flex flex-col justify-between space-y-3">
-                    <div>
-                      <div className="flex items-start justify-between gap-2">
-                        <h5 className="font-bold text-white">{item.name}</h5>
-                        <span className="font-mono font-bold text-[#DFBA5A]">₹{item.price}</span>
-                      </div>
-                      <p className="text-[11px] text-[#868698] mt-1">{item.desc}</p>
-                    </div>
-
-                    <button
-                      onClick={() => addToCart(item.name, item.price)}
-                      className="w-full py-1.5 rounded bg-[#161622] hover:bg-[#202030] text-[11px] font-semibold text-white border border-[#252536] flex items-center justify-center gap-1"
-                    >
-                      <Plus className="w-3 h-3 text-[#DFBA5A]" />
-                      <span>{t.orderNow}</span>
-                    </button>
+                {selectedTemplate.features.map((feature, idx) => (
+                  <div
+                    key={`${selectedTemplate.id}-${idx}`}
+                    className="bg-[#0E0E16] border border-[#1E1E2A] rounded-xl p-4 flex items-center gap-3"
+                  >
+                    <span className="w-7 h-7 rounded-lg bg-[#DFBA5A]/10 text-[#DFBA5A] flex items-center justify-center font-bold">
+                      {idx + 1}
+                    </span>
+                    <span className="font-semibold text-white">
+                      {feature}
+                    </span>
                   </div>
                 ))}
               </div>

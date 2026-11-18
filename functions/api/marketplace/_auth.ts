@@ -22,6 +22,18 @@ export async function requireUser(request: Request, env: CloudflareEnv): Promise
   const authUser: any = await response.json().catch(() => null);
   if (!authUser?.id || !authUser?.email) return jsonResponse({ error: 'Unable to verify your account.', code: 'INVALID_USER' }, 401);
 
+  // Supabase profiles is the authorization source of truth; D1 stores account status and billing identity only.
+  const profileResponse = await fetch(`${env.VITE_SUPABASE_URL.replace(/\/$/, '')}/rest/v1/profiles?id=eq.${encodeURIComponent(authUser.id)}&select=id,full_name,role`, {
+    headers: { apikey: env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, Accept: 'application/json' },
+  });
+  if (!profileResponse.ok) return jsonResponse({ error: 'Unable to verify your account role.', code: 'ROLE_LOOKUP_FAILED' }, 503);
+  const profileRows: any[] = await profileResponse.json().catch(() => []);
+  const supabaseProfile = profileRows[0];
+  const allowedRoles = ['admin', 'shop_owner', 'delivery_boy', 'customer'];
+  if (!supabaseProfile?.id || !allowedRoles.includes(supabaseProfile.role)) {
+    return jsonResponse({ error: 'Your account role is missing or invalid.', code: 'INVALID_ROLE' }, 403);
+  }
+
   await env.DB.prepare(`INSERT OR IGNORE INTO vv_users (id, auth_provider, auth_subject, email, full_name, role)
     VALUES (?, 'supabase', ?, ?, ?, 'customer')`)
     .bind(authUser.id, authUser.id, authUser.email, authUser.user_metadata?.full_name || authUser.user_metadata?.name || null).run();
@@ -29,7 +41,7 @@ export async function requireUser(request: Request, env: CloudflareEnv): Promise
   const profile = await env.DB.prepare('SELECT id, email, full_name, role, status FROM vv_users WHERE auth_subject = ?')
     .bind(authUser.id).first<any>();
   if (!profile || profile.status !== 'active') return jsonResponse({ error: 'Your marketplace account is inactive.', code: 'ACCOUNT_INACTIVE' }, 403);
-  return { id: profile.id, email: profile.email, full_name: profile.full_name || undefined, role: profile.role };
+  return { id: profile.id, email: profile.email, full_name: supabaseProfile.full_name || profile.full_name || undefined, role: supabaseProfile.role };
 }
 
 export function isResponse(value: VerifiedUser | Response): value is Response {

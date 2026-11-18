@@ -9,7 +9,7 @@ interface AuthModalProps {
   defaultRole?: UserRole;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, defaultRole = 'customer' }) => {
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,7 +33,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: email.trim().toLowerCase(),
           password,
-          options: { data: { full_name: fullName.trim(), phone: phone.trim() } },
+          options: { data: { full_name: fullName.trim(), phone: phone.trim(), requested_role: defaultRole === 'shop_owner' ? 'shop_owner' : 'customer' } },
         });
         if (signUpError) throw signUpError;
         if (!data.session || !data.user) {
@@ -50,16 +50,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
       const session = sessionData.session;
       if (!session?.user) throw new Error('Your secure session could not be created. Please sign in again.');
 
-      let role: UserRole = 'customer';
-      let profileName = String(session.user.user_metadata?.full_name || fullName || 'Customer');
-      try {
-        const response = await fetch('/api/marketplace/account', { headers: { Authorization: `Bearer ${session.access_token}` } });
-        if (response.ok) {
-          const account = await response.json();
-          if (['admin', 'customer'].includes(account?.user?.role)) role = account.user.role;
-          profileName = account?.user?.fullName || profileName;
-        }
-      } catch { /* Account APIs remain unavailable until D1 is configured. */ }
+      const { data: profileRow, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, full_name, role, created_at')
+        .eq('id', session.user.id)
+        .single();
+      if (profileError || !profileRow) {
+        await supabase.auth.signOut();
+        throw new Error('Your account profile could not be verified. Please contact support.');
+      }
+      const allowedRoles: UserRole[] = ['admin', 'shop_owner', 'delivery_boy', 'customer'];
+      if (!allowedRoles.includes(profileRow.role as UserRole)) {
+        await supabase.auth.signOut();
+        throw new Error('Your account has an unsupported access role.');
+      }
+      if (isRegister && defaultRole === 'shop_owner' && profileRow.role !== 'shop_owner') {
+        await supabase.auth.signOut();
+        throw new Error('Shop Owner access was not assigned. Please contact support.');
+      }
+      const role = profileRow.role as UserRole;
+      const profileName = String(profileRow.full_name || session.user.user_metadata?.full_name || fullName || 'Customer');
 
       const profile: UserProfile = {
         id: session.user.id,
@@ -69,7 +79,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         role,
         status: 'active',
         email_verified: Boolean(session.user.email_confirmed_at),
-        created_at: session.user.created_at || new Date().toISOString(),
+        created_at: profileRow.created_at || session.user.created_at || new Date().toISOString(),
       };
       authService.setCurrentUser(profile);
       onSuccess(profile);

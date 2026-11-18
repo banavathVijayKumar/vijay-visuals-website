@@ -25,6 +25,7 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { WebsiteBuilder } from './components/builder/WebsiteBuilder';
 import { ShopOwnerDashboard } from './components/shop/ShopOwnerDashboard';
 import { PublicStorefront } from './components/storefront/PublicStorefront';
+import { PublishedWebsite } from './components/storefront/PublishedWebsite';
 import { OrderTrackingModal } from './components/tracking/OrderTrackingModal';
 import { LegalModal } from './components/legal/LegalModals';
 import { AuthModal } from './components/auth/AuthModal';
@@ -36,6 +37,7 @@ export default function App() {
   const [currentPortal, setCurrentPortal] = useState<'studio' | 'delivery' | 'admin' | 'builder' | 'shop'>('studio');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authDefaultRole, setAuthDefaultRole] = useState<'customer' | 'shop_owner'>('customer');
   const [activeStorefrontSlug, setActiveStorefrontSlug] = useState<string | null>(null);
   const [showTrackingModal, setShowTrackingModal] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState<string>('');
@@ -51,16 +53,15 @@ export default function App() {
     let mounted = true;
     const syncSupabaseUser = async (session: any) => {
       if (!session?.user) return;
-      let role: UserProfile['role'] = 'customer';
-      let fullName = String(session.user.user_metadata?.full_name || 'Customer');
-      try {
-        const response = await fetch('/api/marketplace/account', { headers: { Authorization: `Bearer ${session.access_token}` } });
-        if (response.ok) {
-          const account = await response.json();
-          if (account?.user?.role === 'admin') role = 'admin';
-          fullName = account?.user?.fullName || fullName;
-        }
-      } catch { /* The public site remains usable while D1 is being configured. */ }
+      const { data: profileRow, error: profileError } = await supabase!.from('profiles')
+        .select('id, full_name, role, created_at').eq('id', session.user.id).single();
+      if (profileError || !profileRow || !['admin', 'shop_owner', 'delivery_boy', 'customer'].includes(profileRow.role)) {
+        await supabase!.auth.signOut();
+        if (mounted) { authService.logout(); setCurrentUser(null); showToast('Account role could not be verified. Please sign in again or contact support.'); }
+        return;
+      }
+      const role = profileRow.role as UserProfile['role'];
+      const fullName = String(profileRow.full_name || session.user.user_metadata?.full_name || 'Customer');
       if (!mounted) return;
       authService.setCurrentUser({
         id: session.user.id,
@@ -138,6 +139,12 @@ export default function App() {
     }
   };
 
+  // Public customer websites use a stable path on the existing Cloudflare Pages domain.
+  const publishedSiteMatch = window.location.pathname.match(/^\/sites\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/i);
+  if (publishedSiteMatch) {
+    return <PublishedWebsite slug={publishedSiteMatch[1]} />;
+  }
+
   // If a public standalone site is requested via ?site=slug or ?tenant=slug
   if (activeStorefrontSlug) {
     return (
@@ -187,7 +194,7 @@ export default function App() {
               </p>
               <div className="pt-2 flex flex-col gap-2.5">
                 <button
-                  onClick={() => setShowAuthModal(true)}
+                  onClick={() => { setAuthDefaultRole('customer'); setShowAuthModal(true); }}
                   className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#DFBA5A] to-[#B38D2C] text-[#0A0A0E] text-xs font-bold uppercase tracking-wider"
                 >
                   Sign In as Admin
@@ -247,7 +254,7 @@ export default function App() {
         currentUser && currentUser.role === 'shop_owner' ? (
           <ShopOwnerDashboard
             currentUser={currentUser}
-            businessId={currentUser.active_business_id || (currentUser.business_ids && currentUser.business_ids[0]) || 'biz_01'}
+            businessId={undefined}
             onLogout={handleLogout}
             onShowToast={showToast}
           />
@@ -263,7 +270,7 @@ export default function App() {
               </p>
               <div className="pt-2 flex flex-col gap-2.5">
                 <button
-                  onClick={() => setShowAuthModal(true)}
+                  onClick={() => { setAuthDefaultRole('shop_owner'); setShowAuthModal(true); }}
                   className="w-full py-2.5 rounded-lg bg-gradient-to-r from-[#DFBA5A] to-[#B38D2C] text-[#0A0A0E] text-xs font-bold uppercase tracking-wider"
                 >
                   Sign In to Shop Console
@@ -382,6 +389,7 @@ export default function App() {
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         onSuccess={handleGeneralAuthSuccess}
+        defaultRole={authDefaultRole}
       />
 
       {/* 11-Stage Order Tracking Modal */}
