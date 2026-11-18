@@ -59,8 +59,9 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   const [businessName, setBusinessName] = useState('Royal Feast Cloud Kitchen');
   const [tagline, setTagline] = useState('Authentic Hyderabadi Dum Biryani & Kebabs');
   const [city, setCity] = useState('Hyderabad');
-  const [phone, setPhone] = useState('+91 93813 62201');
-  const [whatsapp, setWhatsapp] = useState('919381362201');
+  const [phone, setPhone] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [email, setEmail] = useState('');
   const [themeColor, setThemeColor] = useState('#DFBA5A');
   const [fontFamily, setFontFamily] = useState('Cinzel');
 
@@ -125,6 +126,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
         city,
         phone,
         whatsapp,
+        email: email.trim(),
         category: selectedTemplate.category,
         template: {
           name: selectedTemplate.name,
@@ -164,7 +166,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
         tagline,
         phone,
         whatsapp,
-        email: 'owner@' + slug + '.com',
+        email: email.trim(),
         address: 'Shop No 14, Main Road, ' + city,
         city,
         theme_color: themeColor,
@@ -464,6 +466,16 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
               </div>
             </div>
 
+                        <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-[#B0B0C0] block mb-1">Business Phone</label>
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Your business phone" className="w-full px-3 py-2 rounded bg-[#14141E] border border-[#242434] text-white text-xs" />
+              </div>
+              <div>
+                <label className="text-[11px] text-[#B0B0C0] block mb-1">Business Email</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="yourbusiness@example.com" className="w-full px-3 py-2 rounded bg-[#14141E] border border-[#242434] text-white text-xs" />
+              </div>
+            </div>
             {/* Language Switcher */}
             <div>
               <label className="text-[11px] text-[#B0B0C0] block mb-1">
