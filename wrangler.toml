@@ -1,6 +1,10 @@
 name = "vijay-visuals-site"
 pages_build_output_dir = "dist"
+compatibility_date = "2025-01-01"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "vijay-visuals-marketplace"
 database_id = "5e6c67d1-ccc0-4e98-a787-c6643e9f0f6c"
+migrations_dir = "cloudflare/d1/migrations"
+
