@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@google/genai": "^3.6.1",
+    "@supabase/supabase-js": "^2.0.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/pg": "^8.23.1",
     "@vis.gl/react-google-maps": "^1.10.2",
