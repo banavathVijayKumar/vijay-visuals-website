@@ -1,3 +1,4 @@
+
 {
   "name": "react-example",
   "private": true,
@@ -12,6 +13,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.0.0",
     "@google/genai": "^3.6.1",
     "@supabase/supabase-js": "^2.0.0",
     "@tailwindcss/vite": "^4.3.3",
