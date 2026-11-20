@@ -1,0 +1,6 @@
+{
+  "name": "Vijay Visuals — All-in-One Business Platform",
+  "description": "Multi-tenant website builder, e-commerce storefront engine, delivery management, AI Automation Center, and optional branded PWA platform by Vijay Visuals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

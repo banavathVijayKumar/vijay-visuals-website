@@ -1,0 +1,90 @@
+﻿You are the senior full-stack engineer responsible for the EXISTING VIJAY VISUALS multi-tenant website builder.
+
+PROJECT: D:\VIJAY_VISUALS_PROJECTS\vvv
+PRODUCTION: https://vijay-visuals-site.pages.dev/
+CLOUDFLARE PROJECT: vijay-visuals-site
+
+MISSION:
+Complete the customer purchase system end-to-end:
+Customer Login → Choose Template → Customize → Select Package → Buy Now → Razorpay Checkout → Server Verification → Subscription Activation → Publish Website → Manage Website.
+
+MANDATORY SAFETY:
+- Inspect existing code before changes.
+- Preserve all working features, data, authentication, settings and design.
+- Do not recreate the project.
+- Do not create another Cloudflare Pages project.
+- Preserve Supabase authentication.
+- Use existing Cloudflare D1 architecture.
+- Never expose secrets.
+- Never fake payment success.
+- Never activate paid features without verified payment/authorized entitlement.
+- Do not introduce paid AI API charges.
+- Do not deploy or modify production settings.
+- Do not delete data or perform destructive migrations.
+- Do not invent prices, plan codes, or business rules.
+- Inspect API callers before changing API contracts.
+
+FIRST INSPECT:
+src/App.tsx
+src/components/StudioLanding.tsx
+src/components/WebsiteBuilder.tsx
+src/components/OwnerOperationsSuite.tsx
+src/components/DashboardsHub.tsx
+src/lib/saasServices.ts
+functions/api/tenants.ts
+functions/api/tenants/[slug].ts
+functions/api/payments/platform/create-order.ts
+functions/api/payments/platform/verify.ts
+functions/api/payments/_razorpay.ts
+functions/api/platform/subscriptions.ts
+All relevant D1 migrations and schema definitions.
+
+IMPLEMENT:
+
+1. Connect the public pricing/package selection to real purchase checkout.
+2. Connect Website Only, Website + PWA and Enterprise AI to existing active D1 plans. Never invent prices.
+3. Let customers create and customize unpublished drafts before payment.
+4. Add functional Buy Now and Order Summary actions.
+5. Reuse and securely integrate existing Razorpay create-order and verify APIs.
+6. Calculate amount, GST, discounts and setup fees on the server.
+7. Verify payment signature, order ownership, amount and currency server-side.
+8. Make payment verification idempotent and prevent replay.
+9. Create/update tenant subscription only after successful server verification.
+10. Link subscription to the correct website_id and owner_id.
+11. Fix the case where a verified payment without website_id does not activate a tenant subscription, if applicable.
+12. Secure POST /api/tenants and PATCH /api/tenants/:slug. Never trust frontend planTier or published flags.
+13. Enforce server-side subscription entitlements for PWA, Enterprise AI and publishing.
+14. Preserve valid free-plan access where configured.
+15. Add customer dashboard purchase history, subscription status, renewal and upgrade information.
+16. Preserve strict separation between platform payments to Vijay Visuals and shop-owner customer payments to each shop owner.
+17. Keep existing Supabase authentication and existing Razorpay Route safeguards.
+18. Never enable live payments unless the existing Razorpay account approval/configuration is verified.
+
+TEST:
+- Run npm test if configured.
+- Run npm run build.
+- Run TypeScript checks if configured.
+- Test authentication and ownership.
+- Test draft creation.
+- Test unpaid publish rejection.
+- Test invalid signature rejection.
+- Test duplicate verification.
+- Test successful Razorpay TEST payment only if test credentials are configured.
+- Test subscription activation and expiry.
+- Test cross-customer access denial.
+- Test shop-owner payment separation.
+
+WORK METHOD:
+- Start by auditing and documenting current architecture.
+- Then implement in small safe stages.
+- Make focused changes, not a rewrite.
+- After each stage inspect diffs and run relevant checks.
+- Fix errors caused by your changes.
+- Never claim tests passed unless they actually ran.
+- If credentials, plan mappings, schema, or business rules are missing, stop that part and clearly report the blocker. Do not invent values.
+- Do not deploy.
+
+FINAL REPORT:
+List changed files, migrations, APIs, features completed, tests actually run, test results, remaining blockers and exact local testing instructions.
+
+Begin now. Do not stop after merely describing the plan; implement all safe, verified parts.

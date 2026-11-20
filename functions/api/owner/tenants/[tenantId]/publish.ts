@@ -1,0 +1,60 @@
+// ============================================================================
+// PATCH /api/owner/tenants/:tenantId/publish — Toggle Published / Draft Status
+// ============================================================================
+
+import { requireUser } from '../../../_auth';
+import {
+  PagesContext,
+  handleOptions,
+  jsonResponse,
+  parseJsonBody,
+  writeAuditLog,
+} from '../../../_shared';
+import { requireTenantOwnerAccess } from '../../../_tenantAccess';
+import { mapPublicationToTenant } from '../../../_tenantMapper';
+
+export async function onRequestOptions(): Promise<Response> {
+  return handleOptions();
+}
+
+export async function onRequestPatch(
+  context: PagesContext<{ tenantId: string }>
+): Promise<Response> {
+  const { request, env, params } = context;
+  const auth = await requireUser(request, env);
+  if (!auth.ok) return auth.response;
+
+  const access = await requireTenantOwnerAccess(env, auth.user, params.tenantId);
+  if (!access.ok) return access.response;
+
+  const body = await parseJsonBody<{ published?: boolean }>(request);
+  if (!body || typeof body.published !== 'boolean') {
+    return jsonResponse({ error: 'Boolean "published" field is required.' }, 400);
+  }
+
+  const nextStatus = body.published ? 'published' : 'unpublished';
+  const nowIso = new Date().toISOString();
+
+  await env.DB!.prepare(
+    `UPDATE customer_website_publications
+     SET status = ?, published_at = CASE WHEN ? = 'published' THEN ? ELSE published_at END, updated_at = ?
+     WHERE website_id = ?`
+  )
+    .bind(nextStatus, nextStatus, nowIso, nowIso, access.row.website_id)
+    .run();
+
+  await writeAuditLog(env, {
+    actorId: auth.user.id,
+    actorRole: access.effectiveRole,
+    action: body.published ? 'website_published' : 'website_unpublished',
+    targetType: 'website',
+    targetId: access.row.website_id,
+    details: { slug: access.row.public_slug, status: nextStatus },
+  });
+
+  return jsonResponse({
+    published: body.published,
+    status: nextStatus,
+    slug: access.row.public_slug,
+  });
+}

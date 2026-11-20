@@ -1,0 +1,239 @@
+﻿# VIJAY VISUALS — CUSTOMER PURCHASE & PAYMENT SYSTEM
+
+PROJECT: D:\VIJAY_VISUALS_PROJECTS\vvv
+PRODUCTION: https://vijay-visuals-site.pages.dev/
+CLOUDFLARE PROJECT: vijay-visuals-site
+
+TASK:
+Implement a complete customer purchase, Razorpay checkout, subscription activation and website publishing system in the EXISTING project.
+
+IMPORTANT RULES:
+1. Inspect the entire existing project before modifying anything.
+2. Preserve all existing working features, database records, authentication and settings.
+3. Never recreate the project.
+4. Never create another Cloudflare Pages project.
+5. Preserve existing Supabase authentication.
+6. Use Cloudflare D1 for profiles, roles, subscriptions, payments and usage tracking.
+7. Never expose Razorpay secrets or private keys in frontend code.
+8. Never simulate successful payments.
+9. Never activate paid plans without server-side payment verification.
+10. Do not enable paid AI APIs or introduce unexpected charges.
+11. Do not deploy automatically.
+12. First implement and test locally.
+13. Use safe database migrations and preserve existing data.
+14. Inspect API callers before modifying existing APIs.
+15. Do not request secret keys in chat.
+
+EXISTING FILES TO INSPECT:
+- src/App.tsx
+- src/components/StudioLanding.tsx
+- src/components/WebsiteBuilder.tsx
+- src/components/OwnerOperationsSuite.tsx
+- src/components/DashboardsHub.tsx
+- src/lib/saasServices.ts
+- functions/api/tenants.ts
+- functions/api/tenants/[slug].ts
+- functions/api/payments/platform/create-order.ts
+- functions/api/payments/platform/verify.ts
+- functions/api/payments/_razorpay.ts
+- functions/api/platform/subscriptions.ts
+
+PHASE 1 — PROJECT AUDIT
+Inspect all relevant frontend, backend, database schemas, migrations, payment APIs and subscription logic.
+Identify existing plan codes, prices, GST rules, setup fees and billing cycles.
+Do not invent prices or duplicate existing systems.
+Produce an implementation plan before making changes.
+
+PHASE 2 — CUSTOMER PURCHASE FLOW
+Implement this complete journey:
+
+Customer Registration/Login
+→ Select Business Template
+→ Customize Website
+→ Select Package
+→ Review Price and GST
+→ Buy Now
+→ Razorpay Checkout
+→ Server-side Payment Verification
+→ Subscription Activation
+→ Publish Website
+→ Customer Dashboard
+
+Add functional buttons:
+- Choose Plan
+- Buy Now
+- Continue to Checkout
+- Order Summary
+- My Purchases
+- My Subscription
+- Upgrade Plan
+- Renew Plan
+- Payment History
+- Publish Website
+
+Do not add decorative or nonfunctional buttons.
+
+PHASE 3 — PACKAGE MAPPING
+Connect existing WebsiteBuilder options:
+- Website Only
+- Website + PWA
+- Enterprise AI
+
+Map them to actual active plans in the existing D1 subscription_plans table.
+Use existing plan codes and prices.
+Support monthly/yearly billing only when configured.
+Preserve existing setup fee, GST and add-on rules.
+Backend must calculate the final amount.
+Never trust frontend-supplied price, GST, discount or entitlement.
+
+If any plan mapping or pricing is missing, report it instead of inventing values.
+
+PHASE 4 — WEBSITE DRAFT SYSTEM
+Customers should be able to create and customize websites before payment.
+Unpaid websites must remain unpublished.
+Preserve draft data when checkout fails or is cancelled.
+Validate ownership for every website operation.
+Do not allow customers to edit other customers' websites.
+Use existing customer_website_publications structures where appropriate.
+Avoid duplicate tables.
+
+PHASE 5 — RAZORPAY CHECKOUT
+Inspect and reuse existing endpoints:
+POST /api/payments/platform/create-order
+POST /api/payments/platform/verify
+
+Requirements:
+- Require authenticated customers.
+- Validate website ownership.
+- Validate the selected active plan.
+- Calculate amount on the server.
+- Create Razorpay orders on the server.
+- Open official Razorpay Checkout on the frontend.
+- Verify Razorpay payment signature on the server.
+- Verify amount, currency and order ownership.
+- Reject invalid signatures and reused orders.
+- Prevent replay attacks.
+- Handle failed, cancelled and abandoned payments.
+- Never activate a plan from a frontend success callback alone.
+- Ensure repeated verification is idempotent.
+
+Never expose RAZORPAY_KEY_SECRET in frontend code.
+
+PHASE 6 — SUBSCRIPTION ACTIVATION
+After successful server-side verification:
+- Create or update the correct tenant subscription.
+- Link the correct website_id and owner_id.
+- Record plan_code, billing cycle, amount and currency.
+- Record Razorpay order and payment IDs.
+- Record activation and expiry dates where applicable.
+- Preserve payment history.
+- Prevent duplicate active subscriptions.
+- Support existing upgrade/downgrade rules.
+- Never activate another customer's website.
+
+IMPORTANT:
+Inspect the existing relationship between tenantId and website_id.
+Do not assume they are interchangeable.
+Fix the existing case where a verified payment without website_id may not create a tenant subscription.
+
+PHASE 7 — PAYMENT SECURITY AND PUBLISHING
+Secure:
+- functions/api/tenants.ts
+- functions/api/tenants/[slug].ts
+
+The current audit identified that planTier and publishing status may be accepted without verified payment entitlement.
+
+Fix this securely:
+- Frontend planTier is not proof of payment.
+- Backend must determine actual subscription entitlement.
+- Prevent customers from unlocking Enterprise AI or PWA by modifying requests.
+- Prevent unpaid customers from publishing paid-only websites.
+- Validate owner access on every operation.
+- Use server-side subscription status and expiry checks.
+- Preserve legitimate free-plan functionality if configured.
+- Prevent unauthorized plan upgrades.
+- Log important security events.
+
+PHASE 8 — CUSTOMER DASHBOARD
+Provide customers with:
+- Their websites
+- Draft/published status
+- Purchased package
+- Active subscription status
+- Payment history
+- Renewal date
+- Upgrade options
+- Publish controls based on entitlement
+
+Keep the existing dashboard design and functionality.
+
+PHASE 9 — MONEY FLOW SEPARATION
+There are two separate payment flows:
+
+A. Platform subscription payments:
+Customer pays Vijay Visuals for website packages and platform services.
+
+B. Shop-owner customer payments:
+Shop owner's customers pay the shop owner directly.
+
+Never mix these flows.
+Never route shop-owner sales into Vijay Visuals' personal account.
+Preserve existing Razorpay Route and linked-account safeguards.
+Do not claim seller payouts work unless verified.
+
+PHASE 10 — RAZORPAY CONFIGURATION
+Use existing environment variables:
+- RAZORPAY_KEY_ID
+- RAZORPAY_KEY_SECRET
+- RAZORPAY_WEBHOOK_SECRET
+- RAZORPAY_LIVE_APPROVED
+- RAZORPAY_ROUTE_ENABLED
+
+Do not print or expose their values.
+Do not enable Live payments unless the account is approved and configuration is verified.
+Use Test Mode for safe testing.
+Never simulate payments.
+
+PHASE 11 — TESTING
+Run relevant checks:
+- TypeScript
+- Build
+- Existing project tests
+- API validation
+- Authentication
+- Website ownership
+- Draft creation
+- Unpaid publishing rejection
+- Invalid payment signature rejection
+- Valid test payment verification
+- Duplicate verification
+- Subscription activation
+- Expired subscription
+- Upgrade and renewal
+- Cross-customer access prevention
+- Shop-owner payment separation
+
+Fix errors introduced by your changes.
+Do not hide errors or disable existing tests to make the build pass.
+
+PHASE 12 — FINAL REPORT
+Provide:
+1. Files inspected.
+2. Files modified.
+3. Database migrations created.
+4. APIs added or modified.
+5. Customer purchase flow status.
+6. Razorpay integration status.
+7. Subscription activation status.
+8. Security fixes.
+9. Tests actually executed and their results.
+10. Remaining issues.
+11. Exact local testing instructions.
+
+Do not claim a feature is complete unless it has been implemented and tested.
+
+IMPLEMENTATION STRATEGY:
+Work in small, safe stages.
+Preserve all existing working functionality.
+Do not deploy or modify production settings without explicit approval.
+Start with the audit, then implement the complete customer purchase system.

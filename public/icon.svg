@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#08080A"/>
+  <rect x="28" y="28" width="456" height="456" rx="74" fill="none" stroke="#D4AF37" stroke-width="10" stroke-opacity="0.65"/>
+  <defs>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F8E7B6"/>
+      <stop offset="50%" stop-color="#D8AF44"/>
+      <stop offset="100%" stop-color="#9F7922"/>
+    </linearGradient>
+  </defs>
+  <text x="256" y="306" text-anchor="middle" font-family="Georgia, serif" font-weight="700" font-size="192" letter-spacing="-8" fill="url(#gold)">VV</text>
+</svg>

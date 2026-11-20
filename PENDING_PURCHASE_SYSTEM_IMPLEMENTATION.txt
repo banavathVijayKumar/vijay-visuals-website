@@ -1,0 +1,192 @@
+﻿You are the lead full-stack engineer. IMPLEMENT the remaining VIJAY VISUALS customer purchase and payment system in the existing project. Do not stop at an audit or plan.
+
+PROJECT: D:\VIJAY_VISUALS_PROJECTS\vvv
+LIVE SITE: https://vijay-visuals-site.pages.dev/
+ONLY CLOUDFLARE PROJECT: vijay-visuals-site
+
+OBJECTIVE:
+Make it possible for a customer to register, choose a business template, customize a website, select a package, purchase it through Razorpay, receive verified subscription activation, publish the website and manage it from their dashboard.
+
+STRICT PROTECTION:
+- Preserve existing Supabase authentication.
+- Preserve existing Cloudflare D1 architecture and records.
+- Preserve existing working features and UI.
+- Do not recreate the project.
+- Do not create another Cloudflare Pages project.
+- Do not delete customer or website data.
+- Do not introduce paid AI API charges.
+- Never expose secret keys.
+- Never simulate payment success.
+- Never activate paid features without server-side verification.
+- Never invent package prices or plan codes.
+- Do not deploy or change production settings.
+- Inspect all API callers and database migrations before modifying anything.
+- Use safe, backward-compatible migrations.
+- Existing backup is available at:
+  ..\vvv-backup-20261120-200749
+
+IMPLEMENT ALL THE FOLLOWING:
+
+1. CUSTOMER BUY NOW
+Connect the public StudioLanding pricing section to a real customer purchase flow.
+Make package selection and Buy Now functional.
+Require login before checkout.
+Show order summary with actual server-calculated price, setup fee, GST and total.
+Use existing plan records and pricing rules.
+
+2. PACKAGE CONNECTION
+Connect:
+- Website Only
+- Website + PWA
+- Enterprise AI
+
+Map to actual active D1 subscription plans.
+Preserve existing plan codes and prices.
+If any plan mapping is missing, report it. Never invent pricing.
+
+3. DRAFT WEBSITE
+Allow customers to create and customize a website before payment.
+Save it as unpublished draft.
+Preserve draft if payment fails or is cancelled.
+Validate owner access on every request.
+Do not allow unpaid customers to publish paid websites.
+
+4. RAZORPAY CHECKOUT
+Inspect and reuse:
+POST /api/payments/platform/create-order
+POST /api/payments/platform/verify
+
+Implement:
+- Authenticated order creation.
+- Correct website ownership validation.
+- Server-side plan and amount validation.
+- Razorpay order creation.
+- Official Razorpay Checkout.
+- Server-side signature verification.
+- Order ID, payment ID, amount and currency verification.
+- Duplicate verification protection.
+- Replay attack prevention.
+- Failure and cancellation handling.
+- Idempotent payment processing.
+
+Never expose RAZORPAY_KEY_SECRET in frontend code.
+Never trust frontend success callbacks.
+
+5. AUTOMATIC SUBSCRIPTION ACTIVATION
+Only after successful server-side verification:
+- Create or update tenant subscription.
+- Link correct website_id and owner_id.
+- Save plan_code and billing cycle.
+- Save payment reference and amount.
+- Save activation and expiry dates where applicable.
+- Prevent duplicate active subscriptions.
+- Preserve payment history.
+- Implement existing upgrade and renewal rules.
+- Verify tenantId and website_id relationships; never assume they are identical.
+
+6. BACKEND PAYMENT SECURITY
+Secure:
+functions/api/tenants.ts
+functions/api/tenants/[slug].ts
+
+Do not trust frontend:
+- planTier
+- published
+- pwaEnabled
+- payment status
+- subscription status
+
+Check actual active subscription entitlements on the backend.
+Prevent unauthorized Enterprise AI and PWA access.
+Prevent unpaid publishing.
+Preserve legitimate free-plan access if configured.
+Prevent cross-customer website access.
+
+7. CUSTOMER DASHBOARD
+Add working customer-facing:
+- My Websites
+- My Purchases
+- My Subscription
+- Payment History
+- Purchased Package
+- Website Draft/Published Status
+- Renewal Information
+- Upgrade Plan
+- Renew Plan
+- Publish Website
+
+Load actual data from backend, not mock data.
+
+8. PAYMENT SEPARATION
+Platform subscription payments must go to Vijay Visuals through its configured platform Razorpay account.
+Shop-owner customer payments must remain separate and go to the respective shop owner through existing verified Route/linked-account safeguards.
+Never mix these payment flows.
+
+9. RAZORPAY ENVIRONMENT
+Use existing server-side configuration:
+RAZORPAY_KEY_ID
+RAZORPAY_KEY_SECRET
+RAZORPAY_WEBHOOK_SECRET
+RAZORPAY_LIVE_APPROVED
+RAZORPAY_ROUTE_ENABLED
+
+Do not reveal secret values.
+Do not enable live payments unless approval and configuration are verified.
+Use test mode only when valid test credentials exist.
+If credentials or approval are missing, finish all safe code work and report the blocker.
+
+10. TESTING AND ERROR FIXING
+Inspect package.json scripts.
+Run the available:
+- TypeScript checks
+- npm test
+- npm run build
+
+Test:
+- Customer login.
+- Website draft creation.
+- Package selection.
+- Server-side amount calculation.
+- Razorpay order creation.
+- Invalid signature rejection.
+- Failed/cancelled payment.
+- Successful test payment only if test credentials are configured.
+- Subscription activation.
+- Duplicate verification.
+- Unpaid publishing rejection.
+- Expired subscription.
+- Upgrade and renewal.
+- Cross-customer access rejection.
+- Shop-owner payment separation.
+
+Fix errors introduced by your changes.
+Do not disable tests to hide errors.
+Do not claim a test passed unless it actually ran.
+
+11. IMPLEMENTATION PROCESS
+- Start with a focused audit of relevant code and D1 schema.
+- Identify exact missing pieces.
+- Implement all safe parts now.
+- Modify existing files carefully.
+- Create only necessary migrations.
+- Inspect git diff after modifications.
+- Run build and tests.
+- Fix implementation errors.
+- Do not stop after giving recommendations.
+- If a required business rule, price mapping or credential is missing, do not guess; complete other safe tasks and report the exact blocker.
+
+12. FINAL REPORT
+List:
+- Files changed.
+- Migrations created.
+- APIs modified.
+- Features implemented.
+- Payment and activation flow status.
+- Security fixes.
+- Tests actually executed and results.
+- Remaining blockers.
+- Local testing instructions.
+
+Do not deploy.
+Do not modify production configuration.
+Begin implementation now and complete every safe, verifiable pending task.

@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-cinzel: 'Cinzel', Georgia, serif;
+    --font-jakarta: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+
+  body {
+    font-family: var(--font-jakarta);
+    background-color: #08080A;
+    color: #E8E8ED;
+  }
+}
+
+.font-luxury {
+  font-family: var(--font-cinzel);
+}
+
+.font-sans-clean {
+  font-family: var(--font-jakarta);
+}
+
+.font-mono-tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.text-gold-gradient {
+  background: linear-gradient(135deg, #F8E7B6 0%, #D8AF44 50%, #9F7922 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.bg-gold-gradient {
+  background: linear-gradient(135deg, #ECC86A 0%, #CFA53E 50%, #977421 100%);
+}
+
+.bg-obsidian-card {
+  background: rgba(16, 16, 22, 0.85);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #08080A;
+}
+::-webkit-scrollbar-thumb {
+  background: #272733;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #404052;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .printable-invoice,
+  .printable-invoice * {
+    visibility: visible;
+  }
+  .printable-invoice {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: #ffffff !important;
+    color: #111111 !important;
+    padding: 24px;
+  }
+}

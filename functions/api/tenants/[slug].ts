@@ -1,0 +1,540 @@
+// ============================================================================
+// GET & PATCH /api/tenants/:slug
+// GET   — Public Published Storefront Endpoint (Cloudflare D1)
+//         Returns { tenant, products, coupons, reviews } expected by StorefrontView.
+// PATCH — Authenticated Owner Updates Business Website (strictly tenant-scoped)
+// ============================================================================
+
+import { requireUser } from '../_auth';
+import {
+  PagesContext,
+  handleOptions,
+  jsonResponse,
+  parseJsonBody,
+  sanitizeText,
+  writeAuditLog,
+} from '../_shared';
+import {
+  mapProductRowToUi,
+  requireTenantOwnerAccess,
+  validateEnabledModules,
+  validateGalleryImages,
+  validateGalleryItems,
+  validateSafeHttpUrl,
+  validateSafeImageSource,
+  validateSlugFormat,
+} from '../_tenantAccess';
+import {
+  BusinessProfileEnrichment,
+  PublicationRow,
+  SellerPayoutEnrichment,
+  TenantGlobalEnrichment,
+  cleanString,
+  mapPublicationToTenant,
+} from '../_tenantMapper';
+import { getEdgeRazorpayStatus } from '../payments/_razorpay';
+
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SAFE_COLOR = /^#[0-9a-fA-F]{3,8}$/;
+
+interface StoreProductRow {
+  id: number;
+  category: string;
+  name: string;
+  description: string;
+  price_inr: number;
+  compare_at_price_inr?: number | null;
+  stock_qty: number;
+  low_stock_threshold: number;
+  variants_json?: string | null;
+  images_json?: string | null;
+  is_active: number;
+}
+
+interface StoreCouponRow {
+  id: number;
+  code: string;
+  discount_type: 'percent' | 'flat';
+  discount_value: number;
+  min_order_inr: number;
+  expires_at?: string | null;
+  is_active: number;
+}
+
+interface ProductReviewRow {
+  id: number;
+  product_id?: number | null;
+  reviewer_name: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+}
+
+export async function onRequestOptions(): Promise<Response> {
+  return handleOptions();
+}
+
+export async function onRequestGet(
+  context: PagesContext<{ slug: string }>
+): Promise<Response> {
+  const { params, env } = context;
+  const slug = String(params?.slug || '').toLowerCase().trim();
+
+  if (!SLUG_PATTERN.test(slug)) {
+    return jsonResponse({ error: 'Storefront not found.' }, 404);
+  }
+
+  if (!env.DB) {
+    return jsonResponse(
+      { error: 'Website publishing storage is not configured yet.' },
+      503
+    );
+  }
+
+  let row: PublicationRow | null = null;
+  try {
+    row = await env.DB.prepare(
+      `SELECT rowid, website_id, owner_id, public_slug, business_name, website_json, status, published_at, created_at, updated_at
+       FROM customer_website_publications
+       WHERE public_slug = ? AND status = 'published'
+       LIMIT 1`
+    )
+      .bind(slug)
+      .first<PublicationRow>();
+  } catch (err) {
+    try {
+      row = await env.DB.prepare(
+        `SELECT website_id, owner_id, public_slug, business_name, website_json, status, published_at, created_at, updated_at
+         FROM customer_website_publications
+         WHERE public_slug = ? AND status = 'published'
+         LIMIT 1`
+      )
+        .bind(slug)
+        .first<PublicationRow>();
+    } catch (innerErr) {
+      console.error('Public tenant lookup failed:', err, innerErr);
+      return jsonResponse(
+        { error: 'Website publishing storage is not configured yet.' },
+        503
+      );
+    }
+  }
+
+  if (!row) {
+    return jsonResponse(
+      { error: 'This storefront is not published or does not exist.' },
+      404
+    );
+  }
+
+  let parsedWebsite: Record<string, any> = {};
+  try {
+    const raw = row.website_json ? JSON.parse(row.website_json) : {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return jsonResponse({ error: 'Published website data is invalid.' }, 500);
+    }
+    parsedWebsite = raw as Record<string, any>;
+  } catch {
+    return jsonResponse({ error: 'Published website data is invalid.' }, 500);
+  }
+
+  let profile: BusinessProfileEnrichment | null = null;
+  let payout: SellerPayoutEnrichment | null = null;
+  let globalSettings: TenantGlobalEnrichment | null = null;
+
+  try {
+    profile = await env.DB.prepare(
+      `SELECT category, description, phone, whatsapp_number, address_line, city, state, pincode, seo_title, seo_description
+       FROM business_profiles
+       WHERE website_id = ?
+       LIMIT 1`
+    )
+      .bind(row.website_id)
+      .first<BusinessProfileEnrichment>();
+  } catch {
+    // Optional table
+  }
+
+  try {
+    payout = await env.DB.prepare(
+      `SELECT upi_id, settlement_mode, kyc_status, linked_account_id
+       FROM seller_payout_accounts
+       WHERE website_id = ?
+       LIMIT 1`
+    )
+      .bind(row.website_id)
+      .first<SellerPayoutEnrichment>();
+  } catch {
+    // Optional table
+  }
+
+  try {
+    globalSettings = await env.DB.prepare(
+      `SELECT primary_currency, timezone
+       FROM tenant_global_settings
+       WHERE website_id = ?
+       LIMIT 1`
+    )
+      .bind(row.website_id)
+      .first<TenantGlobalEnrichment>();
+  } catch {
+    // Optional table
+  }
+
+  const rzpStatus = getEdgeRazorpayStatus(env);
+  const razorpayOnlineReady = Boolean(
+    rzpStatus.configured &&
+      rzpStatus.routeEnabled &&
+      payout?.kyc_status === 'verified' &&
+      /^acc_[A-Za-z0-9]+$/.test(String(payout?.linked_account_id || '').trim())
+  );
+
+  const tenant = mapPublicationToTenant(row, parsedWebsite, {
+    profile,
+    payout,
+    globalSettings,
+    razorpayOnlineReady,
+  });
+
+  // Load real reviews first
+  const reviews: Array<{
+    id: number;
+    tenantId: number;
+    productId: number;
+    customerName: string;
+    rating: number;
+    comment: string;
+    createdAt: string;
+  }> = [];
+
+  try {
+    const revRes = await env.DB.prepare(
+      `SELECT id, product_id, reviewer_name, rating, comment, created_at
+       FROM product_reviews
+       WHERE website_id = ? AND moderation_status = 'published'
+       ORDER BY created_at DESC
+       LIMIT 100`
+    )
+      .bind(row.website_id)
+      .all<ProductReviewRow>();
+
+    for (const r of revRes.results || []) {
+      reviews.push({
+        id: Number(r.id),
+        tenantId: tenant.id,
+        productId: Number(r.product_id || 0),
+        customerName: cleanString(r.reviewer_name, 120) || 'Verified Customer',
+        rating: Number(r.rating) || 0,
+        comment: cleanString(r.comment, 1000),
+        createdAt: r.created_at || '',
+      });
+    }
+  } catch {
+    // Optional table
+  }
+
+  const ratingStats = new Map<number, { sum: number; count: number }>();
+  for (const rev of reviews) {
+    if (rev.productId > 0) {
+      const cur = ratingStats.get(rev.productId) || { sum: 0, count: 0 };
+      cur.sum += rev.rating;
+      cur.count += 1;
+      ratingStats.set(rev.productId, cur);
+    }
+  }
+
+  // Load real active products
+  const products: Array<Record<string, unknown>> = [];
+  try {
+    const prodRes = await env.DB.prepare(
+      `SELECT id, category, name, description, price_inr, compare_at_price_inr, stock_qty, low_stock_threshold, variants_json, images_json, is_active
+       FROM store_products
+       WHERE website_id = ? AND is_active = 1
+       ORDER BY id DESC
+       LIMIT 200`
+    )
+      .bind(row.website_id)
+      .all<StoreProductRow>();
+
+    for (const p of prodRes.results || []) {
+      const stats = ratingStats.get(Number(p.id));
+      const avgRating = stats && stats.count > 0 ? (stats.sum / stats.count).toFixed(1) : '0.0';
+      products.push(mapProductRowToUi(p, tenant.id, avgRating, stats?.count || 0));
+    }
+  } catch {
+    // Optional table
+  }
+
+  // Load real active coupons
+  const coupons: Array<{
+    id: number;
+    tenantId: number;
+    code: string;
+    discountType: 'percent' | 'flat';
+    discountValue: number;
+    minOrder: number;
+    active: boolean;
+  }> = [];
+
+  try {
+    const coupRes = await env.DB.prepare(
+      `SELECT id, code, discount_type, discount_value, min_order_inr, expires_at, is_active
+       FROM store_coupons
+       WHERE website_id = ? AND is_active = 1
+       ORDER BY id DESC
+       LIMIT 50`
+    )
+      .bind(row.website_id)
+      .all<StoreCouponRow>();
+
+    const nowMs = Date.now();
+    for (const c of coupRes.results || []) {
+      if (c.expires_at) {
+        const expMs = Date.parse(c.expires_at);
+        if (Number.isFinite(expMs) && expMs < nowMs) continue;
+      }
+      coupons.push({
+        id: Number(c.id),
+        tenantId: tenant.id,
+        code: cleanString(c.code, 40),
+        discountType: c.discount_type === 'flat' ? 'flat' : 'percent',
+        discountValue: Number(c.discount_value) || 0,
+        minOrder: Number(c.min_order_inr) || 0,
+        active: Boolean(c.is_active),
+      });
+    }
+  } catch {
+    // Optional table
+  }
+
+  return jsonResponse(
+    {
+      tenant,
+      products,
+      coupons,
+      reviews,
+    },
+    200,
+    { 'Cache-Control': 'public, max-age=30, s-maxage=60' }
+  );
+}
+
+export async function onRequestPatch(
+  context: PagesContext<{ slug: string }>
+): Promise<Response> {
+  const { request, env, params } = context;
+  const auth = await requireUser(request, env);
+  if (!auth.ok) return auth.response;
+
+  const access = await requireTenantOwnerAccess(env, auth.user, params.slug, [
+    'business_owner',
+    'business_manager',
+  ]);
+  if (!access.ok) return access.response;
+
+  const body = await parseJsonBody<Record<string, any>>(request);
+  if (!body) {
+    return jsonResponse({ error: 'Invalid JSON request payload.' }, 400);
+  }
+
+  const current = { ...access.parsedWebsite };
+  const nextName =
+    typeof body.name === 'string' && body.name.trim()
+      ? sanitizeText(body.name, 140)
+      : typeof body.businessName === 'string' && body.businessName.trim()
+        ? sanitizeText(body.businessName, 140)
+        : access.row.business_name;
+
+  let nextSlug = access.row.public_slug;
+  if (typeof body.slug === 'string' && body.slug.trim()) {
+    const slugCheck = validateSlugFormat(body.slug);
+    if (!slugCheck.valid) {
+      return jsonResponse({ error: slugCheck.reason || 'Invalid store slug.' }, 400);
+    }
+    if (slugCheck.normalized !== access.row.public_slug) {
+      const conflict = await env.DB!.prepare(
+        'SELECT website_id FROM customer_website_publications WHERE public_slug = ? AND website_id != ? LIMIT 1'
+      )
+        .bind(slugCheck.normalized, access.row.website_id)
+        .first<{ website_id: string }>();
+      if (conflict) {
+        return jsonResponse({ error: `Slug "${slugCheck.normalized}" is already taken.` }, 409);
+      }
+      nextSlug = slugCheck.normalized;
+    }
+  }
+
+  current.businessName = nextName;
+  current.name = nextName;
+
+  if (typeof body.category === 'string') current.category = sanitizeText(body.category, 80) || 'other';
+  if (typeof body.templateId === 'string') {
+    const tid = sanitizeText(body.templateId, 100);
+    current.templateId = tid;
+    current.template = {
+      ...(current.template && typeof current.template === 'object' ? current.template : {}),
+      id: tid,
+      ...(typeof body.templateName === 'string' ? { name: sanitizeText(body.templateName, 140) } : {}),
+      ...(Array.isArray(body.templateFeatures)
+        ? {
+            features: body.templateFeatures
+              .map((f: unknown) => sanitizeText(f, 120))
+              .filter(Boolean)
+              .slice(0, 10),
+          }
+        : {}),
+    };
+  }
+  if (typeof body.tagline === 'string') current.tagline = sanitizeText(body.tagline, 240);
+  if (typeof body.description === 'string') current.description = sanitizeText(body.description, 1200);
+  if (typeof body.logoText === 'string') current.logoText = sanitizeText(body.logoText, 8).toUpperCase();
+  if (body.logoImage !== undefined) current.logoImage = validateSafeImageSource(body.logoImage);
+  if (body.bannerImage !== undefined) current.bannerImage = validateSafeImageSource(body.bannerImage);
+
+  if (Array.isArray(body.galleryItems)) {
+    const validatedItems = validateGalleryItems(body.galleryItems);
+    current.galleryItems = validatedItems;
+    current.galleryImages = validatedItems.map((g) => g.url);
+  } else if (Array.isArray(body.galleryImages)) {
+    const imgs = validateGalleryImages(body.galleryImages);
+    current.galleryImages = imgs;
+    current.galleryItems = imgs.map((url, idx) => ({
+      id: `gal_${idx + 1}`,
+      url,
+      title: '',
+      description: '',
+      category: 'Showcase',
+      order: idx,
+    }));
+  }
+
+  if (typeof body.primaryColor === 'string' && SAFE_COLOR.test(body.primaryColor)) {
+    current.primaryColor = body.primaryColor;
+    current.themeColor = body.primaryColor;
+  }
+  if (typeof body.accentColor === 'string' && SAFE_COLOR.test(body.accentColor)) {
+    current.accentColor = body.accentColor;
+  }
+  if (typeof body.fontFamily === 'string') current.fontFamily = sanitizeText(body.fontFamily, 60) || 'Cinzel';
+  if (typeof body.customDomain === 'string') current.customDomain = sanitizeText(body.customDomain, 200).toLowerCase();
+  if (typeof body.seoTitle === 'string') current.seoTitle = sanitizeText(body.seoTitle, 160);
+  if (typeof body.seoDescription === 'string') current.seoDescription = sanitizeText(body.seoDescription, 320);
+  if (typeof body.currency === 'string') current.currency = sanitizeText(body.currency, 10).toUpperCase() || 'INR';
+  if (typeof body.language === 'string' && ['en', 'te', 'hi'].includes(body.language)) {
+    current.language = body.language;
+  }
+  if (typeof body.timezone === 'string') current.timezone = sanitizeText(body.timezone, 60) || 'Asia/Kolkata';
+  if (typeof body.phone === 'string') current.phone = sanitizeText(body.phone, 40);
+  if (typeof body.whatsapp === 'string') current.whatsapp = sanitizeText(body.whatsapp, 40);
+  if (typeof body.address === 'string') current.address = sanitizeText(body.address, 300);
+  if (typeof body.businessHours === 'string') current.businessHours = sanitizeText(body.businessHours, 200);
+  if (typeof body.deliveryInfo === 'string') current.deliveryInfo = sanitizeText(body.deliveryInfo, 600);
+  if (typeof body.returnPolicy === 'string') current.returnPolicy = sanitizeText(body.returnPolicy, 800);
+
+  if (body.enabledModules !== undefined) {
+    const validMods = validateEnabledModules(body.enabledModules);
+    if (validMods) {
+      current.enabledModules = {
+        ...(current.enabledModules && typeof current.enabledModules === 'object' ? current.enabledModules : {}),
+        ...validMods,
+      };
+    }
+  }
+
+  if (body.socialLinks && typeof body.socialLinks === 'object') {
+    current.socialLinks = {
+      instagram: validateSafeHttpUrl(body.socialLinks.instagram, 300),
+      facebook: validateSafeHttpUrl(body.socialLinks.facebook, 300),
+      youtube: validateSafeHttpUrl(body.socialLinks.youtube, 300),
+      website: validateSafeHttpUrl(body.socialLinks.website, 300),
+    };
+  }
+
+  if (Array.isArray(body.sectionOrder)) {
+    current.sectionOrder = body.sectionOrder
+      .map((s: unknown) => sanitizeText(s, 40))
+      .filter(Boolean)
+      .slice(0, 12);
+  }
+
+  if (Array.isArray(body.customPages)) {
+    current.customPages = body.customPages
+      .filter((p: any) => p && typeof p === 'object' && p.slug && p.title)
+      .map((p: any) => ({
+        slug: sanitizeText(p.slug, 40).toLowerCase().replace(/[^a-z0-9-]/g, ''),
+        title: sanitizeText(p.title, 80),
+        content: sanitizeText(p.content, 2000),
+      }))
+      .filter((p: any) => p.slug && p.title)
+      .slice(0, 10);
+  }
+
+  const validTiers = new Set(['website_only', 'website_pwa', 'enterprise_ai']);
+  if (typeof body.planTier === 'string' && validTiers.has(body.planTier)) {
+    current.planTier = body.planTier;
+  }
+  if (typeof body.pwaEnabled === 'boolean') {
+    current.pwaEnabled = body.pwaEnabled && current.planTier !== 'website_only';
+  }
+  if (typeof body.pwaAppName === 'string') current.pwaAppName = sanitizeText(body.pwaAppName, 100);
+  if (typeof body.pwaShortName === 'string') current.pwaShortName = sanitizeText(body.pwaShortName, 24);
+  if (typeof body.pwaThemeColor === 'string' && SAFE_COLOR.test(body.pwaThemeColor)) {
+    current.pwaThemeColor = body.pwaThemeColor;
+  }
+  if (body.deliveryFee !== undefined) {
+    current.deliveryFee = Math.max(0, Math.min(10000, Math.round(Number(body.deliveryFee || 0))));
+  }
+  if (typeof body.codEnabled === 'boolean') current.codEnabled = body.codEnabled;
+  if (typeof body.upiId === 'string') current.upiId = sanitizeText(body.upiId, 120);
+
+  const nextStatus =
+    typeof body.published === 'boolean'
+      ? body.published
+        ? 'published'
+        : 'unpublished'
+      : access.row.status;
+
+  const nowIso = new Date().toISOString();
+  const nextJson = JSON.stringify(current);
+
+  await env.DB!.prepare(
+    `UPDATE customer_website_publications
+     SET business_name = ?, public_slug = ?, website_json = ?, status = ?,
+         published_at = CASE WHEN ? = 'published' AND (published_at IS NULL OR published_at = '') THEN ? ELSE published_at END,
+         updated_at = ?
+     WHERE website_id = ?`
+  )
+    .bind(
+      nextName,
+      nextSlug,
+      nextJson,
+      nextStatus,
+      nextStatus,
+      nowIso,
+      nowIso,
+      access.row.website_id
+    )
+    .run();
+
+  await writeAuditLog(env, {
+    actorId: auth.user.id,
+    actorRole: access.effectiveRole,
+    action: 'website_updated',
+    targetType: 'website',
+    targetId: access.row.website_id,
+    details: { slug: nextSlug, name: nextName, status: nextStatus },
+  });
+
+  const updatedRow: PublicationRow = {
+    ...access.row,
+    business_name: nextName,
+    public_slug: nextSlug,
+    website_json: nextJson,
+    status: nextStatus,
+    updated_at: nowIso,
+  };
+
+  return jsonResponse({
+    tenant: mapPublicationToTenant(updatedRow, current),
+  });
+}
