@@ -58,6 +58,9 @@ export async function onRequestPost(
     body.compareAtPrice !== undefined && body.compareAtPrice !== '' && Number(body.compareAtPrice) > 0
       ? Math.max(0, Math.round(Number(body.compareAtPrice)))
       : null;
+  if (body.stock !== undefined && (!Number.isFinite(Number(body.stock)) || Number(body.stock) < 0)) {
+    return jsonResponse({ error: 'Initial stock must be a non-negative integer.' }, 400);
+  }
   const stock = Math.max(0, Math.min(1_000_000, Math.round(Number(body.stock ?? 0))));
   const lowStockThreshold = Math.max(
     0,

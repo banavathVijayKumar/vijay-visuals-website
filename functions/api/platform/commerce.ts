@@ -338,11 +338,15 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         lineTotalInr: lineSubtotal + lineGst,
       });
 
-      await env.DB.prepare(
-        `UPDATE store_products SET stock_qty = stock_qty - ?, updated_at = datetime('now') WHERE id = ?`
+      const dec = await env.DB.prepare(
+        `UPDATE store_products SET stock_qty = stock_qty - ?, updated_at = datetime('now') WHERE id = ? AND website_id = ? AND stock_qty >= ?`
       )
-        .bind(qty, product.id)
+        .bind(qty, product.id, websiteId, qty)
         .run();
+
+      if (dec?.meta?.changes === 0) {
+        return errorJson(`Insufficient stock for "${product.name}" (available: ${product.stock_qty}).`, 409);
+      }
 
       await env.DB.prepare(
         `INSERT INTO stock_movements (website_id, product_id, delta_qty, movement_type, reference_note, actor_id, created_at)

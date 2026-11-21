@@ -156,12 +156,28 @@ export async function onRequestPatch(
   }
 
   let nextStock = Number(existing.stock_qty);
-  if (body.stock !== undefined) {
-    const s = Math.round(Number(body.stock));
+  const rawStock = body.stock !== undefined ? body.stock : body.stockQty;
+  if (rawStock !== undefined) {
+    const s = Math.round(Number(rawStock));
     if (!Number.isFinite(s) || s < 0 || s > 1_000_000) {
       return jsonResponse({ error: 'Stock must be a valid non-negative integer.' }, 400);
     }
     nextStock = s;
+  } else if (body.stockDelta !== undefined) {
+    const delta = Math.round(Number(body.stockDelta));
+    if (!Number.isFinite(delta)) {
+      return jsonResponse({ error: 'Stock adjustment delta must be a valid integer.' }, 400);
+    }
+    const resultingStock = nextStock + delta;
+    if (resultingStock < 0) {
+      return jsonResponse(
+        {
+          error: `Stock adjustment rejected: Current inventory (${nextStock}) cannot be reduced by ${Math.abs(delta)} as it would result in negative stock.`,
+        },
+        400
+      );
+    }
+    nextStock = resultingStock;
   }
 
   let nextImagesJson = String(existing.images_json || '[]');

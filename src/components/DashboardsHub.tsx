@@ -451,7 +451,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     } else if (prodStockFilter === 'low_stock') {
       list = list.filter((p) => p.stock > 0 && p.stock <= (p.lowStockThreshold || 5) && p.active !== false);
     } else if (prodStockFilter === 'out_of_stock') {
-      list = list.filter((p) => p.stock === 0 && p.active !== false);
+      list = list.filter((p) => p.stock <= 0 && p.active !== false);
     } else if (prodStockFilter === 'inactive') {
       list = list.filter((p) => p.active === false);
     }
@@ -1916,20 +1916,40 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                                     <div className="inline-flex items-center gap-1.5">
                                       <button
                                         type="button"
+                                        disabled={p.stock <= 0}
                                         onClick={async () => {
+                                          if (p.stock <= 0) return;
                                           await apiFetch(`/api/products/${p.id}`, {
                                             method: 'PATCH',
                                             body: JSON.stringify({ stock: Math.max(0, p.stock - 1) }),
                                           });
                                           await loadOwnerOverview(selectedTenantId!);
                                         }}
-                                        className="px-1.5 py-0.5 rounded border border-[#2A2A38] text-[#B8B8C8] hover:text-white"
-                                        title="Decrease stock by 1"
+                                        className="px-1.5 py-0.5 rounded border border-[#2A2A38] text-[#B8B8C8] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                                        title={p.stock <= 0 ? 'Stock is already 0 or negative; cannot decrease further' : 'Decrease stock by 1'}
                                       >
                                         -1
                                       </button>
-                                      <span className={`font-mono-tabular min-w-[44px] text-center ${p.stock <= (p.lowStockThreshold || 5) ? 'text-amber-400 font-semibold' : 'text-white'}`}>
-                                        {p.stock} {p.stock <= (p.lowStockThreshold || 5) ? '(Low)' : ''}
+                                      <span
+                                        className={`font-mono-tabular min-w-[44px] text-center ${
+                                          p.stock < 0
+                                            ? 'text-rose-400 font-bold bg-rose-950/40 px-1.5 py-0.5 rounded border border-rose-800/60'
+                                            : p.stock === 0
+                                            ? 'text-red-400 font-semibold'
+                                            : p.stock <= (p.lowStockThreshold || 5)
+                                            ? 'text-amber-400 font-semibold'
+                                            : 'text-white'
+                                        }`}
+                                        title={p.stock < 0 ? 'Oversold inventory alert: Current balance is negative.' : undefined}
+                                      >
+                                        {p.stock}{' '}
+                                        {p.stock < 0
+                                          ? '(Oversold)'
+                                          : p.stock === 0
+                                          ? '(Out)'
+                                          : p.stock <= (p.lowStockThreshold || 5)
+                                          ? '(Low)'
+                                          : ''}
                                       </span>
                                       <button
                                         type="button"

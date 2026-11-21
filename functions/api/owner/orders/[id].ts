@@ -140,6 +140,50 @@ export async function onRequestPatch(
     .bind(nextOrderStatus, nextPaymentStatus, nextReturnReason, orderId, existing.website_id)
     .run();
 
+  // INVENTORY SAFETY: Idempotent stock restoration on order cancellation or rejection
+  const RESTORABLE_ORDER_STATUSES = ['placed', 'confirmed', 'preparing', 'packed', 'ready_for_pickup'];
+  const isTransitioningToCancelled =
+    nextOrderStatus === 'cancelled' &&
+    RESTORABLE_ORDER_STATUSES.includes(String(existing.order_status));
+
+  if (isTransitioningToCancelled) {
+    try {
+      const parsedItems = JSON.parse(existing.items_json || '[]');
+      if (Array.isArray(parsedItems)) {
+        for (const item of parsedItems) {
+          const pId = Number(item.productId || item.id);
+          const pQty = Math.max(0, Math.round(Number(item.qty || item.quantity || 0)));
+          if (pId > 0 && pQty > 0) {
+            await env.DB.prepare(
+              `UPDATE store_products
+               SET stock_qty = stock_qty + ?, updated_at = datetime('now')
+               WHERE id = ? AND website_id = ?`
+            )
+              .bind(pQty, pId, existing.website_id)
+              .run();
+
+            try {
+              await env.DB.prepare(
+                `INSERT INTO stock_movements (website_id, product_id, delta_qty, movement_type, reference_note, actor_id, created_at)
+                 VALUES (?, ?, ?, 'cancellation_restored', ?, ?, datetime('now'))`
+              )
+                .bind(
+                  existing.website_id,
+                  pId,
+                  pQty,
+                  `Restored from cancelled order #${existing.order_number || orderId}`,
+                  auth.user.id
+                )
+                .run();
+            } catch {}
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to restore inventory on order cancellation:', err);
+    }
+  }
+
   const updated = await env.DB.prepare('SELECT * FROM store_orders WHERE id = ? LIMIT 1')
     .bind(orderId)
     .first<Record<string, any>>();
