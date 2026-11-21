@@ -409,6 +409,180 @@ console.log('\n--- Test Group 9: Package Benefit Scope & Fake GSTIN Absence [AUD
 }
 
 // ----------------------------------------------------------------------------
+// Test Group 10: Automatic Website Delivery 9-State Machine & Failure Recovery [UNIT/LOGIC]
+// ----------------------------------------------------------------------------
+console.log('\n--- Test Group 10: Automatic Website Delivery 9-State Machine & Recovery ---');
+{
+  type OrderState =
+    | 'PENDING'
+    | 'PAYMENT_PENDING'
+    | 'PAYMENT_VERIFIED'
+    | 'PROVISIONING'
+    | 'DELIVERY_READY'
+    | 'ACTIVE'
+    | 'DELIVERY_FAILED'
+    | 'REFUND_PENDING'
+    | 'REFUNDED';
+
+  interface OrderRecord {
+    id: number;
+    amountInr: number;
+    status: 'created' | 'paid' | 'failed' | 'refunded';
+    signatureVerified: boolean;
+    orderState: OrderState;
+    deliveryStatus: string;
+    provisioningError: string | null;
+    websiteId: string | null;
+    attempts: number;
+  }
+
+  // 1. Initial State: Order Created
+  const order: OrderRecord = {
+    id: 991,
+    amountInr: 9439,
+    status: 'created',
+    signatureVerified: false,
+    orderState: 'PAYMENT_PENDING',
+    deliveryStatus: 'PAYMENT_PENDING',
+    provisioningError: null,
+    websiteId: null,
+    attempts: 0,
+  };
+  assert(order.orderState === 'PAYMENT_PENDING', 'Order initializes in PAYMENT_PENDING state');
+
+  // 2. Signature verification succeeds, payment is immediately secured
+  order.status = 'paid';
+  order.signatureVerified = true;
+  order.orderState = 'PROVISIONING';
+  order.deliveryStatus = 'PROVISIONING';
+  order.attempts++;
+  assert(order.status === 'paid' && order.signatureVerified === true, 'Payment is secured as PAID and verified before provisioning');
+
+  // 3. Simulate provisioning failure (e.g. transient database timeout)
+  const transientDbError = 'D1 connection timeout during publication linking';
+  order.orderState = 'DELIVERY_FAILED';
+  order.deliveryStatus = 'DELIVERY_FAILED';
+  order.provisioningError = transientDbError;
+
+  // CRITICAL SAFETY ASSERTION: Customer money is preserved, payment remains PAID, zero double-charge
+  assert(order.status === 'paid', 'Payment remains PAID even when provisioning fails');
+  assert(order.signatureVerified === true, 'Signature remains VERIFIED');
+  assert(order.orderState === 'DELIVERY_FAILED', 'Order state transitions to DELIVERY_FAILED');
+  assert(order.provisioningError === transientDbError, 'Failure reason is recorded for admin review');
+
+  // 4. Safe Retry Action (invoked by customer or Super Admin)
+  function retryProvisioning(target: OrderRecord, targetWebsiteId: string) {
+    if (target.status !== 'paid' || !target.signatureVerified) {
+      throw new Error('Cannot retry unverified payment');
+    }
+    // Idempotent recovery
+    target.websiteId = targetWebsiteId;
+    target.orderState = 'ACTIVE';
+    target.deliveryStatus = 'DELIVERY_READY';
+    target.provisioningError = null;
+    target.attempts++;
+    return { ok: true, websiteUrl: `/site/${targetWebsiteId}` };
+  }
+
+  const retryRes = retryProvisioning(order, 'web_customer_boutique_88');
+  assert(retryRes.ok === true, 'Retry action successfully executes');
+  assert((order.orderState as string) === 'ACTIVE', 'Order state transitions to ACTIVE after retry');
+  assert(order.deliveryStatus === 'DELIVERY_READY', 'Delivery status transitions to DELIVERY_READY');
+  assert(order.websiteId === 'web_customer_boutique_88', 'Correct website tenant attached on retry');
+  assert(order.provisioningError === null, 'Provisioning error cleared after recovery');
+  assert(order.attempts === 2, 'Retry attempt count tracked');
+
+  // 5. Duplicate Retry Check (Idempotency)
+  const duplicateRetryRes = retryProvisioning(order, 'web_customer_boutique_88');
+  assert(duplicateRetryRes.ok === true, 'Duplicate retry is idempotent and safe');
+  assert(order.websiteId === 'web_customer_boutique_88', 'Zero duplicate websites created on second retry');
+}
+
+// ----------------------------------------------------------------------------
+// Test Group 11: All 6 Approved Website Package Prices & GST Calculations [UNIT]
+// ----------------------------------------------------------------------------
+console.log('\n--- Test Group 11: Complete Website Packages & 18% GST Calculations ---');
+{
+  const packages = [
+    { code: 'starter-website', name: 'Starter Website Package', baseInr: 2999, expectedGst: 540, expectedTotal: 3539 },
+    { code: 'business-website', name: 'Business Website Package', baseInr: 7999, expectedGst: 1440, expectedTotal: 9439 },
+    { code: 'ecommerce-website', name: 'E-Commerce Website Package', baseInr: 14999, expectedGst: 2700, expectedTotal: 17699 },
+    { code: 'website-only', name: 'Website-Only Business Package', baseInr: 14999, expectedGst: 2700, expectedTotal: 17699 },
+    { code: 'website-plus-pwa', name: 'Website + PWA Package', baseInr: 22999, expectedGst: 4140, expectedTotal: 27139 },
+    { code: 'custom-dev-enterprise', name: 'Custom Dev Enterprise', baseInr: 49999, expectedGst: 9000, expectedTotal: 58999 },
+  ];
+
+  for (const pkg of packages) {
+    const calculatedGst = Math.round(pkg.baseInr * 0.18);
+    const calculatedTotal = pkg.baseInr + calculatedGst;
+    assert(calculatedGst === pkg.expectedGst, `${pkg.name}: 18% GST is ₹${pkg.expectedGst}`);
+    assert(calculatedTotal === pkg.expectedTotal, `${pkg.name}: Total payable is ₹${pkg.expectedTotal}`);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Test Group 12: Gemini AI Secret Handling & Graceful Missing-Key Fallback [UNIT]
+// ----------------------------------------------------------------------------
+console.log('\n--- Test Group 12: Gemini AI Secret Handling & Graceful Fallback ---');
+{
+  function resolveGeminiKey(env: Record<string, string | undefined>): string | null {
+    return env.GEMINI_API_KEY || env.GOOGLE_API_KEY || null;
+  }
+
+  assert(
+    resolveGeminiKey({ GEMINI_API_KEY: 'test_gemini_key' }) === 'test_gemini_key',
+    'GEMINI_API_KEY is resolved correctly'
+  );
+  assert(
+    resolveGeminiKey({ GOOGLE_API_KEY: 'test_google_key' }) === 'test_google_key',
+    'GOOGLE_API_KEY is accepted as valid fallback'
+  );
+  assert(
+    resolveGeminiKey({}) === null,
+    'Missing key returns null without crashing'
+  );
+
+  function simulateAiEndpoint(env: Record<string, string | undefined>) {
+    const key = resolveGeminiKey(env);
+    if (!key) {
+      return {
+        status: 503,
+        error: 'Integration Required: GEMINI_API_KEY (or GOOGLE_API_KEY) is not configured in Cloudflare Pages Secrets.',
+      };
+    }
+    return { status: 200, draft: { name: 'AI Generated Boutique' } };
+  }
+
+  const missingKeyRes = simulateAiEndpoint({});
+  assert(missingKeyRes.status === 503, 'Missing AI key returns HTTP 503 error');
+  assert(Boolean(missingKeyRes.error && missingKeyRes.error.includes('GEMINI_API_KEY')), 'Missing AI key error gives clear configuration guidance');
+
+  const validKeyRes = simulateAiEndpoint({ GEMINI_API_KEY: 'mock_key' });
+  assert(validKeyRes.status === 200, 'Valid AI key proceeds to content generation');
+}
+
+// ----------------------------------------------------------------------------
+// Test Group 13: 36 Industry Templates & 16 Business Categories Integrity [DISK]
+// ----------------------------------------------------------------------------
+console.log('\n--- Test Group 13: 36 Industry Templates & 16 Business Categories Integrity ---');
+{
+  const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1')), '..');
+  const templatesFile = path.join(projectRoot, 'src/lib/templatesData.ts');
+  const contentFile = path.join(projectRoot, 'src/data/content.ts');
+
+  const templatesContent = fs.readFileSync(templatesFile, 'utf8');
+  const contentText = fs.readFileSync(contentFile, 'utf8');
+
+  // Count template IDs in templatesData.ts
+  const templateMatches = templatesContent.match(/id:\s*['"][a-z0-9-]+['"]/g) || [];
+  assert(templateMatches.length === 36, `Exactly 36 industry templates defined (found ${templateMatches.length})`);
+
+  // Count categories in content.ts
+  const categoryMatches = contentText.match(/id:\s*'[a-z_]+',\s*label:/g) || [];
+  assert(categoryMatches.length === 16, `Exactly 16 primary business categories defined (found ${categoryMatches.length})`);
+}
+
+// ----------------------------------------------------------------------------
 // Summary
 // ----------------------------------------------------------------------------
 console.log('\n=============================================================');

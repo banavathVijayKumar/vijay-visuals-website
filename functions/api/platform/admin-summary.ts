@@ -21,6 +21,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     subsCount,
     ordersAgg,
     openTicketsCount,
+    deliveriesCount,
     staffList,
     recentAudits,
   ] = await Promise.all([
@@ -36,6 +37,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     env.DB.prepare("SELECT COUNT(*) AS cnt FROM support_tickets WHERE status IN ('open','in_progress')").first<{
       cnt: number;
     }>(),
+    env.DB.prepare("SELECT COUNT(*) AS cnt FROM platform_payments WHERE status = 'paid'").first<{
+      cnt: number;
+    }>().catch(() => ({ cnt: 0 })),
     env.DB.prepare('SELECT * FROM platform_staff ORDER BY created_at DESC').all(),
     env.DB.prepare('SELECT * FROM vv_audit_log ORDER BY created_at DESC LIMIT 40')
       .all()
@@ -52,13 +56,14 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       totalStoreOrders: Number(ordersAgg?.cnt || 0),
       recordedStoreGmvInr: Number(ordersAgg?.gmv_inr || 0),
       openSupportTickets: Number(openTicketsCount?.cnt || 0),
+      totalPaidDeliveries: Number(deliveriesCount?.cnt || 0),
     },
     platformStaff: staffList.results || [],
     recentAuditLogs: recentAudits.results || [],
     integrationChecklist: {
       supabaseAuth: Boolean((env.SUPABASE_URL || env.VITE_SUPABASE_URL) && (env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY)),
       cloudflareD1: Boolean(env.DB),
-      geminiAi: Boolean(env.GEMINI_API_KEY),
+      geminiAi: Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY),
       razorpay: Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET),
       razorpayWebhook: Boolean(env.RAZORPAY_WEBHOOK_SECRET),
       cloudflareApi: Boolean(env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID),

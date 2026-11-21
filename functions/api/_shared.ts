@@ -456,8 +456,8 @@ async function callGeminiDirect(
   env: CloudflareEnv,
   config?: { responseMimeType?: string; systemInstruction?: string }
 ): Promise<string> {
-  const apiKey = env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY secret is not configured in Cloudflare Pages.');
+  const apiKey = env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY (or GOOGLE_API_KEY) secret is not configured in Cloudflare Pages.');
   const model = env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
   const normalized = normalizeGeminiContents(prompt);
   if (!normalized.contents.length) throw new Error('No valid user content was provided to Gemini.');

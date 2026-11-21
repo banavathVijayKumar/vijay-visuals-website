@@ -180,9 +180,17 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         created.order.id,
         receipt,
         JSON.stringify({
+          orderState: 'PAYMENT_PENDING',
+          deliveryStatus: 'PAYMENT_PENDING',
+          provisioningError: null,
+          deliveryAttempts: 0,
           gstPercent: plan.gst_percent,
           recipient: 'Vijay Visuals',
           buyerEmail: auth.user.email,
+          buyerName: auth.user.fullName || auth.user.email,
+          planCode: plan.code,
+          planName: plan.name,
+          websiteId: websiteId || '',
         })
       )
       .run();

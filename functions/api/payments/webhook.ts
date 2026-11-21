@@ -120,18 +120,19 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     amount_inr: number;
     setup_fee_inr: number;
     subscription_id: number | null;
+    notes_json?: string;
   };
 
   const platformRow = rzpOrderId
     ? await env.DB.prepare(
-        `SELECT id, website_id, owner_id, purpose, plan_code, billing_cycle, base_amount_inr, gst_amount_inr, amount_inr, setup_fee_inr, subscription_id
+        `SELECT id, website_id, owner_id, purpose, plan_code, billing_cycle, base_amount_inr, gst_amount_inr, amount_inr, setup_fee_inr, subscription_id, notes_json
          FROM platform_payments WHERE razorpay_order_id = ? LIMIT 1`
       )
         .bind(rzpOrderId)
         .first<PlatformRow>()
     : rzpPaymentId
       ? await env.DB.prepare(
-          `SELECT id, website_id, owner_id, purpose, plan_code, billing_cycle, base_amount_inr, gst_amount_inr, amount_inr, setup_fee_inr, subscription_id
+          `SELECT id, website_id, owner_id, purpose, plan_code, billing_cycle, base_amount_inr, gst_amount_inr, amount_inr, setup_fee_inr, subscription_id, notes_json
            FROM platform_payments WHERE razorpay_payment_id = ? LIMIT 1`
         )
           .bind(rzpPaymentId)
@@ -225,17 +226,27 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           }
         }
       }
+      let notesObj: Record<string, any> = {};
+      try {
+        notesObj = JSON.parse(platformRow.notes_json || '{}');
+      } catch {}
+      notesObj.orderState = 'ACTIVE';
+      notesObj.deliveryStatus = 'DELIVERY_READY';
+      notesObj.deliveredAt = new Date().toISOString();
+      notesObj.provisioningError = null;
+
       await env.DB.prepare(
         `UPDATE platform_payments
          SET status = 'paid',
              signature_verified = 1,
              razorpay_payment_id = COALESCE(NULLIF(?, ''), razorpay_payment_id),
              subscription_id = COALESCE(?, subscription_id),
+             notes_json = ?,
              paid_at = COALESCE(paid_at, datetime('now')),
              updated_at = datetime('now')
          WHERE id = ?`
       )
-        .bind(rzpPaymentId, subscriptionId, platformRow.id)
+        .bind(rzpPaymentId, subscriptionId, JSON.stringify(notesObj), platformRow.id)
         .run();
     } else if (sellerRow) {
       reconciledTarget = `seller_payment_transfers:${sellerRow.id}`;

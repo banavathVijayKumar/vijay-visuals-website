@@ -30,6 +30,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   let totalGmv = 0;
   let totalAiUsed = 0;
   let verifiedDomainsCount = 0;
+  let totalPlatformOrders = 0;
+  let totalDeliveredWebsites = 0;
+  let totalFailedDeliveries = 0;
 
   if (env.DB) {
     // 1. All websites / tenants
@@ -201,6 +204,18 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       }>();
       totalAiUsed = Number(aiRow?.cnt || 0);
     } catch {}
+
+    // 10. Platform website deliveries
+    try {
+      const pmts = await env.DB.prepare('SELECT status, notes_json FROM platform_payments').all<{ status: string; notes_json: string }>();
+      for (const p of pmts.results || []) {
+        totalPlatformOrders++;
+        let n: any = {};
+        try { n = JSON.parse(p.notes_json || '{}'); } catch {}
+        if (p.status === 'paid' && (n.orderState === 'ACTIVE' || n.deliveryStatus === 'DELIVERY_READY')) totalDeliveredWebsites++;
+        if (n.orderState === 'DELIVERY_FAILED' || n.deliveryStatus === 'DELIVERY_FAILED') totalFailedDeliveries++;
+      }
+    } catch {}
   }
 
   const publishedTenantsCount = tenants.filter((t) => t.published === true).length;
@@ -218,6 +233,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       proposalsCount: proposals.length,
       pwaEnabledCount,
       totalAiUsed,
+      totalPlatformOrders,
+      totalDeliveredWebsites,
+      totalFailedDeliveries,
     },
     tenants,
     users,

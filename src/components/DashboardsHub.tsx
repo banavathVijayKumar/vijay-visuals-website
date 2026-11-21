@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AlertCircle,
   ArrowDown,
   ArrowUp,
   Building2,
   Check,
+  CheckCircle2,
+  Clock,
   CreditCard,
   Edit3,
   ExternalLink,
@@ -57,6 +60,7 @@ import { DomainManagementCenter } from './DomainManagementCenter';
 import { AdminDomainManagement } from './AdminDomainManagement';
 import { OwnerReviewsManager } from './OwnerReviewsManager';
 import { AdminReviewsModeration } from './AdminReviewsModeration';
+import { AdminDeliveriesPanel } from './AdminDeliveriesPanel';
 import { Lang } from '../data/content';
 
 interface DashboardsHubProps {
@@ -276,7 +280,8 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       expiryDate: string;
     }>;
   } | null>(null);
-  const [adminSubTab, setAdminSubTab] = useState<'tenants' | 'domains' | 'ecosystem' | 'proposals' | 'plans' | 'users' | 'tickets' | 'audits' | 'reviews_mod'>('tenants');
+  const [adminSubTab, setAdminSubTab] = useState<'tenants' | 'deliveries' | 'domains' | 'ecosystem' | 'proposals' | 'plans' | 'users' | 'tickets' | 'audits' | 'reviews_mod'>('tenants');
+  const [retryingCustDeliveryId, setRetryingCustDeliveryId] = useState<number | null>(null);
   const [customerDomainTenantId, setCustomerDomainTenantId] = useState<number | null>(null);
   const [planPriceDrafts, setPlanPriceDrafts] = useState<Record<number, number>>({});
 
@@ -412,6 +417,26 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       onNotify(err instanceof Error ? err.message : 'Unable to load customer data.');
     }
   }, [onNotify]);
+
+  const handleCustomerRetryDelivery = async (paymentId: number) => {
+    setRetryingCustDeliveryId(paymentId);
+    try {
+      const res = await apiFetch<{ ok: boolean; message: string; websiteUrl?: string }>(
+        `/api/payments/platform/${paymentId}/retry-delivery`,
+        { method: 'POST' }
+      );
+      onNotify(res.message || 'Website delivery completed!');
+      await loadCustomerDashboard();
+      await refreshProfile();
+      if (res.websiteUrl) {
+        window.open(res.websiteUrl, '_blank');
+      }
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Delivery retry failed.');
+    } finally {
+      setRetryingCustDeliveryId(null);
+    }
+  };
 
   const loadSuperAdmin = useCallback(async () => {
     try {
@@ -2419,28 +2444,76 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                         ? new Date(payDate).toLocaleDateString('en-IN')
                         : 'Date Unavailable';
 
+                      let payNotes: Record<string, any> = {};
+                      try {
+                        payNotes = JSON.parse(pay.notes_json || '{}');
+                      } catch {}
+                      const deliveryState = payNotes.orderState || (pay.status === 'paid' ? 'ACTIVE' : 'PAYMENT_PENDING');
+                      const siteUrl = payNotes.websiteUrl || (pay.website_id ? `/site/${pay.website_id}` : null);
+
                       return (
                         <div key={pay.id} className="p-4 flex flex-wrap items-center justify-between gap-4 text-xs">
                           <div>
                             <p className="font-mono-tabular text-[#ECC86A] font-semibold">
                               {receiptNo} · {planName} {grandTotal !== null ? `· ₹${grandTotal.toLocaleString('en-IN')}` : ''}
                             </p>
-                            <p className="text-[#9E9EB2] mt-0.5">
-                              Status: <strong className="text-emerald-400 capitalize">{pay.status || 'Paid'}</strong> · Date: {dateFormatted}
+                            <div className="flex flex-wrap items-center gap-2 text-[#9E9EB2] mt-0.5">
+                              <span>
+                                Status: <strong className="text-emerald-400 capitalize">{pay.status || 'Paid'}</strong> · Date: {dateFormatted}
+                              </span>
+                              {deliveryState === 'ACTIVE' || deliveryState === 'DELIVERY_READY' ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Delivered · Active</span>
+                                </span>
+                              ) : deliveryState === 'DELIVERY_FAILED' ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-rose-400 font-medium">
+                                  <AlertCircle className="w-3 h-3" />
+                                  <span>Delivery Pending</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-sky-400 font-medium">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Provisioning...</span>
+                                </span>
+                              )}
                               {paymentId && (
-                                <span className="font-mono-tabular text-[10px] ml-2 text-[#7E7E92]">
+                                <span className="font-mono-tabular text-[10px] text-[#7E7E92]">
                                   Ref: {paymentId}
                                 </span>
                               )}
-                            </p>
+                            </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedReceipt(pay)}
-                            className="px-3 py-1.5 rounded border border-[#D4AF37]/50 text-[#ECC86A] text-xs font-medium hover:bg-[#D4AF37] hover:text-[#08080A] transition-colors"
-                          >
-                            View Platform Tax Invoice
-                          </button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {deliveryState === 'DELIVERY_FAILED' && (
+                              <button
+                                type="button"
+                                disabled={retryingCustDeliveryId === pay.id}
+                                onClick={() => handleCustomerRetryDelivery(pay.id)}
+                                className="px-3 py-1.5 rounded bg-gold-gradient text-[#08080A] text-xs font-semibold hover:opacity-95 transition-opacity disabled:opacity-50"
+                              >
+                                {retryingCustDeliveryId === pay.id ? 'Retrying...' : 'Retry Website Delivery'}
+                              </button>
+                            )}
+                            {siteUrl && (
+                              <a
+                                href={siteUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 rounded border border-[#2B2B3C] bg-[#12121A] text-white text-xs font-medium hover:border-[#D4AF37] transition-colors inline-flex items-center gap-1"
+                              >
+                                <span>Open Website</span>
+                                <ExternalLink className="w-3 h-3 text-[#D4AF37]" />
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedReceipt(pay)}
+                              className="px-3 py-1.5 rounded border border-[#D4AF37]/50 text-[#ECC86A] text-xs font-medium hover:bg-[#D4AF37] hover:text-[#08080A] transition-colors"
+                            >
+                              View Platform Tax Invoice
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -2812,6 +2885,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
               <div className="flex flex-wrap gap-2 border-b border-[#1E1E2B] pb-3">
                 {[
                   { id: 'tenants', label: 'Businesses & PWA Licenses' },
+                  { id: 'deliveries', label: 'Website Deliveries & Provisioning' },
                   { id: 'domains', label: `Domain Management (${adminData.stats.domainsCount ?? 0})` },
                   { id: 'proposals', label: `Proposals & Quotations (${adminData.proposals?.length ?? 0})` },
                   { id: 'ecosystem', label: 'Razorpay, Route KYC & Announcements' },
@@ -2833,6 +2907,10 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   </button>
                 ))}
               </div>
+
+              {adminSubTab === 'deliveries' && (
+                <AdminDeliveriesPanel onNotify={onNotify} />
+              )}
 
               {adminSubTab === 'domains' && (
                 <AdminDomainManagement onNotify={onNotify} />

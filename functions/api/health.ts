@@ -33,7 +33,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   const hasSupabaseAuth = Boolean(
     (env.SUPABASE_URL || env.VITE_SUPABASE_URL) && (env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY)
   );
-  const hasGeminiKey = Boolean(env.GEMINI_API_KEY);
+  const hasGeminiKey = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY);
   const hasClaudeKey = Boolean(env.CLAUDE_API_KEY || env.ANTHROPIC_API_KEY);
   const nowIso = new Date().toISOString();
 

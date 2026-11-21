@@ -159,11 +159,12 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     liveCustomDomains: Number(domainCount?.cnt || 0),
   };
 
-  if (!env.GEMINI_API_KEY) {
+  const apiKey = env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
+  if (!apiKey) {
     return json(
       {
         status: 'setup_required',
-        error: 'Integration Required: GEMINI_API_KEY is not configured in Cloudflare Pages Secrets.',
+        error: 'Integration Required: GEMINI_API_KEY (or GOOGLE_API_KEY) is not configured in Cloudflare Pages Secrets.',
         language,
         tool,
         supportedLanguages: Object.keys(AI_SUPPORTED_LANGUAGES),
@@ -179,7 +180,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   try {
     const ai = new GoogleGenAI({
-      apiKey: env.GEMINI_API_KEY,
+      apiKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',

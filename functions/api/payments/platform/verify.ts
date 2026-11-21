@@ -27,6 +27,7 @@ interface PlatformPaymentRow {
   signature_verified: number;
   status: string;
   subscription_id: number | null;
+  notes_json?: string;
 }
 
 export async function onRequestPost(context: PagesContext): Promise<Response> {
@@ -98,141 +99,207 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   // 3. Idempotent replay check
   if (existing.status === 'paid' && existing.signature_verified === 1) {
-    return json({ verified: true, idempotentReplay: true, payment: existing });
+    let replayNotes: Record<string, any> = {};
+    try {
+      replayNotes = JSON.parse(existing.notes_json || '{}');
+    } catch {}
+    return json({
+      verified: true,
+      idempotentReplay: true,
+      orderState: replayNotes.orderState || 'ACTIVE',
+      deliveryStatus: replayNotes.deliveryStatus || 'DELIVERY_READY',
+      payment: existing,
+    });
   }
 
-  // 4. Resolve websiteId: check existing record, payload websiteId/tenantId, or latest unpublished website
-  let targetWebsiteId = existing.website_id;
-  const payloadWebsiteRef = sanitizeText(body.websiteId || (body.tenantId ? String(body.tenantId) : ''), 120);
+  // 4. Parse existing order notes & record immediate payment verification state
+  let notes: Record<string, any> = {};
+  try {
+    notes = JSON.parse(existing.notes_json || '{}');
+  } catch {}
 
-  if (!targetWebsiteId && payloadWebsiteRef) {
-    const isNum = /^\d+$/.test(payloadWebsiteRef);
-    let resolvedRow: { website_id: string; owner_id: string } | null = null;
-    if (isNum) {
-      resolvedRow = await env.DB.prepare(
-        'SELECT website_id, owner_id FROM customer_website_publications WHERE rowid = ? OR website_id = ? LIMIT 1'
-      )
-        .bind(Number(payloadWebsiteRef), payloadWebsiteRef)
-        .first<{ website_id: string; owner_id: string }>();
-    } else {
-      resolvedRow = await env.DB.prepare(
-        'SELECT website_id, owner_id FROM customer_website_publications WHERE website_id = ? OR public_slug = ? LIMIT 1'
-      )
-        .bind(payloadWebsiteRef, payloadWebsiteRef.toLowerCase())
-        .first<{ website_id: string; owner_id: string }>();
-    }
-    if (resolvedRow) {
-      const canAccess =
-        resolvedRow.owner_id === auth.user.id ||
-        resolvedRow.owner_id === auth.user.authSubject ||
-        auth.user.isSuperAdmin;
-      if (canAccess) {
-        targetWebsiteId = resolvedRow.website_id;
-      }
-    }
-  }
+  notes.orderState = 'PROVISIONING';
+  notes.deliveryStatus = 'PROVISIONING';
+  notes.lastAttemptAt = new Date().toISOString();
+  notes.deliveryAttempts = (notes.deliveryAttempts || 0) + 1;
 
-  if (!targetWebsiteId) {
-    // If payment was initiated before creating website, check latest customer draft website
-    const latestDraft = await env.DB.prepare(
-      `SELECT website_id FROM customer_website_publications
-       WHERE owner_id = ? OR owner_id = ?
-       ORDER BY updated_at DESC LIMIT 1`
-    )
-      .bind(auth.user.id, auth.user.authSubject)
-      .first<{ website_id: string }>();
-    if (latestDraft) {
-      targetWebsiteId = latestDraft.website_id;
-    }
-  }
-
-  // 5. Activate subscription when linked to a website
-  let subscriptionId = existing.subscription_id;
-  const isWebsitePackage = ALLOWED_WEBSITE_PACKAGE_CODES.has(existing.plan_code);
-  const isOneTime =
-    existing.billing_cycle === 'one_time' ||
-    existing.purpose === 'website_purchase' ||
-    isWebsitePackage;
-
-  if (targetWebsiteId && existing.plan_code) {
-    if (isOneTime) {
-      // One-time website purchases never expire: current_period_end is NULL
-      const subRes = await env.DB.prepare(
-        `INSERT INTO tenant_subscriptions
-          (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-           total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-           current_period_start, current_period_end, created_at, updated_at)
-         VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
-      )
-        .bind(
-          targetWebsiteId,
-          existing.owner_id,
-          existing.plan_code,
-          existing.base_amount_inr,
-          existing.gst_amount_inr,
-          existing.amount_inr,
-          existing.setup_fee_inr,
-          paymentId
-        )
-        .run();
-      subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
-    } else {
-      // Recurring monthly/yearly SaaS subscriptions maintain their period expiration
-      const durationExpr = existing.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
-      const subRes = await env.DB.prepare(
-        `INSERT INTO tenant_subscriptions
-          (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-           total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-           current_period_start, current_period_end, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
-      )
-        .bind(
-          targetWebsiteId,
-          existing.owner_id,
-          existing.plan_code,
-          existing.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
-          existing.base_amount_inr,
-          existing.gst_amount_inr,
-          existing.amount_inr,
-          existing.setup_fee_inr,
-          paymentId,
-          durationExpr
-        )
-        .run();
-      subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
-    }
-
-    // If client requested publish or website was waiting for payment activation
-    if (body.publishWebsite) {
-      if (!isWebsitePackage && !auth.user.isSuperAdmin) {
-        return errorJson('Cannot publish website with a non-website subscription tier.', 403);
-      }
-      await env.DB.prepare(
-        `UPDATE customer_website_publications
-         SET status = 'published',
-             published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
-             updated_at = datetime('now')
-         WHERE website_id = ?`
-      )
-        .bind(targetWebsiteId)
-        .run();
-    }
-  }
-
-  // 6. Mark payment paid ONLY after signature verification succeeds
+  // Immediately secure verified payment in D1 so customer money is NEVER lost if provisioning fails
   await env.DB.prepare(
     `UPDATE platform_payments
      SET status = 'paid',
          signature_verified = 1,
-         website_id = COALESCE(?, website_id),
          razorpay_payment_id = ?,
          razorpay_signature = ?,
-         subscription_id = COALESCE(?, subscription_id),
-         paid_at = datetime('now'),
+         paid_at = COALESCE(paid_at, datetime('now')),
+         notes_json = ?,
          updated_at = datetime('now')
      WHERE id = ?`
   )
-    .bind(targetWebsiteId, paymentId, signature, subscriptionId, existing.id)
+    .bind(paymentId, signature, JSON.stringify(notes), existing.id)
+    .run();
+
+  // 5. Automatic Website Delivery & Tenant Provisioning Engine
+  let targetWebsiteId = existing.website_id;
+  let targetSlug = '';
+  let subscriptionId = existing.subscription_id;
+  let provisioningError: string | null = null;
+
+  try {
+    const payloadWebsiteRef = sanitizeText(body.websiteId || (body.tenantId ? String(body.tenantId) : ''), 120);
+
+    if (!targetWebsiteId && payloadWebsiteRef) {
+      const isNum = /^\d+$/.test(payloadWebsiteRef);
+      let resolvedRow: { website_id: string; owner_id: string; public_slug: string } | null = null;
+      if (isNum) {
+        resolvedRow = await env.DB.prepare(
+          'SELECT website_id, owner_id, public_slug FROM customer_website_publications WHERE rowid = ? OR website_id = ? LIMIT 1'
+        )
+          .bind(Number(payloadWebsiteRef), payloadWebsiteRef)
+          .first<{ website_id: string; owner_id: string; public_slug: string }>();
+      } else {
+        resolvedRow = await env.DB.prepare(
+          'SELECT website_id, owner_id, public_slug FROM customer_website_publications WHERE website_id = ? OR public_slug = ? LIMIT 1'
+        )
+          .bind(payloadWebsiteRef, payloadWebsiteRef.toLowerCase())
+          .first<{ website_id: string; owner_id: string; public_slug: string }>();
+      }
+      if (resolvedRow) {
+        const canAccess =
+          resolvedRow.owner_id === auth.user.id ||
+          resolvedRow.owner_id === auth.user.authSubject ||
+          auth.user.isSuperAdmin;
+        if (canAccess) {
+          targetWebsiteId = resolvedRow.website_id;
+          targetSlug = resolvedRow.public_slug;
+        }
+      }
+    }
+
+    if (!targetWebsiteId) {
+      // If payment was initiated before creating website, link latest customer draft website
+      const latestDraft = await env.DB.prepare(
+        `SELECT website_id, public_slug FROM customer_website_publications
+         WHERE owner_id = ? OR owner_id = ?
+         ORDER BY updated_at DESC LIMIT 1`
+      )
+        .bind(auth.user.id, auth.user.authSubject)
+        .first<{ website_id: string; public_slug: string }>();
+      if (latestDraft) {
+        targetWebsiteId = latestDraft.website_id;
+        targetSlug = latestDraft.public_slug;
+      }
+    }
+
+    const isWebsitePackage = ALLOWED_WEBSITE_PACKAGE_CODES.has(existing.plan_code);
+    const isOneTime =
+      existing.billing_cycle === 'one_time' ||
+      existing.purpose === 'website_purchase' ||
+      isWebsitePackage;
+
+    if (targetWebsiteId && existing.plan_code) {
+      if (isOneTime) {
+        // One-time website purchases never expire: current_period_end is NULL
+        const subRes = await env.DB.prepare(
+          `INSERT INTO tenant_subscriptions
+            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+             current_period_start, current_period_end, created_at, updated_at)
+           VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
+        )
+          .bind(
+            targetWebsiteId,
+            existing.owner_id,
+            existing.plan_code,
+            existing.base_amount_inr,
+            existing.gst_amount_inr,
+            existing.amount_inr,
+            existing.setup_fee_inr,
+            paymentId
+          )
+          .run();
+        subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+      } else {
+        // Recurring monthly/yearly SaaS subscriptions maintain their period expiration
+        const durationExpr = existing.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
+        const subRes = await env.DB.prepare(
+          `INSERT INTO tenant_subscriptions
+            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+             current_period_start, current_period_end, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+        )
+          .bind(
+            targetWebsiteId,
+            existing.owner_id,
+            existing.plan_code,
+            existing.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+            existing.base_amount_inr,
+            existing.gst_amount_inr,
+            existing.amount_inr,
+            existing.setup_fee_inr,
+            paymentId,
+            durationExpr
+          )
+          .run();
+        subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+      }
+
+      // If client requested publish or website was waiting for payment activation
+      if (body.publishWebsite) {
+        if (!isWebsitePackage && !auth.user.isSuperAdmin) {
+          throw new Error('Cannot publish website with a non-website subscription tier.');
+        }
+        await env.DB.prepare(
+          `UPDATE customer_website_publications
+           SET status = 'published',
+               published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
+               updated_at = datetime('now')
+           WHERE website_id = ?`
+        )
+          .bind(targetWebsiteId)
+          .run();
+      }
+
+      if (!targetSlug) {
+        const pub = await env.DB.prepare('SELECT public_slug FROM customer_website_publications WHERE website_id = ? LIMIT 1')
+          .bind(targetWebsiteId)
+          .first<{ public_slug: string }>();
+        targetSlug = pub?.public_slug || '';
+      }
+    }
+
+    notes.orderState = 'ACTIVE';
+    notes.deliveryStatus = 'DELIVERY_READY';
+    notes.deliveredAt = new Date().toISOString();
+    notes.provisioningError = null;
+    notes.websiteSlug = targetSlug;
+    notes.websiteUrl = targetSlug ? `/site/${targetSlug}` : '';
+  } catch (provErr) {
+    provisioningError = provErr instanceof Error ? provErr.message : 'Website provisioning failed.';
+    notes.orderState = 'DELIVERY_FAILED';
+    notes.deliveryStatus = 'DELIVERY_FAILED';
+    notes.provisioningError = provisioningError;
+
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: auth.user.platformRole,
+      action: 'delivery_provisioning_failed',
+      targetType: 'platform_payments',
+      targetId: String(existing.id),
+      details: { error: provisioningError, orderId, paymentId },
+    });
+  }
+
+  // 6. Update platform_payments with final subscription, website link, and delivery state
+  await env.DB.prepare(
+    `UPDATE platform_payments
+     SET website_id = COALESCE(?, website_id),
+         subscription_id = COALESCE(?, subscription_id),
+         notes_json = ?,
+         updated_at = datetime('now')
+     WHERE id = ?`
+  )
+    .bind(targetWebsiteId, subscriptionId, JSON.stringify(notes), existing.id)
     .run();
 
   await env.DB.prepare(
@@ -250,7 +317,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   await writeAuditLog(env, {
     actorId: auth.user.id,
     actorRole: auth.user.platformRole,
-    action: 'platform_payment_verified',
+    action: provisioningError ? 'platform_payment_paid_provisioning_failed' : 'platform_payment_verified',
     targetType: 'platform_payments',
     targetId: String(existing.id),
     details: {
@@ -259,6 +326,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       razorpayOrderId: orderId,
       razorpayPaymentId: paymentId,
       subscriptionId,
+      deliveryStatus: notes.deliveryStatus,
+      orderState: notes.orderState,
     },
   });
 
@@ -269,7 +338,12 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   return json({
     verified: true,
     idempotentReplay: false,
+    orderState: notes.orderState,
+    deliveryStatus: notes.deliveryStatus,
     subscriptionId,
+    websiteId: targetWebsiteId,
+    websiteUrl: notes.websiteUrl,
+    provisioningError,
     payment: updated,
   });
 }
