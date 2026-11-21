@@ -72,6 +72,44 @@ export async function onRequestPatch(
     return jsonResponse({ error: 'Invalid JSON request body.' }, 400);
   }
 
+  // Support 1-Click Product Duplication
+  if (body.action === 'duplicate') {
+    const copyName = `${existing.name} (Copy)`.slice(0, 160);
+    const copySku = existing.sku ? `${existing.sku}-COPY`.slice(0, 80) : '';
+    const res = await env.DB.prepare(
+      `INSERT INTO store_products
+       (website_id, owner_id, sku, barcode, name, category, description, price_inr, compare_at_price_inr, stock_qty, low_stock_threshold, variants_json, images_json, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+    )
+      .bind(
+        existing.website_id,
+        existing.owner_id,
+        copySku,
+        existing.barcode || '',
+        copyName,
+        existing.category,
+        existing.description || '',
+        existing.price_inr,
+        existing.compare_at_price_inr,
+        existing.stock_qty,
+        existing.low_stock_threshold || 5,
+        existing.variants_json || '[]',
+        existing.images_json || '[]'
+      )
+      .run();
+    const newId = Number(res?.meta?.last_row_id || 0);
+    const created = await env.DB.prepare('SELECT * FROM store_products WHERE id = ? LIMIT 1').bind(newId).first<Record<string, any>>();
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: access.effectiveRole,
+      action: 'product_duplicated',
+      targetType: 'product',
+      targetId: String(newId),
+      details: { websiteId: existing.website_id, sourceId: productId, name: copyName },
+    });
+    return jsonResponse({ product: created ? mapProductRowToUi(created, Number(access.row.rowid || 0)) : null, duplicated: true }, 201);
+  }
+
   const nextName =
     typeof body.name === 'string' && body.name.trim()
       ? sanitizeText(body.name, 160)
@@ -84,6 +122,20 @@ export async function onRequestPatch(
     typeof body.description === 'string'
       ? sanitizeText(body.description, 1000)
       : String(existing.description || '');
+  const nextSku =
+    body.sku !== undefined ? sanitizeText(body.sku, 80) : String(existing.sku || '');
+  const nextBarcode =
+    body.barcode !== undefined ? sanitizeText(body.barcode, 80) : String(existing.barcode || '');
+  const nextActive =
+    body.active !== undefined
+      ? (body.active ? 1 : 0)
+      : body.action === 'restore'
+      ? 1
+      : Number(existing.is_active ?? 1);
+  const nextLowStock =
+    body.lowStockThreshold !== undefined
+      ? Math.max(0, Math.min(10000, Math.round(Number(body.lowStockThreshold))))
+      : Number(existing.low_stock_threshold ?? 5);
 
   let nextPrice = Number(existing.price_inr);
   if (body.price !== undefined) {
@@ -160,18 +212,22 @@ export async function onRequestPatch(
 
   await env.DB.prepare(
     `UPDATE store_products
-     SET name = ?, category = ?, description = ?, price_inr = ?, compare_at_price_inr = ?, stock_qty = ?, images_json = ?, variants_json = ?, updated_at = datetime('now')
+     SET sku = ?, barcode = ?, name = ?, category = ?, description = ?, price_inr = ?, compare_at_price_inr = ?, stock_qty = ?, low_stock_threshold = ?, images_json = ?, variants_json = ?, is_active = ?, updated_at = datetime('now')
      WHERE id = ? AND website_id = ?`
   )
     .bind(
+      nextSku,
+      nextBarcode,
       nextName,
       nextCategory,
       nextDescription,
       nextPrice,
       nextCompareAt,
       nextStock,
+      nextLowStock,
       nextImagesJson,
       nextVariantsJson,
+      nextActive,
       productId,
       existing.website_id
     )
@@ -235,6 +291,28 @@ export async function onRequestDelete(
     'business_manager',
   ]);
   if (!access.ok) return access.response;
+
+  const url = new URL(request.url);
+  const soft = url.searchParams.get('soft') === 'true';
+
+  if (soft) {
+    await env.DB.prepare(
+      `UPDATE store_products SET is_active = 0, updated_at = datetime('now') WHERE id = ? AND website_id = ?`
+    )
+      .bind(productId, existing.website_id)
+      .run();
+
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: access.effectiveRole,
+      action: 'product_disabled',
+      targetType: 'product',
+      targetId: String(productId),
+      details: { websiteId: existing.website_id, name: existing.name, soft: true },
+    });
+
+    return jsonResponse({ deleted: true, soft: true, id: productId });
+  }
 
   await env.DB.prepare('DELETE FROM store_products WHERE id = ? AND website_id = ?')
     .bind(productId, existing.website_id)

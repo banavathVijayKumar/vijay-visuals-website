@@ -114,6 +114,8 @@ export interface ProductRecord {
   videoUrl: string;
   variantsJson: string;
   specs?: string;
+  sku?: string;
+  barcode?: string;
   featured?: boolean;
   bestseller?: boolean;
   rating: string;

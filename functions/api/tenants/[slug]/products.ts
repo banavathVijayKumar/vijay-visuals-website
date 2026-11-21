@@ -65,6 +65,8 @@ export async function onRequestPost(
   );
   const category = sanitizeText(body.category, 80) || 'General';
   const subcategory = sanitizeText(body.subcategory, 80);
+  const sku = sanitizeText(body.sku, 80);
+  const barcode = sanitizeText(body.barcode, 80);
   const description = sanitizeText(body.description, 1000);
   const specs = sanitizeText(body.specs, 600);
   const videoUrl = validateSafeHttpUrl(body.videoUrl, 400);
@@ -113,12 +115,14 @@ export async function onRequestPost(
   try {
     const result = await env.DB!.prepare(
       `INSERT INTO store_products
-       (website_id, owner_id, name, category, description, price_inr, compare_at_price_inr, stock_qty, low_stock_threshold, variants_json, images_json, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+       (website_id, owner_id, sku, barcode, name, category, description, price_inr, compare_at_price_inr, stock_qty, low_stock_threshold, variants_json, images_json, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
     )
       .bind(
         access.row.website_id,
         access.row.owner_id,
+        sku,
+        barcode,
         name,
         category,
         description,

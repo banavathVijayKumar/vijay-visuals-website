@@ -449,6 +449,8 @@ export function mapProductRowToUi(
     videoUrl: meta.videoUrl,
     variantsJson: JSON.stringify(meta.variants),
     specs: meta.specs,
+    sku: cleanString(p.sku, 80),
+    barcode: cleanString(p.barcode, 80),
     featured: meta.featured,
     bestseller: meta.bestseller,
     rating,

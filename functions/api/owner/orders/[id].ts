@@ -85,31 +85,59 @@ export async function onRequestPatch(
   ]);
   if (!access.ok) return access.response;
 
-  const body = await parseJsonBody<{ status?: string; paymentStatus?: string }>(request);
+  const body = await parseJsonBody<{
+    status?: string;
+    paymentStatus?: string;
+    action?: string;
+    reason?: string;
+    rejectionReason?: string;
+    refundNotes?: string;
+  }>(request);
   if (!body) {
     return jsonResponse({ error: 'Invalid JSON request body.' }, 400);
   }
 
-  const nextOrderStatus = body.status
-    ? UI_TO_DB_ORDER_STATUS[String(body.status)] || null
+  // Handle Action Shortcuts (Accept, Reject, Refund)
+  let requestedStatus = body.status;
+  let requestedPaymentStatus = body.paymentStatus;
+  let nextReturnReason = String(existing.return_reason || '');
+
+  if (body.action === 'reject') {
+    requestedStatus = 'cancelled';
+    nextReturnReason = body.rejectionReason || body.reason || 'Order rejected by business owner';
+  } else if (body.action === 'accept') {
+    requestedStatus = 'confirmed';
+  } else if (body.action === 'refund') {
+    requestedPaymentStatus = 'refunded';
+    nextReturnReason = body.refundNotes || body.reason || 'Payment refunded by business owner';
+  }
+
+  if (body.rejectionReason) {
+    nextReturnReason = body.rejectionReason;
+  }
+
+  const nextOrderStatus = requestedStatus
+    ? UI_TO_DB_ORDER_STATUS[String(requestedStatus)] || null
     : String(existing.order_status);
   if (!nextOrderStatus) {
     return jsonResponse({ error: 'Unsupported order status.' }, 400);
   }
 
-  const nextPaymentStatus = body.paymentStatus
-    ? UI_TO_DB_PAYMENT_STATUS[String(body.paymentStatus)] || null
+  const nextPaymentStatus = requestedPaymentStatus
+    ? UI_TO_DB_PAYMENT_STATUS[String(requestedPaymentStatus)] || null
     : String(existing.payment_status);
   if (!nextPaymentStatus) {
     return jsonResponse({ error: 'Unsupported payment status.' }, 400);
   }
 
+  // CRITICAL SECURITY ENFORCEMENT: Financial immutability
+  // total_inr, subtotal_inr, gst_inr, discount_inr, items_json CANNOT be modified.
   await env.DB.prepare(
     `UPDATE store_orders
-     SET order_status = ?, payment_status = ?, updated_at = datetime('now')
+     SET order_status = ?, payment_status = ?, return_reason = ?, updated_at = datetime('now')
      WHERE id = ? AND website_id = ?`
   )
-    .bind(nextOrderStatus, nextPaymentStatus, orderId, existing.website_id)
+    .bind(nextOrderStatus, nextPaymentStatus, nextReturnReason, orderId, existing.website_id)
     .run();
 
   const updated = await env.DB.prepare('SELECT * FROM store_orders WHERE id = ? LIMIT 1')
@@ -119,13 +147,15 @@ export async function onRequestPatch(
   await writeAuditLog(env, {
     actorId: auth.user.id,
     actorRole: access.effectiveRole,
-    action: 'order_status_updated',
+    action: body.action === 'refund' ? 'order_refunded' : body.action === 'reject' ? 'order_rejected' : 'order_status_updated',
     targetType: 'order',
     targetId: String(orderId),
     details: {
       websiteId: existing.website_id,
       orderStatus: nextOrderStatus,
       paymentStatus: nextPaymentStatus,
+      returnReason: nextReturnReason,
+      action: body.action || null,
     },
   });
 

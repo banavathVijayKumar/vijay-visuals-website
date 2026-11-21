@@ -41,12 +41,12 @@ export async function onRequestGet(
   const deliveryPartners: Array<Record<string, unknown>> = [];
   const staff: Array<Record<string, unknown>> = [];
 
-  // 1. Products
+  // 1. Products (including sku, barcode, active and inactive)
   try {
     const prodRes = await env.DB!.prepare(
-      `SELECT id, category, name, description, price_inr, compare_at_price_inr, stock_qty, low_stock_threshold, variants_json, images_json, is_active
+      `SELECT id, sku, barcode, category, name, description, price_inr, compare_at_price_inr, stock_qty, low_stock_threshold, variants_json, images_json, is_active
        FROM store_products
-       WHERE website_id = ? AND is_active = 1
+       WHERE website_id = ?
        ORDER BY id DESC LIMIT 200`
     )
       .bind(row.website_id)
@@ -58,9 +58,28 @@ export async function onRequestGet(
     // Optional migration 0003 table not yet applied
   }
 
-  // 2. Orders
+  // 2. Orders & Financial Aggregates
   let totalRevenue = 0;
+  let todayRevenue = 0;
+  let weeklyRevenue = 0;
+  let monthlyRevenue = 0;
   let pendingOrders = 0;
+  let completedOrders = 0;
+  let cancelledOrders = 0;
+  const customerSet = new Set<string>();
+
+  const nowMs = Date.now();
+  const todayStartMs = new Date().setHours(0, 0, 0, 0);
+  const oneWeekAgoMs = nowMs - 7 * 86400 * 1000;
+  const oneMonthAgoMs = nowMs - 30 * 86400 * 1000;
+
+  // Build daily trend map for past 7 days
+  const dailyTrendMap: Record<string, { revenue: number; orders: number }> = {};
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(nowMs - i * 86400 * 1000).toISOString().slice(0, 10);
+    dailyTrendMap[d] = { revenue: 0, orders: 0 };
+  }
+
   try {
     const ordRes = await env.DB!.prepare(
       `SELECT * FROM store_orders
@@ -72,16 +91,74 @@ export async function onRequestGet(
     for (const o of ordRes.results || []) {
       const mapped = mapOrderRowToUi(o, tenantRowId);
       orders.push(mapped);
-      if (o.order_status !== 'cancelled' && o.order_status !== 'returned') {
-        totalRevenue += Number(o.total_inr || 0);
+
+      const orderTotal = Number(o.total_inr || 0);
+      const isCancelledOrReturned = ['cancelled', 'returned'].includes(String(o.order_status || ''));
+      const isDelivered = String(o.order_status || '') === 'delivered';
+
+      const custKey = String(o.customer_phone || o.customer_email || o.customer_name || '').trim();
+      if (custKey) customerSet.add(custKey);
+
+      if (!isCancelledOrReturned) {
+        totalRevenue += orderTotal;
       }
-      if (!['delivered', 'cancelled', 'returned'].includes(String(o.order_status || ''))) {
+
+      if (isDelivered) {
+        completedOrders += 1;
+      } else if (isCancelledOrReturned) {
+        cancelledOrders += 1;
+      } else {
         pendingOrders += 1;
+      }
+
+      const orderTimeMs = Date.parse(String(o.created_at || '')) || 0;
+      if (orderTimeMs >= todayStartMs && !isCancelledOrReturned) {
+        todayRevenue += orderTotal;
+      }
+      if (orderTimeMs >= oneWeekAgoMs && !isCancelledOrReturned) {
+        weeklyRevenue += orderTotal;
+      }
+      if (orderTimeMs >= oneMonthAgoMs && !isCancelledOrReturned) {
+        monthlyRevenue += orderTotal;
+      }
+
+      const dateKey = String(o.created_at || '').slice(0, 10);
+      if (dailyTrendMap[dateKey]) {
+        dailyTrendMap[dateKey].orders += 1;
+        if (!isCancelledOrReturned) {
+          dailyTrendMap[dateKey].revenue += orderTotal;
+        }
       }
     }
   } catch {
     // Optional migration 0003 table not yet applied
   }
+
+  const salesTrend = Object.entries(dailyTrendMap).map(([date, data]) => ({
+    date,
+    revenue: data.revenue,
+    orders: data.orders,
+  }));
+
+  // Recent Activities
+  const recentActivities: Array<{ id: string; action: string; description: string; timestamp: string }> = [];
+  try {
+    const audits = await env.DB!.prepare(
+      `SELECT id, action, details_json, created_at FROM vv_audit_log
+       WHERE details_json LIKE ?
+       ORDER BY id DESC LIMIT 10`
+    )
+      .bind(`%${row.website_id}%`)
+      .all<Record<string, any>>();
+    for (const a of audits.results || []) {
+      recentActivities.push({
+        id: String(a.id),
+        action: String(a.action || 'activity'),
+        description: `Action: ${String(a.action || '').replace(/_/g, ' ')}`,
+        timestamp: String(a.created_at || new Date().toISOString()),
+      });
+    }
+  } catch {}
 
   // 3. Coupons
   try {
@@ -158,12 +235,22 @@ export async function onRequestGet(
     tenant,
     stats: {
       totalRevenue,
+      todayRevenue,
+      weeklyRevenue,
+      monthlyRevenue,
       orderCount: orders.length,
       totalOrders: orders.length,
-      productCount: products.length,
       pendingOrders,
+      completedOrders,
+      cancelledOrders,
+      totalCustomers: customerSet.size,
+      productCount: products.length,
+      activeProductsCount: products.filter((p) => p.active).length,
+      inactiveProductsCount: products.filter((p) => !p.active).length,
       lowStockCount,
       activeDeliveries,
+      salesTrend,
+      recentActivities,
     },
     products,
     orders,

@@ -7,9 +7,15 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  Copy,
   CreditCard,
+  Download,
   Edit3,
   ExternalLink,
+  Eye,
+  FileText,
+  Filter,
+  FolderPlus,
   Globe,
   Image as ImageIcon,
   Package,
@@ -17,6 +23,7 @@ import {
   Printer,
   Receipt,
   Save,
+  Search,
   Settings,
   Shield,
   ShieldCheck,
@@ -48,6 +55,9 @@ import {
   TenantRecord,
   UserProfile,
 } from '../types/platform';
+import { OwnerCategoryModal } from './OwnerCategoryModal';
+import { OwnerOrderDetailModal } from './OwnerOrderDetailModal';
+import { OwnerCustomerProfileModal } from './OwnerCustomerProfileModal';
 import { OperationsTab, OwnerOperationsSuite } from './OwnerOperationsSuite';
 import { GrowthTab, GrowthWorkspace } from './GrowthWorkspace';
 import { AdminEcosystemPanel } from './AdminEcosystemPanel';
@@ -148,7 +158,25 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   >('command_center');
   const [ownerData, setOwnerData] = useState<{
     tenant: TenantRecord;
-    stats: { totalRevenue: number; orderCount: number; productCount: number; lowStockCount: number; activeDeliveries: number };
+    stats: {
+      totalRevenue: number;
+      todayRevenue?: number;
+      weeklyRevenue?: number;
+      monthlyRevenue?: number;
+      orderCount: number;
+      totalOrders?: number;
+      pendingOrders?: number;
+      completedOrders?: number;
+      cancelledOrders?: number;
+      totalCustomers?: number;
+      productCount: number;
+      activeProductsCount?: number;
+      inactiveProductsCount?: number;
+      lowStockCount: number;
+      activeDeliveries: number;
+      salesTrend?: Array<{ date: string; revenue: number; orders: number }>;
+      recentActivities?: Array<{ id: string; action: string; description: string; timestamp: string }>;
+    };
     products: ProductRecord[];
     orders: OrderRecord[];
     coupons: CouponRecord[];
@@ -162,6 +190,8 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   const [prodName, setProdName] = useState('');
   const [prodCat, setProdCat] = useState('Featured');
   const [prodSubcat, setProdSubcat] = useState('General');
+  const [prodSku, setProdSku] = useState('');
+  const [prodBarcode, setProdBarcode] = useState('');
   const [prodPrice, setProdPrice] = useState(1499);
   const [prodCompareAt, setProdCompareAt] = useState(0);
   const [prodWholesale, setProdWholesale] = useState(0);
@@ -175,6 +205,29 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   const [prodBestseller, setProdBestseller] = useState(false);
   const [uploadingProdImg, setUploadingProdImg] = useState(false);
   const [aiWritingDesc, setAiWritingDesc] = useState(false);
+
+  // Product Search, Filters & Category Modal
+  const [prodSearchQuery, setProdSearchQuery] = useState('');
+  const [prodCategoryFilter, setProdCategoryFilter] = useState('all');
+  const [prodStockFilter, setProdStockFilter] = useState<'all' | 'in_stock' | 'low_stock' | 'out_of_stock' | 'inactive'>('all');
+  const [prodSortBy, setProdSortBy] = useState<'name_asc' | 'price_asc' | 'price_desc' | 'stock_asc'>('name_asc');
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+
+  // Order Search, Filter & Detail Modal
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState<OrderRecord | null>(null);
+
+  // Customer Search & Profile Modal
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [selectedCustomerProfile, setSelectedCustomerProfile] = useState<{
+    name: string;
+    phone: string;
+    email: string;
+    ordersCount: number;
+    totalSpent: number;
+    lastOrderAt: string;
+  } | null>(null);
 
   // Owner Gallery & Quick Store Settings drafts
   const [ownerGalleryDraft, setOwnerGalleryDraft] = useState<GalleryItem[]>([]);
@@ -378,6 +431,69 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     return Array.from(map.values()).sort((a, b) => b.totalSpent - a.totalSpent);
   }, [ownerData?.orders]);
 
+  const displayedProducts = useMemo(() => {
+    if (!ownerData?.products) return [];
+    let list = [...ownerData.products];
+    if (prodSearchQuery.trim()) {
+      const q = prodSearchQuery.trim().toLowerCase();
+      list = list.filter((p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.sku && p.sku.toLowerCase().includes(q)) ||
+        (p.barcode && p.barcode.toLowerCase().includes(q)) ||
+        (p.category && p.category.toLowerCase().includes(q))
+      );
+    }
+    if (prodCategoryFilter !== 'all') {
+      list = list.filter((p) => p.category.toLowerCase() === prodCategoryFilter.toLowerCase());
+    }
+    if (prodStockFilter === 'in_stock') {
+      list = list.filter((p) => p.stock > (p.lowStockThreshold || 5) && p.active !== false);
+    } else if (prodStockFilter === 'low_stock') {
+      list = list.filter((p) => p.stock > 0 && p.stock <= (p.lowStockThreshold || 5) && p.active !== false);
+    } else if (prodStockFilter === 'out_of_stock') {
+      list = list.filter((p) => p.stock === 0 && p.active !== false);
+    } else if (prodStockFilter === 'inactive') {
+      list = list.filter((p) => p.active === false);
+    }
+
+    list.sort((a, b) => {
+      if (prodSortBy === 'price_asc') return a.price - b.price;
+      if (prodSortBy === 'price_desc') return b.price - a.price;
+      if (prodSortBy === 'stock_asc') return a.stock - b.stock;
+      return a.name.localeCompare(b.name);
+    });
+    return list;
+  }, [ownerData?.products, prodSearchQuery, prodCategoryFilter, prodStockFilter, prodSortBy]);
+
+  const displayedOrders = useMemo(() => {
+    if (!ownerData?.orders) return [];
+    let list = [...ownerData.orders];
+    if (orderSearchQuery.trim()) {
+      const q = orderSearchQuery.trim().toLowerCase();
+      list = list.filter((o) =>
+        o.orderNumber.toLowerCase().includes(q) ||
+        o.customerName.toLowerCase().includes(q) ||
+        o.customerPhone.toLowerCase().includes(q) ||
+        (o.customerEmail && o.customerEmail.toLowerCase().includes(q))
+      );
+    }
+    if (orderStatusFilter !== 'all') {
+      list = list.filter((o) => o.status === orderStatusFilter);
+    }
+    return list;
+  }, [ownerData?.orders, orderSearchQuery, orderStatusFilter]);
+
+  const displayedCustomers = useMemo(() => {
+    if (!ownerCustomers) return [];
+    if (!customerSearchQuery.trim()) return ownerCustomers;
+    const q = customerSearchQuery.trim().toLowerCase();
+    return ownerCustomers.filter((c) =>
+      c.name.toLowerCase().includes(q) ||
+      c.phone.toLowerCase().includes(q) ||
+      c.email.toLowerCase().includes(q)
+    );
+  }, [ownerCustomers, customerSearchQuery]);
+
   const loadDeliveryPortal = useCallback(async () => {
     try {
       const data = await apiFetch<{ partners: DeliveryPartnerRecord[]; assignedOrders: OrderRecord[] }>('/api/delivery/portal');
@@ -508,11 +624,28 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     }
   };
 
+  const downloadCsv = (filename: string, headers: string[], rows: (string | number)[][]) => {
+    const escapeCell = (val: string | number) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const csvContent = [
+      headers.map(escapeCell).join(','),
+      ...rows.map((row) => row.map(escapeCell).join(',')),
+    ].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const resetProductForm = () => {
     setEditingProductId(null);
     setProdName('');
     setProdCat('Featured');
     setProdSubcat('General');
+    setProdSku('');
+    setProdBarcode('');
     setProdPrice(1499);
     setProdCompareAt(0);
     setProdWholesale(0);
@@ -531,6 +664,8 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     setProdName(p.name);
     setProdCat(p.category || 'General');
     setProdSubcat(p.subcategory || '');
+    setProdSku(p.sku || '');
+    setProdBarcode(p.barcode || '');
     setProdPrice(p.price);
     setProdCompareAt(p.compareAtPrice || 0);
     setProdWholesale(p.wholesalePrice || 0);
@@ -550,6 +685,145 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     setProdFeatured(Boolean(p.featured));
     setProdBestseller(Boolean(p.bestseller));
     onNotify(`Editing "${p.name}". Update details and click Update Product.`);
+  };
+
+  const handleDuplicateProduct = async (p: ProductRecord) => {
+    if (!selectedTenantId) return;
+    try {
+      await apiFetch(`/api/products/${p.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: 'duplicate' }),
+      });
+      await loadOwnerOverview(selectedTenantId);
+      onNotify(`Duplicated "${p.name}" as a copy.`);
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Failed to duplicate product.');
+    }
+  };
+
+  const handleToggleProductActive = async (p: ProductRecord) => {
+    if (!selectedTenantId) return;
+    try {
+      await apiFetch(`/api/products/${p.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ active: p.active === false ? true : false }),
+      });
+      await loadOwnerOverview(selectedTenantId);
+      onNotify(`Product "${p.name}" status updated.`);
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Failed to update product status.');
+    }
+  };
+
+  const handleExportProductsCsv = () => {
+    if (!ownerData?.products?.length) {
+      onNotify('No products available to export.');
+      return;
+    }
+    const headers = ['ID', 'SKU', 'Barcode', 'Name', 'Category', 'Subcategory', 'Price', 'CompareAtPrice', 'Stock', 'Status'];
+    const rows = ownerData.products.map((p) => [
+      p.id,
+      p.sku || '',
+      p.barcode || '',
+      p.name,
+      p.category,
+      p.subcategory || '',
+      p.price,
+      p.compareAtPrice || 0,
+      p.stock,
+      p.active !== false ? 'Active' : 'Disabled',
+    ]);
+    downloadCsv(`products-${ownerData.tenant.slug || 'catalog'}.csv`, headers, rows);
+    onNotify('Product catalog CSV exported.');
+  };
+
+  const handleExportOrdersCsv = () => {
+    if (!ownerData?.orders?.length) {
+      onNotify('No orders available to export.');
+      return;
+    }
+    const headers = ['Order Number', 'Date', 'Customer Name', 'Phone', 'Email', 'Payment Method', 'Payment Status', 'Order Status', 'Total (INR)'];
+    const rows = ownerData.orders.map((o) => [
+      o.orderNumber,
+      o.createdAt || '',
+      o.customerName,
+      o.customerPhone,
+      o.customerEmail || '',
+      o.paymentMethod,
+      o.paymentStatus,
+      o.status,
+      o.total,
+    ]);
+    downloadCsv(`orders-${ownerData.tenant.slug || 'store'}.csv`, headers, rows);
+    onNotify('Store orders CSV exported.');
+  };
+
+  const handleExportCustomersCsv = () => {
+    if (!ownerCustomers.length) {
+      onNotify('No customer records available to export.');
+      return;
+    }
+    const headers = ['Customer Name', 'Phone', 'Email', 'Total Orders Placed', 'Total Spent (INR)', 'Last Order Date'];
+    const rows = ownerCustomers.map((c) => [
+      c.name,
+      c.phone,
+      c.email,
+      c.ordersCount,
+      c.totalSpent,
+      c.lastOrderAt || '',
+    ]);
+    downloadCsv(`customers-${ownerData?.tenant.slug || 'directory'}.csv`, headers, rows);
+    onNotify('Customer directory CSV exported.');
+  };
+
+  const handleImportProductsCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !selectedTenantId) return;
+
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      if (lines.length < 2) {
+        onNotify('CSV file is empty or missing data rows.');
+        return;
+      }
+      const headers = lines[0].split(',').map((h) => h.replace(/"/g, '').trim().toLowerCase());
+      const nameIdx = headers.findIndex((h) => h.includes('name'));
+      const priceIdx = headers.findIndex((h) => h.includes('price'));
+      const catIdx = headers.findIndex((h) => h.includes('cat'));
+      const stockIdx = headers.findIndex((h) => h.includes('stock'));
+      const skuIdx = headers.findIndex((h) => h.includes('sku'));
+
+      if (nameIdx === -1 || priceIdx === -1) {
+        onNotify('CSV must contain at least "Name" and "Price" columns.');
+        return;
+      }
+
+      let imported = 0;
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map((c) => c.replace(/"/g, '').trim());
+        const name = cols[nameIdx];
+        const price = Number(cols[priceIdx]) || 0;
+        if (!name || price < 0) continue;
+
+        await apiFetch(`/api/tenants/${selectedTenantId}/products`, {
+          method: 'POST',
+          body: JSON.stringify({
+            name,
+            price,
+            category: catIdx !== -1 && cols[catIdx] ? cols[catIdx] : 'General',
+            stock: stockIdx !== -1 ? Number(cols[stockIdx]) || 10 : 10,
+            sku: skuIdx !== -1 ? cols[skuIdx] : '',
+          }),
+        });
+        imported++;
+      }
+      await loadOwnerOverview(selectedTenantId);
+      onNotify(`Successfully imported ${imported} product(s) from CSV.`);
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Failed to import CSV.');
+    }
   };
 
   const handleUploadProductImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -582,6 +856,8 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       name: prodName.trim(),
       category: prodCat.trim() || 'General',
       subcategory: prodSubcat.trim(),
+      sku: prodSku.trim(),
+      barcode: prodBarcode.trim(),
       price: Number(prodPrice),
       compareAtPrice: Number(prodCompareAt) > 0 ? Number(prodCompareAt) : 0,
       wholesalePrice: Number(prodWholesale) || 0,
@@ -967,31 +1243,57 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                 </div>
               ) : ownerData ? (
                 <>
-                  {/* KPIs */}
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                    <div className="rounded-lg border border-[#20202E] bg-[#0D0D13] p-4">
-                      <p className="text-[11px] text-[#8E8EA2]">Revenue</p>
+                  {/* Business Overview KPIs */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div className="rounded-xl border border-[#20202E] bg-[#0D0D13] p-3.5">
+                      <p className="text-[10px] text-[#8E8EA2] uppercase font-semibold">Total Revenue</p>
                       <p className="font-mono-tabular text-lg font-bold text-[#ECC86A] mt-1">
                         ₹{ownerData.stats.totalRevenue.toLocaleString('en-IN')}
                       </p>
+                      <p className="text-[10px] text-[#7E7E92] mt-0.5">
+                        Today: ₹{(ownerData.stats.todayRevenue || 0).toLocaleString('en-IN')}
+                      </p>
                     </div>
-                    <div className="rounded-lg border border-[#20202E] bg-[#0D0D13] p-4">
-                      <p className="text-[11px] text-[#8E8EA2]">Orders</p>
-                      <p className="font-mono-tabular text-lg font-bold text-white mt-1">{ownerData.stats.orderCount}</p>
-                    </div>
-                    <div className="rounded-lg border border-[#20202E] bg-[#0D0D13] p-4">
-                      <p className="text-[11px] text-[#8E8EA2]">Products</p>
-                      <p className="font-mono-tabular text-lg font-bold text-white mt-1">{ownerData.stats.productCount}</p>
-                    </div>
-                    <div className="rounded-lg border border-[#20202E] bg-[#0D0D13] p-4">
-                      <p className="text-[11px] text-[#8E8EA2]">Low Stock</p>
-                      <p className="font-mono-tabular text-lg font-bold text-amber-400 mt-1">{ownerData.stats.lowStockCount}</p>
-                    </div>
-                    <div className="rounded-lg border border-[#20202E] bg-[#0D0D13] p-4">
-                      <p className="text-[11px] text-[#8E8EA2]">AI Credits</p>
+                    <div className="rounded-xl border border-[#20202E] bg-[#0D0D13] p-3.5">
+                      <p className="text-[10px] text-[#8E8EA2] uppercase font-semibold">Total Orders</p>
                       <p className="font-mono-tabular text-lg font-bold text-white mt-1">
+                        {ownerData.stats.totalOrders || ownerData.stats.orderCount}
+                      </p>
+                      <p className="text-[10px] text-amber-400 mt-0.5">
+                        {ownerData.stats.pendingOrders || 0} active / pending
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[#20202E] bg-[#0D0D13] p-3.5">
+                      <p className="text-[10px] text-[#8E8EA2] uppercase font-semibold">Completed Orders</p>
+                      <p className="font-mono-tabular text-lg font-bold text-emerald-400 mt-1">
+                        {ownerData.stats.completedOrders || 0}
+                      </p>
+                      <p className="text-[10px] text-rose-400 mt-0.5">
+                        {ownerData.stats.cancelledOrders || 0} cancelled
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[#20202E] bg-[#0D0D13] p-3.5">
+                      <p className="text-[10px] text-[#8E8EA2] uppercase font-semibold">Customers</p>
+                      <p className="font-mono-tabular text-lg font-bold text-white mt-1">
+                        {ownerData.stats.totalCustomers || ownerCustomers.length}
+                      </p>
+                      <p className="text-[10px] text-[#7E7E92] mt-0.5">Verified buyers</p>
+                    </div>
+                    <div className="rounded-xl border border-[#20202E] bg-[#0D0D13] p-3.5">
+                      <p className="text-[10px] text-[#8E8EA2] uppercase font-semibold">Catalog Products</p>
+                      <p className="font-mono-tabular text-lg font-bold text-white mt-1">
+                        {ownerData.stats.productCount}
+                      </p>
+                      <p className={`text-[10px] mt-0.5 ${ownerData.stats.lowStockCount > 0 ? 'text-amber-400 font-semibold' : 'text-[#7E7E92]'}`}>
+                        {ownerData.stats.lowStockCount} low stock alerts
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[#20202E] bg-[#0D0D13] p-3.5">
+                      <p className="text-[10px] text-[#8E8EA2] uppercase font-semibold">Gemini AI Credits</p>
+                      <p className="font-mono-tabular text-lg font-bold text-[#D4AF37] mt-1">
                         {ownerData.tenant.aiCreditsUsed}/{ownerData.tenant.aiCreditsLimit}
                       </p>
+                      <p className="text-[10px] text-emerald-400 mt-0.5">Server Verified</p>
                     </div>
                   </div>
 
@@ -1077,104 +1379,190 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
                   {/* ORDERS & DISPATCH */}
                   {ownerSection === 'overview' && (
-                    <div className="rounded-xl border border-[#20202D] bg-[#0D0D13] overflow-hidden">
-                      <div className="px-5 py-3.5 border-b border-[#1E1E2A] flex items-center justify-between">
-                        <h2 className="text-sm font-semibold text-white">Store Orders & Delivery Assignment</h2>
-                        <span className="text-xs text-[#8E8EA2]">{ownerData.orders.length} total</span>
-                      </div>
-                      {ownerData.orders.length === 0 ? (
-                        <p className="p-8 text-center text-xs text-[#8E8EA2]">
-                          No orders placed yet. Open your live storefront to test a live checkout!
-                        </p>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead className="bg-[#0A0A0F] text-[#8E8EA2] text-left">
-                              <tr>
-                                <th className="py-2.5 px-4">Order</th>
-                                <th className="py-2.5 px-4">Customer</th>
-                                <th className="py-2.5 px-4 text-right">Total</th>
-                                <th className="py-2.5 px-4">Status</th>
-                                <th className="py-2.5 px-4">Delivery Partner</th>
-                                <th className="py-2.5 px-4 text-right">Invoice</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[#1C1C28]">
-                              {ownerData.orders.map((ord) => (
-                                <tr key={ord.id} className="hover:bg-[#12121B]">
-                                  <td className="py-3 px-4 font-mono-tabular text-[#ECC86A]">
-                                    <div>{ord.orderNumber}</div>
-                                    <div className="flex items-center gap-1.5 mt-1">
-                                      <span className="text-[11px] text-[#84849A] uppercase">{ord.paymentMethod}</span>
-                                      <select
-                                        value={ord.paymentStatus}
-                                        onChange={(e) => handleUpdateOrder(ord.id, { paymentStatus: e.target.value })}
-                                        className="rounded border border-[#262634] bg-[#09090D] px-1.5 py-0.5 text-[11px] text-[#D7D7E2]"
-                                      >
-                                        <option value="cod_due">COD Due</option>
-                                        <option value="pending_verification">Verify UPI</option>
-                                        <option value="paid">Paid</option>
-                                        <option value="refunded">Refunded</option>
-                                      </select>
-                                    </div>
-                                    {ord.paymentReference && (
-                                      <div className="text-[10px] text-[#9A9AAE] mt-0.5">UTR: {ord.paymentReference}</div>
-                                    )}
-                                  </td>
-                                  <td className="py-3 px-4">
-                                    <div className="text-white font-medium">{ord.customerName}</div>
-                                    <div className="text-[11px] text-[#8B8B9E]">{ord.customerPhone}</div>
-                                  </td>
-                                  <td className="py-3 px-4 text-right font-mono-tabular text-white">
-                                    ₹{ord.total.toLocaleString('en-IN')}
-                                  </td>
-                                  <td className="py-3 px-4">
-                                    <select
-                                      value={ord.status}
-                                      onChange={(e) => handleUpdateOrder(ord.id, { status: e.target.value })}
-                                      className="rounded border border-[#2A2A38] bg-[#09090D] px-2 py-1 text-xs text-white"
-                                    >
-                                      {['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'cancelled', 'return_requested'].map((st) => (
-                                        <option key={st} value={st}>
-                                          {st.replace(/_/g, ' ')}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </td>
-                                  <td className="py-3 px-4">
-                                    <select
-                                      value={ord.deliveryPartnerId ?? ''}
-                                      onChange={(e) =>
-                                        handleUpdateOrder(ord.id, {
-                                          deliveryPartnerId: e.target.value ? Number(e.target.value) : null,
-                                        })
-                                      }
-                                      className="rounded border border-[#2A2A38] bg-[#09090D] px-2 py-1 text-xs text-white"
-                                    >
-                                      <option value="">Unassigned</option>
-                                      {ownerData.deliveryPartners.map((dp) => (
-                                        <option key={dp.id} value={dp.id}>
-                                          {dp.name} ({dp.available ? 'Available' : 'Busy'})
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </td>
-                                  <td className="py-3 px-4 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() => onOpenInvoice(ord, ownerData.tenant.name)}
-                                      className="inline-flex items-center gap-1 text-[#ECC86A] hover:underline"
-                                    >
-                                      <Printer className="w-3.5 h-3.5" />
-                                      <span>PDF</span>
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                    <div className="space-y-4">
+                      {/* Financial Trend & Performance Card */}
+                      {ownerData.stats.salesTrend && ownerData.stats.salesTrend.length > 0 && (
+                        <div className="rounded-xl border border-[#20202D] bg-[#0D0D13] p-4 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1E1E2B] pb-2.5">
+                            <div>
+                              <p className="text-xs font-semibold text-white">7-Day Store Revenue Velocity</p>
+                              <p className="text-[10px] text-[#8E8EA2]">Daily sales and customer order volume breakdown</p>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs">
+                              <span className="text-[#A5A5B8]">
+                                Past 7 Days: <strong className="text-[#ECC86A] font-mono-tabular">₹{(ownerData.stats.weeklyRevenue || 0).toLocaleString('en-IN')}</strong>
+                              </span>
+                              <span className="text-[#A5A5B8]">
+                                Past 30 Days: <strong className="text-white font-mono-tabular">₹{(ownerData.stats.monthlyRevenue || 0).toLocaleString('en-IN')}</strong>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-7 gap-2 pt-1">
+                            {ownerData.stats.salesTrend.map((t) => (
+                              <div key={t.date} className="rounded-lg border border-[#1E1E2B] bg-[#09090E] p-2 text-center">
+                                <p className="text-[10px] text-[#8E8EA2] font-mono-tabular">{t.date.slice(5)}</p>
+                                <p className="font-mono-tabular text-xs font-bold text-white mt-1">₹{t.revenue.toLocaleString('en-IN')}</p>
+                                <p className="text-[9px] text-[#D4AF37] mt-0.5">{t.orders} {t.orders === 1 ? 'order' : 'orders'}</p>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
+
+                      {/* Orders Table with Search & Filters */}
+                      <div className="rounded-xl border border-[#20202D] bg-[#0D0D13] overflow-hidden">
+                        <div className="p-4 border-b border-[#1E1E2A] flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
+                            <div className="relative flex-1 min-w-[200px]">
+                              <Search className="w-3.5 h-3.5 text-[#8E8EA2] absolute left-3 top-2.5" />
+                              <input
+                                type="text"
+                                value={orderSearchQuery}
+                                onChange={(e) => setOrderSearchQuery(e.target.value)}
+                                placeholder="Search by Order #, Customer Name, or Phone..."
+                                className="w-full rounded-md border border-[#2A2A38] bg-[#08080C] pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-[#6E6E82]"
+                              />
+                            </div>
+                            <select
+                              value={orderStatusFilter}
+                              onChange={(e) => setOrderStatusFilter(e.target.value)}
+                              className="rounded-md border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-xs text-white"
+                            >
+                              <option value="all">All Statuses ({ownerData.orders.length})</option>
+                              <option value="placed">Placed (New)</option>
+                              <option value="confirmed">Confirmed</option>
+                              <option value="packed">Packed</option>
+                              <option value="out_for_delivery">Out for Delivery</option>
+                              <option value="delivered">Delivered</option>
+                              <option value="cancelled">Cancelled / Returned</option>
+                            </select>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleExportOrdersCsv}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#2A2A38] bg-[#08080C] text-xs text-white hover:border-[#D4AF37]"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Export Orders CSV</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {displayedOrders.length === 0 ? (
+                          <p className="p-8 text-center text-xs text-[#8E8EA2]">
+                            {ownerData.orders.length === 0
+                              ? 'No orders placed yet. Open your live storefront to test a live checkout!'
+                              : 'No orders match your search and filter criteria.'}
+                          </p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead className="bg-[#0A0A0F] text-[#8E8EA2] text-left">
+                                <tr>
+                                  <th className="py-2.5 px-4">Order</th>
+                                  <th className="py-2.5 px-4">Customer</th>
+                                  <th className="py-2.5 px-4 text-right">Total</th>
+                                  <th className="py-2.5 px-4">Status</th>
+                                  <th className="py-2.5 px-4">Delivery Partner</th>
+                                  <th className="py-2.5 px-4 text-right">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#1C1C28]">
+                                {displayedOrders.map((ord) => (
+                                  <tr key={ord.id} className="hover:bg-[#12121B] transition-colors">
+                                    <td className="py-3 px-4 font-mono-tabular text-[#ECC86A]">
+                                      <div
+                                        onClick={() => setSelectedOrderDetail(ord)}
+                                        className="cursor-pointer hover:underline font-semibold"
+                                      >
+                                        {ord.orderNumber}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 mt-1">
+                                        <span className="text-[10px] text-[#84849A] uppercase">{ord.paymentMethod}</span>
+                                        <select
+                                          value={ord.paymentStatus}
+                                          onChange={(e) => handleUpdateOrder(ord.id, { paymentStatus: e.target.value })}
+                                          className="rounded border border-[#262634] bg-[#09090D] px-1.5 py-0.5 text-[10px] text-[#D7D7E2]"
+                                        >
+                                          <option value="cod_due">COD Due</option>
+                                          <option value="pending_verification">Verify UPI</option>
+                                          <option value="paid">Paid</option>
+                                          <option value="refunded">Refunded</option>
+                                        </select>
+                                      </div>
+                                      {ord.paymentReference && (
+                                        <div className="text-[10px] text-[#9A9AAE] mt-0.5">UTR: {ord.paymentReference}</div>
+                                      )}
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <div className="text-white font-medium">{ord.customerName}</div>
+                                      <div className="text-[11px] text-[#8B8B9E] font-mono-tabular">{ord.customerPhone}</div>
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-mono-tabular text-white font-medium">
+                                      ₹{ord.total.toLocaleString('en-IN')}
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <select
+                                        value={ord.status}
+                                        onChange={(e) => handleUpdateOrder(ord.id, { status: e.target.value })}
+                                        className="rounded border border-[#2A2A38] bg-[#09090D] px-2 py-1 text-xs text-white"
+                                      >
+                                        {['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered', 'cancelled', 'return_requested'].map((st) => (
+                                          <option key={st} value={st}>
+                                            {st.replace(/_/g, ' ')}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td className="py-3 px-4">
+                                      <select
+                                        value={ord.deliveryPartnerId ?? ''}
+                                        onChange={(e) =>
+                                          handleUpdateOrder(ord.id, {
+                                            deliveryPartnerId: e.target.value ? Number(e.target.value) : null,
+                                          })
+                                        }
+                                        className="rounded border border-[#2A2A38] bg-[#09090D] px-2 py-1 text-xs text-white"
+                                      >
+                                        <option value="">Unassigned</option>
+                                        {ownerData.deliveryPartners.map((dp) => (
+                                          <option key={dp.id} value={dp.id}>
+                                            {dp.name} ({dp.available ? 'Available' : 'Busy'})
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td className="py-3 px-4 text-right">
+                                      <div className="inline-flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedOrderDetail(ord)}
+                                          className="inline-flex items-center gap-1 text-[#D4AF37] hover:underline"
+                                          title="View complete order details & actions"
+                                        >
+                                          <Eye className="w-3.5 h-3.5" />
+                                          <span>Details</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => onOpenInvoice(ord, ownerData.tenant.name)}
+                                          className="inline-flex items-center gap-1 text-[#ECC86A] hover:underline"
+                                          title="Print / Save Tax Invoice"
+                                        >
+                                          <Printer className="w-3.5 h-3.5" />
+                                          <span>PDF</span>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -1297,9 +1685,26 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                           type="text"
                           value={prodSpecs}
                           onChange={(e) => setProdSpecs(e.target.value)}
-                          placeholder="Key specs, SKU, material, or warranty details (e.g. 1 Year Brand Warranty · 100% Pure Cotton)"
+                          placeholder="Key specs, material, or warranty details (e.g. 1 Year Brand Warranty · 100% Pure Cotton)"
                           className="w-full rounded-md border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs text-white"
                         />
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <input
+                            type="text"
+                            value={prodSku}
+                            onChange={(e) => setProdSku(e.target.value)}
+                            placeholder="SKU Code (e.g. SLK-RED-001)"
+                            className="rounded-md border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs text-white"
+                          />
+                          <input
+                            type="text"
+                            value={prodBarcode}
+                            onChange={(e) => setProdBarcode(e.target.value)}
+                            placeholder="Barcode / EAN (optional)"
+                            className="rounded-md border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs text-white"
+                          />
+                        </div>
 
                         <textarea
                           rows={2}
@@ -1374,134 +1779,248 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                         </button>
                       </form>
 
+                      {/* Products Toolbar (Search, Filter, Sort, Categories, Import/Export) */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl border border-[#20202D] bg-[#0D0D13]">
+                        <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
+                          <div className="relative flex-1 min-w-[180px]">
+                            <Search className="w-3.5 h-3.5 text-[#8E8EA2] absolute left-3 top-2.5" />
+                            <input
+                              type="text"
+                              value={prodSearchQuery}
+                              onChange={(e) => setProdSearchQuery(e.target.value)}
+                              placeholder="Search by name, SKU, or category..."
+                              className="w-full rounded-md border border-[#2A2A38] bg-[#08080C] pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-[#6E6E82]"
+                            />
+                          </div>
+                          <select
+                            value={prodCategoryFilter}
+                            onChange={(e) => setProdCategoryFilter(e.target.value)}
+                            className="rounded-md border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-xs text-white"
+                          >
+                            <option value="all">All Categories</option>
+                            {Array.from(new Set(ownerData.products.map((p) => p.category))).map((cat) => (
+                              <option key={cat} value={cat}>
+                                {cat}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={prodStockFilter}
+                            onChange={(e) => setProdStockFilter(e.target.value as any)}
+                            className="rounded-md border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-xs text-white"
+                          >
+                            <option value="all">All Stock Statuses</option>
+                            <option value="in_stock">In Stock</option>
+                            <option value="low_stock">Low Stock (≤5)</option>
+                            <option value="out_of_stock">Out of Stock (0)</option>
+                            <option value="inactive">Disabled / Inactive</option>
+                          </select>
+                          <select
+                            value={prodSortBy}
+                            onChange={(e) => setProdSortBy(e.target.value as any)}
+                            className="rounded-md border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-xs text-white"
+                          >
+                            <option value="name_asc">Sort: Name (A–Z)</option>
+                            <option value="price_asc">Sort: Price (Low–High)</option>
+                            <option value="price_desc">Sort: Price (High–Low)</option>
+                            <option value="stock_asc">Sort: Stock (Low–High)</option>
+                          </select>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setCategoryModalOpen(true)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#D4AF37]/40 bg-[#12121A] text-xs text-[#ECC86A] hover:bg-[#1D1A0F]"
+                          >
+                            <FolderPlus className="w-3.5 h-3.5" />
+                            <span>Manage Categories</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleExportProductsCsv}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#2A2A38] bg-[#08080C] text-xs text-white hover:border-[#D4AF37]"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Export CSV</span>
+                          </button>
+                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#2A2A38] bg-[#08080C] text-xs text-white hover:border-[#D4AF37] cursor-pointer">
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Import CSV</span>
+                            <input type="file" accept=".csv" onChange={handleImportProductsCsv} className="hidden" />
+                          </label>
+                        </div>
+                      </div>
+
                       <div className="rounded-xl border border-[#20202D] bg-[#0D0D13] overflow-x-auto">
                         <table className="w-full text-xs">
                           <thead className="bg-[#0A0A0F] text-[#8E8EA2] text-left">
                             <tr>
                               <th className="py-2.5 px-4">Product</th>
+                              <th className="py-2.5 px-4">SKU / Code</th>
                               <th className="py-2.5 px-4">Category</th>
                               <th className="py-2.5 px-4 text-right">Price / MRP</th>
                               <th className="py-2.5 px-4 text-right">Stock</th>
+                              <th className="py-2.5 px-4 text-center">Status</th>
                               <th className="py-2.5 px-4 text-right">Actions</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#1C1C28]">
-                            {ownerData.products.map((p) => (
-                              <tr key={p.id}>
-                                <td className="py-3 px-4">
-                                  <div className="flex items-center gap-2.5">
-                                    {p.imageUrl && (
-                                      <img
-                                        src={p.imageUrl}
-                                        alt={p.name}
-                                        className="w-9 h-9 rounded object-cover border border-[#262634] shrink-0"
-                                      />
-                                    )}
-                                    <div>
-                                      <p className="text-white font-medium">{p.name}</p>
-                                      <div className="flex gap-1.5 mt-0.5 text-[10px]">
-                                        {p.featured && <span className="text-[#ECC86A]">Featured</span>}
-                                        {p.bestseller && <span className="text-emerald-400">Bestseller</span>}
-                                        {(p.images?.length || 0) > 1 && (
-                                          <span className="text-[#8E8EA2]">{p.images?.length} photos</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="py-3 px-4 text-[#9A9AAE]">
-                                  {p.category}{p.subcategory ? ` · ${p.subcategory}` : ''}
-                                </td>
-                                <td className="py-3 px-4 text-right font-mono-tabular">
-                                  <span className="text-white">₹{p.price.toLocaleString('en-IN')}</span>
-                                  {p.compareAtPrice > p.price && (
-                                    <span className="ml-1.5 text-[10px] text-[#7E7E92] line-through">
-                                      ₹{p.compareAtPrice.toLocaleString('en-IN')}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-4 text-right">
-                                  <div className="inline-flex items-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        await apiFetch(`/api/products/${p.id}`, {
-                                          method: 'PATCH',
-                                          body: JSON.stringify({ stock: Math.max(0, p.stock - 1) }),
-                                        });
-                                        await loadOwnerOverview(selectedTenantId!);
-                                      }}
-                                      className="px-1.5 py-0.5 rounded border border-[#2A2A38] text-[#B8B8C8] hover:text-white"
-                                      title="Decrease stock by 1"
-                                    >
-                                      -1
-                                    </button>
-                                    <span className={`font-mono-tabular min-w-[44px] text-center ${p.stock <= p.lowStockThreshold ? 'text-amber-400 font-semibold' : 'text-white'}`}>
-                                      {p.stock} {p.stock <= p.lowStockThreshold ? '(Low)' : ''}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        await apiFetch(`/api/products/${p.id}`, {
-                                          method: 'PATCH',
-                                          body: JSON.stringify({ stock: p.stock + 5 }),
-                                        });
-                                        await loadOwnerOverview(selectedTenantId!);
-                                        onNotify(`Restocked +5 units for ${p.name}.`);
-                                      }}
-                                      className="px-1.5 py-0.5 rounded border border-[#2A2A38] text-[#ECC86A] hover:border-[#D4AF37]"
-                                      title="Restock +5 units"
-                                    >
-                                      +5
-                                    </button>
-                                  </div>
-                                </td>
-                                <td className="py-3 px-4 text-right">
-                                  <div className="inline-flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleLoadProductForEdit(p)}
-                                      className="text-[#ECC86A] hover:text-white"
-                                      aria-label="Edit product"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5 inline" />
-                                    </button>
-                                    {confirmDeleteProductId === p.id ? (
-                                      <span className="inline-flex items-center gap-1">
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            await apiFetch(`/api/products/${p.id}`, { method: 'DELETE' });
-                                            setConfirmDeleteProductId(null);
-                                            await loadOwnerOverview(selectedTenantId!);
-                                            onNotify('Product deleted.');
-                                          }}
-                                          className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-semibold"
-                                        >
-                                          Confirm
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setConfirmDeleteProductId(null)}
-                                          className="px-1.5 py-0.5 rounded border border-[#2A2A38] text-[10px] text-[#9E9EB2]"
-                                        >
-                                          No
-                                        </button>
-                                      </span>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => setConfirmDeleteProductId(p.id)}
-                                        className="text-rose-400 hover:text-rose-300"
-                                        aria-label="Delete product"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5 inline" />
-                                      </button>
-                                    )}
-                                  </div>
+                            {displayedProducts.length === 0 ? (
+                              <tr>
+                                <td colSpan={7} className="py-8 text-center text-xs text-[#8E8EA2]">
+                                  {ownerData.products.length === 0
+                                    ? 'No products in store catalog. Use the form above to add your first product!'
+                                    : 'No products match your search or filter selection.'}
                                 </td>
                               </tr>
-                            ))}
+                            ) : (
+                              displayedProducts.map((p) => (
+                                <tr key={p.id} className="hover:bg-[#12121B] transition-colors">
+                                  <td className="py-3 px-4">
+                                    <div className="flex items-center gap-2.5">
+                                      {p.imageUrl && (
+                                        <img
+                                          src={p.imageUrl}
+                                          alt={p.name}
+                                          className="w-9 h-9 rounded object-cover border border-[#262634] shrink-0"
+                                        />
+                                      )}
+                                      <div>
+                                        <p className="text-white font-medium">{p.name}</p>
+                                        <div className="flex gap-1.5 mt-0.5 text-[10px]">
+                                          {p.featured && <span className="text-[#ECC86A]">Featured</span>}
+                                          {p.bestseller && <span className="text-emerald-400">Bestseller</span>}
+                                          {(p.images?.length || 0) > 1 && (
+                                            <span className="text-[#8E8EA2]">{p.images?.length} photos</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 font-mono-tabular text-[#A5A5B8]">
+                                    {p.sku || p.barcode || '—'}
+                                  </td>
+                                  <td className="py-3 px-4 text-[#9A9AAE]">
+                                    {p.category}{p.subcategory ? ` · ${p.subcategory}` : ''}
+                                  </td>
+                                  <td className="py-3 px-4 text-right font-mono-tabular">
+                                    <span className="text-white">₹{p.price.toLocaleString('en-IN')}</span>
+                                    {p.compareAtPrice > p.price && (
+                                      <span className="ml-1.5 text-[10px] text-[#7E7E92] line-through">
+                                        ₹{p.compareAtPrice.toLocaleString('en-IN')}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 text-right">
+                                    <div className="inline-flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          await apiFetch(`/api/products/${p.id}`, {
+                                            method: 'PATCH',
+                                            body: JSON.stringify({ stock: Math.max(0, p.stock - 1) }),
+                                          });
+                                          await loadOwnerOverview(selectedTenantId!);
+                                        }}
+                                        className="px-1.5 py-0.5 rounded border border-[#2A2A38] text-[#B8B8C8] hover:text-white"
+                                        title="Decrease stock by 1"
+                                      >
+                                        -1
+                                      </button>
+                                      <span className={`font-mono-tabular min-w-[44px] text-center ${p.stock <= (p.lowStockThreshold || 5) ? 'text-amber-400 font-semibold' : 'text-white'}`}>
+                                        {p.stock} {p.stock <= (p.lowStockThreshold || 5) ? '(Low)' : ''}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          await apiFetch(`/api/products/${p.id}`, {
+                                            method: 'PATCH',
+                                            body: JSON.stringify({ stock: p.stock + 5 }),
+                                          });
+                                          await loadOwnerOverview(selectedTenantId!);
+                                          onNotify(`Restocked +5 units for ${p.name}.`);
+                                        }}
+                                        className="px-1.5 py-0.5 rounded border border-[#2A2A38] text-[#ECC86A] hover:border-[#D4AF37]"
+                                        title="Restock +5 units"
+                                      >
+                                        +5
+                                      </button>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleProductActive(p)}
+                                      className={`px-2 py-0.5 rounded text-[10px] font-medium border ${
+                                        p.active !== false
+                                          ? 'border-emerald-600/40 text-emerald-300 hover:bg-emerald-950/30'
+                                          : 'border-rose-800/40 text-rose-300 bg-rose-950/40'
+                                      }`}
+                                      title="Toggle product availability on storefront"
+                                    >
+                                      {p.active !== false ? 'Active' : 'Disabled'}
+                                    </button>
+                                  </td>
+                                  <td className="py-3 px-4 text-right">
+                                    <div className="inline-flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDuplicateProduct(p)}
+                                        className="text-[#A5A5B8] hover:text-white"
+                                        title="Duplicate product"
+                                        aria-label="Duplicate product"
+                                      >
+                                        <Copy className="w-3.5 h-3.5 inline" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleLoadProductForEdit(p)}
+                                        className="text-[#ECC86A] hover:text-white"
+                                        title="Edit product"
+                                        aria-label="Edit product"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5 inline" />
+                                      </button>
+                                      {confirmDeleteProductId === p.id ? (
+                                        <span className="inline-flex items-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={async () => {
+                                              await apiFetch(`/api/products/${p.id}`, { method: 'DELETE' });
+                                              setConfirmDeleteProductId(null);
+                                              await loadOwnerOverview(selectedTenantId!);
+                                              onNotify('Product removed. Historical orders remain intact.');
+                                            }}
+                                            className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-semibold"
+                                            title="Confirm deletion (orders remain intact)"
+                                          >
+                                            Confirm
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setConfirmDeleteProductId(null)}
+                                            className="px-1.5 py-0.5 rounded border border-[#2A2A38] text-[10px] text-[#9E9EB2]"
+                                          >
+                                            No
+                                          </button>
+                                        </span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => setConfirmDeleteProductId(p.id)}
+                                          className="text-rose-400 hover:text-rose-300"
+                                          title="Delete product (orders remain intact)"
+                                          aria-label="Delete product"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5 inline" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
                           </tbody>
                         </table>
                       </div>
@@ -1672,43 +2191,94 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
                   {/* REAL CUSTOMERS DIRECTORY (FROM REAL ORDERS) */}
                   {ownerSection === 'customers' && (
-                    <div className="rounded-xl border border-[#20202D] bg-[#0D0D13] overflow-hidden">
-                      <div className="px-5 py-3.5 border-b border-[#1E1E2A] flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-white">Store Customers ({ownerCustomers.length})</h3>
-                        <span className="text-xs text-[#8E8EA2]">Derived from real placed orders</span>
-                      </div>
-                      {ownerCustomers.length === 0 ? (
-                        <p className="p-8 text-center text-xs text-[#8E8EA2]">
-                          No customer orders recorded yet. Customers appear here automatically when real orders are placed on your storefront.
-                        </p>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs">
-                            <thead className="bg-[#0A0A0F] text-[#8E8EA2] text-left">
-                              <tr>
-                                <th className="py-2.5 px-4">Customer Name</th>
-                                <th className="py-2.5 px-4">Phone</th>
-                                <th className="py-2.5 px-4">Email</th>
-                                <th className="py-2.5 px-4 text-right">Orders</th>
-                                <th className="py-2.5 px-4 text-right">Total Spend</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[#1C1C28]">
-                              {ownerCustomers.map((cust, i) => (
-                                <tr key={i}>
-                                  <td className="py-3 px-4 text-white font-medium">{cust.name}</td>
-                                  <td className="py-3 px-4 font-mono-tabular text-[#C8C8D8]">{cust.phone}</td>
-                                  <td className="py-3 px-4 text-[#9E9EB2]">{cust.email}</td>
-                                  <td className="py-3 px-4 text-right font-mono-tabular text-white">{cust.ordersCount}</td>
-                                  <td className="py-3 px-4 text-right font-mono-tabular text-[#ECC86A]">
-                                    ₹{cust.totalSpent.toLocaleString('en-IN')}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-[#20202D] bg-[#0D0D13] overflow-hidden">
+                        <div className="p-4 border-b border-[#1E1E2A] flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 flex-1 min-w-[260px]">
+                            <div className="relative flex-1 min-w-[200px]">
+                              <Search className="w-3.5 h-3.5 text-[#8E8EA2] absolute left-3 top-2.5" />
+                              <input
+                                type="text"
+                                value={customerSearchQuery}
+                                onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                                placeholder="Search customers by name, phone, or email..."
+                                className="w-full rounded-md border border-[#2A2A38] bg-[#08080C] pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-[#6E6E82]"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleExportCustomersCsv}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#2A2A38] bg-[#08080C] text-xs text-white hover:border-[#D4AF37]"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Export Customers CSV</span>
+                            </button>
+                          </div>
                         </div>
-                      )}
+
+                        {displayedCustomers.length === 0 ? (
+                          <p className="p-8 text-center text-xs text-[#8E8EA2]">
+                            {ownerCustomers.length === 0
+                              ? 'No customer orders recorded yet. Customers appear here automatically when real orders are placed on your storefront.'
+                              : 'No customer records match your search query.'}
+                          </p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead className="bg-[#0A0A0F] text-[#8E8EA2] text-left">
+                                <tr>
+                                  <th className="py-2.5 px-4">Customer Name</th>
+                                  <th className="py-2.5 px-4">Phone</th>
+                                  <th className="py-2.5 px-4">Email</th>
+                                  <th className="py-2.5 px-4 text-right">Orders</th>
+                                  <th className="py-2.5 px-4 text-right">Total Spend</th>
+                                  <th className="py-2.5 px-4 text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-[#1C1C28]">
+                                {displayedCustomers.map((cust, i) => (
+                                  <tr
+                                    key={i}
+                                    onClick={() => setSelectedCustomerProfile(cust)}
+                                    className="hover:bg-[#12121B] transition-colors cursor-pointer"
+                                  >
+                                    <td className="py-3 px-4 text-white font-medium">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-6 h-6 rounded-full bg-[#1A1A26] border border-[#2A2A38] flex items-center justify-center text-[10px] text-[#D4AF37] font-bold shrink-0">
+                                          {cust.name.slice(0, 1).toUpperCase()}
+                                        </div>
+                                        <span>{cust.name}</span>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4 font-mono-tabular text-[#C8C8D8]">{cust.phone}</td>
+                                    <td className="py-3 px-4 text-[#9E9EB2]">{cust.email}</td>
+                                    <td className="py-3 px-4 text-right font-mono-tabular text-white">{cust.ordersCount}</td>
+                                    <td className="py-3 px-4 text-right font-mono-tabular text-[#ECC86A] font-medium">
+                                      ₹{cust.totalSpent.toLocaleString('en-IN')}
+                                    </td>
+                                    <td className="py-3 px-4 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedCustomerProfile(cust);
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[#D4AF37] hover:underline"
+                                      >
+                                        <Eye className="w-3.5 h-3.5" />
+                                        <span>Profile</span>
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -3339,6 +3909,48 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Category Manager Modal */}
+      {selectedTenantId && (
+        <OwnerCategoryModal
+          tenantId={selectedTenantId}
+          isOpen={categoryModalOpen}
+          onClose={() => setCategoryModalOpen(false)}
+          onNotify={onNotify}
+          onCategoriesChanged={() => {
+            if (selectedTenantId) loadOwnerOverview(selectedTenantId);
+          }}
+        />
+      )}
+
+      {/* Order Detail Modal */}
+      {selectedOrderDetail && (
+        <OwnerOrderDetailModal
+          order={selectedOrderDetail}
+          deliveryPartners={ownerData?.deliveryPartners || []}
+          isOpen={Boolean(selectedOrderDetail)}
+          onClose={() => setSelectedOrderDetail(null)}
+          onOrderUpdated={async () => {
+            if (selectedTenantId) await loadOwnerOverview(selectedTenantId);
+            setSelectedOrderDetail(null);
+          }}
+          onOpenInvoice={onOpenInvoice}
+          businessName={ownerData?.tenant.name || 'Store'}
+          onNotify={onNotify}
+        />
+      )}
+
+      {/* Customer Profile Modal */}
+      {selectedCustomerProfile && (
+        <OwnerCustomerProfileModal
+          customer={selectedCustomerProfile}
+          orders={ownerData?.orders || []}
+          isOpen={Boolean(selectedCustomerProfile)}
+          onClose={() => setSelectedCustomerProfile(null)}
+          onOpenOrder={(ord) => setSelectedOrderDetail(ord)}
+          onNotify={onNotify}
+        />
       )}
     </div>
   );
