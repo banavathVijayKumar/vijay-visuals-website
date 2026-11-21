@@ -331,7 +331,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
               <Bot className="w-4 h-4 text-[#D4AF37]" />
               <span>Live Gemini AI Output</span>
             </h2>
-            <span className="text-[11px] text-[#8E8EA2]">Grounded in PostgreSQL store data</span>
+            <span className="text-[11px] text-[#8E8EA2]">Grounded in live store database</span>
           </div>
           <div className="flex-1 min-h-[220px] rounded-lg border border-[#1E1E2A] bg-[#09090D] p-4 text-xs text-[#DDDDE8] whitespace-pre-wrap leading-relaxed overflow-y-auto">
             {aiRunning
@@ -539,7 +539,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
           <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-5 text-xs space-y-2">
             <h3 className="text-sm font-semibold text-white mb-2">Production Connector Status</h3>
             {[
-              { key: 'postgresql', label: 'Cloud SQL PostgreSQL Multi-Tenant DB', active: integrations.postgresql },
+              { key: 'cloudflareD1', label: 'Cloudflare D1 Multi-Tenant Edge DB', active: integrations.cloudflareD1 ?? integrations.postgresql },
               { key: 'geminiAi', label: 'Server-Side Gemini AI Engine', active: integrations.geminiAi },
               { key: 'razorpayGateway', label: 'Razorpay / Card Webhook Settlement (External Keys)', active: integrations.razorpayGateway },
               { key: 'whatsappCloudApi', label: 'WhatsApp Business Cloud API (External Token)', active: integrations.whatsappCloudApi },

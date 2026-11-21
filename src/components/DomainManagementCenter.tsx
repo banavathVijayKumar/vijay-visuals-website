@@ -991,7 +991,7 @@ export const DomainManagementCenter: React.FC<DomainManagementCenterProps> = ({
             </p>
             <p className="leading-relaxed">
               {cloudflareNote ||
-                'Adding a domain in this dashboard verifies ownership and maps your hostname in Vijay Visuals PostgreSQL. For live edge HTTPS on custom domains, bind the domain in Cloudflare Pages (up to 100 custom domains) or enable Cloudflare for SaaS Custom Hostnames + Worker host routing.'}
+                'Adding a domain in this dashboard verifies ownership and maps your hostname in Vijay Visuals D1 database. For live edge HTTPS on custom domains, bind the domain in Cloudflare Pages (up to 100 custom domains) or enable Cloudflare for SaaS Custom Hostnames + Worker host routing.'}
             </p>
           </div>
         </div>

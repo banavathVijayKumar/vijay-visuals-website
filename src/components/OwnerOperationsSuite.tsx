@@ -303,7 +303,7 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
   if (loading) {
     return (
       <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-8 text-center text-xs text-[#9E9EB2]">
-        Loading {activeSection.replace('_', ' & ')} data from PostgreSQL...
+        Loading {activeSection.replace('_', ' & ')} data from database...
       </div>
     );
   }

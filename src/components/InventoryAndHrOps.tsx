@@ -483,7 +483,7 @@ export const InventoryAndHrOps: React.FC<InventoryAndHrOpsProps> = ({
                 <span>Module 14 · Backup Verification & Full Data Export</span>
               </h3>
               <p className="text-xs text-[#9E9EB2] mt-0.5">
-                Test snapshot save-and-readback SHA-256 integrity in PostgreSQL or download all business records as JSON.
+                Test snapshot save-and-readback SHA-256 integrity in database or download all business records as JSON.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">

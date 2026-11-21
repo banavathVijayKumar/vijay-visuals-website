@@ -34,7 +34,7 @@ const DEFAULT_PLANS = [
     includesPwa: false,
     active: true,
     featuresJson: JSON.stringify([
-      'Mobile-responsive business website across 16 industry templates',
+      'Mobile-responsive business website across 36 industry templates',
       'Temporary preview subdomain (/site/your-brand) + custom domain DNS wizard',
       'Contact, WhatsApp enquiry, Call & Quote Request lead forms',
       'Technical SEO essentials (meta tags, sitemap.xml, robots.txt, JSON-LD)',

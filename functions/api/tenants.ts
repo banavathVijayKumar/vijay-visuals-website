@@ -26,6 +26,7 @@ import {
   validateSlugFormat,
 } from './_tenantAccess';
 import { PublicationRow, mapPublicationToTenant } from './_tenantMapper';
+import { ALLOWED_WEBSITE_PACKAGE_CODES } from './plans';
 
 const SAFE_COLOR = /^#[0-9a-fA-F]{3,8}$/;
 
@@ -291,27 +292,52 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         .bind(websiteId, unlinked.id)
         .run();
 
-      const durationExpr = unlinked.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
-      await env.DB.prepare(
-        `INSERT INTO tenant_subscriptions
-          (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-           total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-           current_period_start, current_period_end, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
-      )
-        .bind(
-          websiteId,
-          auth.user.id,
-          unlinked.plan_code,
-          unlinked.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
-          unlinked.base_amount_inr,
-          unlinked.gst_amount_inr,
-          unlinked.amount_inr,
-          unlinked.setup_fee_inr,
-          unlinked.razorpay_payment_id || '',
-          durationExpr
+      const isWebsitePackage = (ALLOWED_WEBSITE_PACKAGE_CODES as readonly string[]).includes(unlinked.plan_code);
+      const isOneTime = unlinked.billing_cycle === 'one_time' || isWebsitePackage;
+
+      if (isOneTime) {
+        // One-time website purchases never expire: current_period_end is NULL
+        await env.DB.prepare(
+          `INSERT INTO tenant_subscriptions
+            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+             current_period_start, current_period_end, created_at, updated_at)
+           VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
         )
-        .run();
+          .bind(
+            websiteId,
+            auth.user.id,
+            unlinked.plan_code,
+            unlinked.base_amount_inr,
+            unlinked.gst_amount_inr,
+            unlinked.amount_inr,
+            unlinked.setup_fee_inr,
+            unlinked.razorpay_payment_id || ''
+          )
+          .run();
+      } else {
+        const durationExpr = unlinked.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
+        await env.DB.prepare(
+          `INSERT INTO tenant_subscriptions
+            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+             current_period_start, current_period_end, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+        )
+          .bind(
+            websiteId,
+            auth.user.id,
+            unlinked.plan_code,
+            unlinked.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+            unlinked.base_amount_inr,
+            unlinked.gst_amount_inr,
+            unlinked.amount_inr,
+            unlinked.setup_fee_inr,
+            unlinked.razorpay_payment_id || '',
+            durationExpr
+          )
+          .run();
+      }
 
       // If user desired published status, unlock publishing now that subscription is linked
       if (body.published !== false) {

@@ -28,7 +28,7 @@ export const WEBSITE_PACKAGES: WebsitePackageSpec[] = [
     optionalDomainHostingYearlyInr: 1499,
     gstPercent: 18,
     included: [
-      'Responsive mobile-first business website (up to 5 sections across 16 templates)',
+      'Responsive mobile-first business website (up to 5 sections across 36 industry templates)',
       'Subdomain preview + custom domain DNS connection wizard',
       'Contact, WhatsApp enquiry, Call & Quote Request lead forms',
       'Basic on-page SEO meta tags, sitemap.xml & robots.txt',

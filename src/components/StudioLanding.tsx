@@ -145,7 +145,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
   const [platNewsEmail, setPlatNewsEmail] = useState('');
   const [platNewsConsent, setPlatNewsConsent] = useState(false);
 
-  // Contact inquiry form (saved to PostgreSQL support_tickets)
+  // Contact inquiry form (saved to D1 support_tickets)
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
@@ -276,7 +276,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
           <div>
             <p className="text-xs font-medium tracking-wider text-[#D4AF37] mb-2">
-              Multi-Tenant Storefronts · 12 Business Categories
+              Multi-Tenant Storefronts · 16 Business Categories
             </p>
             <h2 className="font-luxury text-2xl md:text-4xl font-bold text-white text-balance">
               {t.liveStoresTitle}
@@ -544,7 +544,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mt-12 pt-8 border-t border-[#1C1C26]">
             <div>
               <p className="font-mono-tabular text-2xl font-semibold text-white">36 Templates</p>
-              <p className="text-xs text-[#8E8EA2] mt-1">20+ business industries ready to customize</p>
+              <p className="text-xs text-[#8E8EA2] mt-1">16 core industries · 36 templates ready to customize</p>
             </div>
             <div>
               <p className="font-mono-tabular text-2xl font-semibold text-white">{CONTACT_INFO.projectsCompleted}</p>
@@ -829,7 +829,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     Platform Package Cart &amp; Add-On Builder
                   </h3>
                   <p className="text-xs text-[#9E9EB2] mt-1">
-                    All prices are validated server-side from PostgreSQL. Toggle add-ons to build a transparent GST quotation.
+                    All prices are validated server-side from Cloudflare D1 edge database. Toggle add-ons to build a transparent GST quotation.
                   </p>
                 </div>
                 <div className="inline-flex rounded-md border border-[#2A2A38] bg-[#08080C] p-0.5 text-xs">

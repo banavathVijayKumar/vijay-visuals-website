@@ -645,7 +645,7 @@ export const BusinessCommandCenter: React.FC<BusinessCommandCenterProps> = ({
               <div>
                 <p className="text-xs text-[#D4AF37] flex items-center gap-1.5">
                   <Bot className="w-4 h-4" />
-                  <span>Module 9 · Grounded AI Business Assistant (Live PostgreSQL Data Only)</span>
+                  <span>Module 9 · Grounded AI Business Assistant (Live Store Data Only)</span>
                 </p>
                 <h3 className="text-base font-semibold text-white mt-0.5">
                   Ask Anything About Your Daily Sales, Stock, Expenses & Customers
