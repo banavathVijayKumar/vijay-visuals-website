@@ -492,3 +492,129 @@ export function mapOrderRowToUi(
     createdAt: String(o.created_at || ''),
   };
 }
+
+export interface SubscriptionEntitlement {
+  hasActiveSubscription: boolean;
+  canPublish: boolean;
+  planCode: string;
+  planTier: 'website_only' | 'website_pwa' | 'enterprise_ai';
+  pwaEnabled: boolean;
+  enterpriseAiEnabled: boolean;
+  maxWebsites: number;
+  maxProducts: number;
+}
+
+export async function checkTenantSubscriptionEntitlement(
+  env: CloudflareEnv,
+  websiteId: string,
+  ownerId: string,
+  isSuperAdmin = false
+): Promise<SubscriptionEntitlement> {
+  if (isSuperAdmin) {
+    return {
+      hasActiveSubscription: true,
+      canPublish: true,
+      planCode: 'enterprise',
+      planTier: 'enterprise_ai',
+      pwaEnabled: true,
+      enterpriseAiEnabled: true,
+      maxWebsites: 25,
+      maxProducts: 100000,
+    };
+  }
+
+  if (!env.DB) {
+    return {
+      hasActiveSubscription: false,
+      canPublish: false,
+      planCode: 'starter-website',
+      planTier: 'website_only',
+      pwaEnabled: false,
+      enterpriseAiEnabled: false,
+      maxWebsites: 1,
+      maxProducts: 50,
+    };
+  }
+
+  // 1. Check active subscription in tenant_subscriptions
+  try {
+    const sub = await env.DB.prepare(
+      `SELECT ts.plan_code, ts.status, ts.current_period_end, sp.max_websites, sp.max_products
+       FROM tenant_subscriptions ts
+       LEFT JOIN subscription_plans sp ON sp.code = ts.plan_code
+       WHERE (ts.website_id = ? OR ts.owner_id = ?)
+         AND ts.status IN ('active', 'trial')
+         AND (ts.current_period_end IS NULL OR ts.current_period_end > datetime('now'))
+       ORDER BY ts.id DESC LIMIT 1`
+    )
+      .bind(websiteId, ownerId)
+      .first<{
+        plan_code: string;
+        status: string;
+        current_period_end: string;
+        max_websites?: number;
+        max_products?: number;
+      }>();
+
+    if (sub) {
+      const code = String(sub.plan_code || '').toLowerCase();
+      const isPwa = code === 'website-plus-pwa' || code.includes('pwa');
+      const isEnterprise = code === 'enterprise' || code.includes('enterprise');
+      const planTier: 'website_only' | 'website_pwa' | 'enterprise_ai' =
+        isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : 'website_only';
+
+      return {
+        hasActiveSubscription: true,
+        canPublish: true,
+        planCode: code,
+        planTier,
+        pwaEnabled: isPwa || isEnterprise,
+        enterpriseAiEnabled: isEnterprise,
+        maxWebsites: Number(sub.max_websites || 1),
+        maxProducts: Number(sub.max_products || 500),
+      };
+    }
+  } catch {}
+
+  // 2. Check verified payment in platform_payments
+  try {
+    const payment = await env.DB.prepare(
+      `SELECT plan_code FROM platform_payments
+       WHERE (website_id = ? OR owner_id = ?)
+         AND status = 'paid' AND signature_verified = 1
+       ORDER BY id DESC LIMIT 1`
+    )
+      .bind(websiteId, ownerId)
+      .first<{ plan_code: string }>();
+
+    if (payment) {
+      const code = String(payment.plan_code || '').toLowerCase();
+      const isPwa = code === 'website-plus-pwa' || code.includes('pwa');
+      const isEnterprise = code === 'enterprise' || code.includes('enterprise');
+      const planTier: 'website_only' | 'website_pwa' | 'enterprise_ai' =
+        isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : 'website_only';
+
+      return {
+        hasActiveSubscription: true,
+        canPublish: true,
+        planCode: code,
+        planTier,
+        pwaEnabled: isPwa || isEnterprise,
+        enterpriseAiEnabled: isEnterprise,
+        maxWebsites: 1,
+        maxProducts: 500,
+      };
+    }
+  } catch {}
+
+  return {
+    hasActiveSubscription: false,
+    canPublish: false,
+    planCode: 'business-website',
+    planTier: 'website_only',
+    pwaEnabled: false,
+    enterpriseAiEnabled: false,
+    maxWebsites: 1,
+    maxProducts: 50,
+  };
+}

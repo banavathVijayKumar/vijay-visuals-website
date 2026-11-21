@@ -17,6 +17,7 @@ import {
   writeAuditLog,
 } from './_shared';
 import {
+  checkTenantSubscriptionEntitlement,
   validateEnabledModules,
   validateGalleryImages,
   validateGalleryItems,
@@ -138,10 +139,19 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     ? String(body.pwaThemeColor)
     : primaryColor;
 
-  const validTiers = new Set(['website_only', 'website_pwa', 'enterprise_ai']);
-  const planTier = validTiers.has(String(body.planTier || ''))
-    ? String(body.planTier)
-    : 'website_only';
+  // Verify server-side subscription entitlements (never trust client planTier or published flags)
+  const entitlement = await checkTenantSubscriptionEntitlement(
+    env,
+    '',
+    auth.user.id,
+    auth.user.isSuperAdmin
+  );
+
+  const planTier = auth.user.isSuperAdmin
+    ? (['website_only', 'website_pwa', 'enterprise_ai'].includes(String(body.planTier || ''))
+        ? String(body.planTier)
+        : 'website_only')
+    : entitlement.planTier;
 
   const templateFeatures = Array.isArray(body.templateFeatures)
     ? body.templateFeatures
@@ -180,7 +190,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const websiteId = `web_${randomHex(10)}`;
   const deliveryFee = Math.max(0, Math.min(10000, Math.round(Number(body.deliveryFee || 0))));
   const nowIso = new Date().toISOString();
-  const status = body.published === false ? 'unpublished' : 'published';
+  // Unpaid customers can create and customize unpublished drafts, but cannot publish live without entitlement
+  const status = body.published === false || !entitlement.canPublish ? 'unpublished' : 'published';
 
   const galleryItems = validateGalleryItems(body.galleryItems);
   const galleryImages =
@@ -254,6 +265,68 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       nowIso
     )
     .run();
+
+  // If user completed a verified platform purchase prior to creating their website draft, link it now
+  try {
+    const unlinked = await env.DB.prepare(
+      `SELECT id, plan_code, billing_cycle, base_amount_inr, gst_amount_inr, amount_inr, setup_fee_inr, razorpay_payment_id
+       FROM platform_payments
+       WHERE (owner_id = ? OR owner_id = ?) AND website_id IS NULL AND status = 'paid'
+       ORDER BY id DESC LIMIT 1`
+    )
+      .bind(auth.user.id, auth.user.authSubject)
+      .first<{
+        id: number;
+        plan_code: string;
+        billing_cycle: string;
+        base_amount_inr: number;
+        gst_amount_inr: number;
+        amount_inr: number;
+        setup_fee_inr: number;
+        razorpay_payment_id: string;
+      }>();
+
+    if (unlinked) {
+      await env.DB.prepare('UPDATE platform_payments SET website_id = ? WHERE id = ?')
+        .bind(websiteId, unlinked.id)
+        .run();
+
+      const durationExpr = unlinked.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
+      await env.DB.prepare(
+        `INSERT INTO tenant_subscriptions
+          (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+           total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+           current_period_start, current_period_end, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+      )
+        .bind(
+          websiteId,
+          auth.user.id,
+          unlinked.plan_code,
+          unlinked.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+          unlinked.base_amount_inr,
+          unlinked.gst_amount_inr,
+          unlinked.amount_inr,
+          unlinked.setup_fee_inr,
+          unlinked.razorpay_payment_id || '',
+          durationExpr
+        )
+        .run();
+
+      // If user desired published status, unlock publishing now that subscription is linked
+      if (body.published !== false) {
+        await env.DB.prepare(
+          `UPDATE customer_website_publications
+           SET status = 'published', published_at = datetime('now'), updated_at = datetime('now')
+           WHERE website_id = ?`
+        )
+          .bind(websiteId)
+          .run();
+      }
+    }
+  } catch {
+    // Non-fatal if subscriptions table not yet populated
+  }
 
   // Optional initial revision snapshot (safe if migration 0003 not applied yet)
   try {

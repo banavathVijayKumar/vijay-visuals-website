@@ -41,6 +41,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     razorpayOrderId?: string;
     razorpayPaymentId?: string;
     razorpaySignature?: string;
+    websiteId?: string;
+    tenantId?: string | number;
+    publishWebsite?: boolean;
   }>(request);
 
   if (!body) return errorJson('Invalid JSON payload.', 400);
@@ -97,9 +100,54 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return json({ verified: true, idempotentReplay: true, payment: existing });
   }
 
-  // 4. Activate subscription when linked to a website
+  // 4. Resolve websiteId: check existing record, payload websiteId/tenantId, or latest unpublished website
+  let targetWebsiteId = existing.website_id;
+  const payloadWebsiteRef = sanitizeText(body.websiteId || (body.tenantId ? String(body.tenantId) : ''), 120);
+
+  if (!targetWebsiteId && payloadWebsiteRef) {
+    const isNum = /^\d+$/.test(payloadWebsiteRef);
+    let resolvedRow: { website_id: string; owner_id: string } | null = null;
+    if (isNum) {
+      resolvedRow = await env.DB.prepare(
+        'SELECT website_id, owner_id FROM customer_website_publications WHERE rowid = ? OR website_id = ? LIMIT 1'
+      )
+        .bind(Number(payloadWebsiteRef), payloadWebsiteRef)
+        .first<{ website_id: string; owner_id: string }>();
+    } else {
+      resolvedRow = await env.DB.prepare(
+        'SELECT website_id, owner_id FROM customer_website_publications WHERE website_id = ? OR public_slug = ? LIMIT 1'
+      )
+        .bind(payloadWebsiteRef, payloadWebsiteRef.toLowerCase())
+        .first<{ website_id: string; owner_id: string }>();
+    }
+    if (resolvedRow) {
+      const canAccess =
+        resolvedRow.owner_id === auth.user.id ||
+        resolvedRow.owner_id === auth.user.authSubject ||
+        auth.user.isSuperAdmin;
+      if (canAccess) {
+        targetWebsiteId = resolvedRow.website_id;
+      }
+    }
+  }
+
+  if (!targetWebsiteId) {
+    // If payment was initiated before creating website, check latest customer draft website
+    const latestDraft = await env.DB.prepare(
+      `SELECT website_id FROM customer_website_publications
+       WHERE owner_id = ? OR owner_id = ?
+       ORDER BY updated_at DESC LIMIT 1`
+    )
+      .bind(auth.user.id, auth.user.authSubject)
+      .first<{ website_id: string }>();
+    if (latestDraft) {
+      targetWebsiteId = latestDraft.website_id;
+    }
+  }
+
+  // 5. Activate subscription when linked to a website
   let subscriptionId = existing.subscription_id;
-  if (existing.website_id && existing.plan_code) {
+  if (targetWebsiteId && existing.plan_code) {
     const durationExpr = existing.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
     const subRes = await env.DB.prepare(
       `INSERT INTO tenant_subscriptions
@@ -109,7 +157,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
        VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
     )
       .bind(
-        existing.website_id,
+        targetWebsiteId,
         existing.owner_id,
         existing.plan_code,
         existing.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
@@ -122,13 +170,27 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       )
       .run();
     subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+
+    // If client requested publish or website was waiting for payment activation
+    if (body.publishWebsite) {
+      await env.DB.prepare(
+        `UPDATE customer_website_publications
+         SET status = 'published',
+             published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
+             updated_at = datetime('now')
+         WHERE website_id = ?`
+      )
+        .bind(targetWebsiteId)
+        .run();
+    }
   }
 
-  // 5. Mark payment paid ONLY after signature verification succeeds
+  // 6. Mark payment paid ONLY after signature verification succeeds
   await env.DB.prepare(
     `UPDATE platform_payments
      SET status = 'paid',
          signature_verified = 1,
+         website_id = COALESCE(?, website_id),
          razorpay_payment_id = ?,
          razorpay_signature = ?,
          subscription_id = COALESCE(?, subscription_id),
@@ -136,7 +198,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
          updated_at = datetime('now')
      WHERE id = ?`
   )
-    .bind(paymentId, signature, subscriptionId, existing.id)
+    .bind(targetWebsiteId, paymentId, signature, subscriptionId, existing.id)
     .run();
 
   await env.DB.prepare(

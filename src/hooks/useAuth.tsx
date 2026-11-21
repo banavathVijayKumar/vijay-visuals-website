@@ -54,7 +54,7 @@ interface AuthContextValue {
   authError: string | null;
   authModalOpen: boolean;
   authModalMode: 'signin' | 'register' | 'forgot' | 'reset_password';
-  openAuthModal: () => void;
+  openAuthModal: (mode?: 'signin' | 'register' | 'forgot' | 'reset_password') => void;
   closeAuthModal: () => void;
   /** Opens the Supabase Auth modal (kept under signInWithGoogle name for UI component compatibility) */
   signInWithGoogle: () => Promise<void>;
@@ -201,9 +201,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [syncUserFromSession]);
 
-  const openAuthModal = useCallback(() => {
+  const openAuthModal = useCallback((mode: 'signin' | 'register' | 'forgot' | 'reset_password' = 'signin') => {
     setAuthError(null);
-    setAuthModalMode('signin');
+    setAuthModalMode(mode);
     setAuthModalOpen(true);
   }, []);
 

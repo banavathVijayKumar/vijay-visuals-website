@@ -1,8 +1,14 @@
-import 'dotenv/config';
-import http from 'http';
-import express, { Request, Response, NextFunction } from 'express';
+import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config();
+
+import http from 'http';
+import express, { Request, Response, NextFunction } from 'express';
 import { and, desc, eq, ilike, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from './src/db/index.ts';
@@ -14,6 +20,7 @@ import {
   deliveryPartners,
   newsletterSubscribers,
   orders,
+  platformPayments,
   platformPlans,
   products,
   proposals,
@@ -36,9 +43,6 @@ import { createLocationsRouter, resolveGoogleMapsApiKey } from './src/routes/loc
 import { createDomainsRouter, getCloudflareSaasStatus } from './src/routes/domains.ts';
 import { createApiRateLimiter } from './src/middleware/rateLimit.ts';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
 // Module 3D: Raw request body MUST be preserved for Razorpay HMAC-SHA256 webhook verification
 app.post('/api/webhooks/razorpay', express.raw({ type: 'application/json' }), handleRazorpayRawWebhook);
@@ -52,6 +56,41 @@ app.use('/api', async (_req, _res, next) => {
   await ensurePlatformSeeded();
   next();
 });
+
+async function checkServerTenantEntitlement(userId: number, tenantId?: number) {
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (user?.role === 'super_admin') {
+    return { canPublish: true, planTier: 'enterprise_ai' as const, pwaEnabled: true };
+  }
+  // Check verified payment in platformPayments
+  const payments = await db
+    .select()
+    .from(platformPayments)
+    .where(
+      and(
+        eq(platformPayments.userId, userId),
+        eq(platformPayments.signatureVerified, true)
+      )
+    )
+    .orderBy(desc(platformPayments.id));
+
+  const validPayment = payments.find((p) => !tenantId || p.tenantId === tenantId || p.tenantId === null);
+  if (validPayment) {
+    const isPwa = validPayment.planCode === 'website-plus-pwa' || validPayment.planCode.includes('pwa');
+    const isEnterprise = validPayment.planCode === 'enterprise' || validPayment.planCode.includes('enterprise');
+    return {
+      canPublish: true,
+      planTier: (isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : 'website_only') as 'website_only' | 'website_pwa' | 'enterprise_ai',
+      pwaEnabled: isPwa || isEnterprise,
+    };
+  }
+
+  return {
+    canPublish: false,
+    planTier: 'website_only' as const,
+    pwaEnabled: false,
+  };
+}
 
 async function writeAuditLog(
   actorEmail: string,
@@ -429,6 +468,7 @@ const createTenantSchema = z.object({
   pwaThemeColor: z.string().max(20).default('#08080A'),
   deliveryFee: z.number().int().min(0).max(5000).default(49),
   upiId: z.string().max(100).default(''),
+  published: z.boolean().default(true),
 });
 
 app.post('/api/tenants', requireAuth, async (req: AuthRequest, res) => {
@@ -462,23 +502,51 @@ app.post('/api/tenants', requireAuth, async (req: AuthRequest, res) => {
       });
     }
 
-    const pwaEnabled = parsed.data.planTier !== 'website_only' && parsed.data.pwaEnabled;
+    const entitlement = await checkServerTenantEntitlement(dbUser.id);
+    const pwaEnabled = entitlement.pwaEnabled && Boolean(parsed.data.pwaEnabled);
     const pwaLicenseKey = pwaEnabled
       ? `VV-PWA-${parsed.data.slug.slice(0, 6).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`
       : '';
+    const published = parsed.data.published !== false && entitlement.canPublish;
 
     const [created] = await db
       .insert(tenants)
       .values({
         ...parsed.data,
         ownerUserId: dbUser.id,
+        published,
+        planTier: entitlement.planTier,
         pwaEnabled,
         pwaLicenseKey,
         pwaAppName: parsed.data.pwaAppName || parsed.data.name,
         pwaShortName: (parsed.data.pwaShortName || parsed.data.name).slice(0, 12),
-        aiCreditsLimit: parsed.data.planTier === 'enterprise_ai' ? 2500 : parsed.data.planTier === 'website_pwa' ? 750 : 250,
+        aiCreditsLimit: entitlement.planTier === 'enterprise_ai' ? 2500 : entitlement.planTier === 'website_pwa' ? 750 : 250,
       })
       .returning();
+
+    // Link any verified unlinked platform purchase to this tenant
+    const [unlinked] = await db
+      .select()
+      .from(platformPayments)
+      .where(
+        and(
+          eq(platformPayments.userId, dbUser.id),
+          eq(platformPayments.signatureVerified, true)
+        )
+      )
+      .orderBy(desc(platformPayments.id))
+      .limit(1);
+
+    if (unlinked && !unlinked.tenantId) {
+      await db
+        .update(platformPayments)
+        .set({ tenantId: created.id })
+        .where(eq(platformPayments.id, unlinked.id));
+      if (!created.published && parsed.data.published !== false) {
+        await db.update(tenants).set({ published: true }).where(eq(tenants.id, created.id));
+        created.published = true;
+      }
+    }
 
     if (dbUser.role === 'customer') {
       await db.update(users).set({ role: 'business_owner', updatedAt: new Date() }).where(eq(users.id, dbUser.id));
@@ -563,23 +631,39 @@ app.patch('/api/tenants/:id', requireAuth, async (req: AuthRequest, res) => {
       }
       updateValues.slug = slugCheck.normalized;
     }
-    if (typeof body.published === 'boolean') updateValues.published = body.published;
+    const entitlement = await checkServerTenantEntitlement(req.dbUser!.id, id);
+
+    if (typeof body.published === 'boolean') {
+      if (body.published && !access.tenant.published && !entitlement.canPublish) {
+        return res.status(402).json({
+          error:
+            'An active package or subscription is required to publish this website live. Please complete your website package purchase (₹7,999 Business Website package).',
+          code: 'PAYMENT_REQUIRED',
+        });
+      }
+      updateValues.published = body.published;
+    }
     if (typeof body.codEnabled === 'boolean') updateValues.codEnabled = body.codEnabled;
     if (typeof body.deliveryFee === 'number') updateValues.deliveryFee = Math.max(0, Math.round(body.deliveryFee));
     if (typeof body.deliveryCommissionPct === 'number') {
       updateValues.deliveryCommissionPct = Math.min(50, Math.max(0, Math.round(body.deliveryCommissionPct)));
     }
-    if (typeof body.planTier === 'string' && ['website_only', 'website_pwa', 'enterprise_ai'].includes(body.planTier)) {
-      updateValues.planTier = body.planTier;
-    }
-    if (typeof body.pwaEnabled === 'boolean') {
-      updateValues.pwaEnabled = body.pwaEnabled;
-      if (body.pwaEnabled && !access.tenant.pwaLicenseKey) {
-        updateValues.pwaLicenseKey = `VV-PWA-${access.tenant.slug.slice(0, 6).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+    if (req.dbUser!.role === 'super_admin') {
+      if (typeof body.planTier === 'string' && ['website_only', 'website_pwa', 'enterprise_ai'].includes(body.planTier)) {
+        updateValues.planTier = body.planTier;
       }
-    }
-    if (req.dbUser!.role === 'super_admin' && typeof body.aiCreditsLimit === 'number') {
-      updateValues.aiCreditsLimit = Math.max(0, Math.round(body.aiCreditsLimit));
+      if (typeof body.pwaEnabled === 'boolean') {
+        updateValues.pwaEnabled = body.pwaEnabled;
+        if (body.pwaEnabled && !access.tenant.pwaLicenseKey) {
+          updateValues.pwaLicenseKey = `VV-PWA-${access.tenant.slug.slice(0, 6).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+        }
+      }
+      if (typeof body.aiCreditsLimit === 'number') {
+        updateValues.aiCreditsLimit = Math.max(0, Math.round(body.aiCreditsLimit));
+      }
+    } else {
+      updateValues.planTier = entitlement.planTier;
+      updateValues.pwaEnabled = entitlement.pwaEnabled && Boolean(body.pwaEnabled);
     }
 
     const [updated] = await db.update(tenants).set(updateValues).where(eq(tenants.id, id)).returning();
@@ -588,6 +672,45 @@ app.patch('/api/tenants/:id', requireAuth, async (req: AuthRequest, res) => {
   } catch (error) {
     console.error('PATCH /api/tenants/:id failed:', error);
     res.status(500).json({ error: 'Unable to update business website.' });
+  }
+});
+
+app.patch('/api/owner/tenants/:tenantId/publish', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const tenantId = Number(req.params.tenantId);
+    const access = await assertTenantAccess(req, tenantId);
+    if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+    const published = Boolean(req.body?.published);
+    if (published) {
+      const entitlement = await checkServerTenantEntitlement(req.dbUser!.id, tenantId);
+      if (!entitlement.canPublish) {
+        return res.status(402).json({
+          error:
+            'An active package or subscription is required to publish this website live. Please complete your website package purchase (₹7,999 Business Website package).',
+          code: 'PAYMENT_REQUIRED',
+        });
+      }
+    }
+
+    const [updated] = await db
+      .update(tenants)
+      .set({ published, updatedAt: new Date() })
+      .where(eq(tenants.id, tenantId))
+      .returning();
+
+    await writeAuditLog(
+      req.dbUser!.email,
+      req.dbUser!.role,
+      published ? 'TENANT_PUBLISHED' : 'TENANT_UNPUBLISHED',
+      `Toggled publish status to ${published} for ${updated.slug}`,
+      tenantId
+    );
+
+    res.json({ tenant: updated, published, status: published ? 'published' : 'unpublished' });
+  } catch (error) {
+    console.error('PATCH /api/owner/tenants/:tenantId/publish failed:', error);
+    res.status(500).json({ error: 'Unable to update publish state.' });
   }
 });
 

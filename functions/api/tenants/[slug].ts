@@ -15,6 +15,7 @@ import {
   writeAuditLog,
 } from '../_shared';
 import {
+  checkTenantSubscriptionEntitlement,
   mapProductRowToUi,
   requireTenantOwnerAccess,
   validateEnabledModules,
@@ -469,13 +470,41 @@ export async function onRequestPatch(
       .slice(0, 10);
   }
 
-  const validTiers = new Set(['website_only', 'website_pwa', 'enterprise_ai']);
-  if (typeof body.planTier === 'string' && validTiers.has(body.planTier)) {
-    current.planTier = body.planTier;
+  // Server-side subscription entitlement verification (never trust frontend planTier or published flags)
+  const entitlement = await checkTenantSubscriptionEntitlement(
+    env,
+    access.row.website_id,
+    auth.user.id,
+    auth.user.isSuperAdmin
+  );
+
+  // If client requests publishing an unpublished website, verify entitlement
+  if (body.published === true && access.row.status !== 'published') {
+    if (!entitlement.canPublish) {
+      return jsonResponse(
+        {
+          error:
+            'An active package or subscription is required to publish this website live. Please complete your website package purchase (₹7,999 Business Website package).',
+          code: 'PAYMENT_REQUIRED',
+        },
+        402
+      );
+    }
   }
-  if (typeof body.pwaEnabled === 'boolean') {
-    current.pwaEnabled = body.pwaEnabled && current.planTier !== 'website_only';
+
+  if (auth.user.isSuperAdmin) {
+    const validTiers = new Set(['website_only', 'website_pwa', 'enterprise_ai']);
+    if (typeof body.planTier === 'string' && validTiers.has(body.planTier)) {
+      current.planTier = body.planTier;
+    }
+    if (typeof body.pwaEnabled === 'boolean') {
+      current.pwaEnabled = body.pwaEnabled && current.planTier !== 'website_only';
+    }
+  } else {
+    current.planTier = entitlement.planTier;
+    current.pwaEnabled = entitlement.pwaEnabled && Boolean(body.pwaEnabled);
   }
+
   if (typeof body.pwaAppName === 'string') current.pwaAppName = sanitizeText(body.pwaAppName, 100);
   if (typeof body.pwaShortName === 'string') current.pwaShortName = sanitizeText(body.pwaShortName, 24);
   if (typeof body.pwaThemeColor === 'string' && SAFE_COLOR.test(body.pwaThemeColor)) {
@@ -490,7 +519,9 @@ export async function onRequestPatch(
   const nextStatus =
     typeof body.published === 'boolean'
       ? body.published
-        ? 'published'
+        ? entitlement.canPublish
+          ? 'published'
+          : 'unpublished'
         : 'unpublished'
       : access.row.status;
 

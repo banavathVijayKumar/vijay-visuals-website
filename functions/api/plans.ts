@@ -7,51 +7,74 @@ import { PagesContext, handleOptions, jsonResponse } from './_shared';
 const DEFAULT_PLANS = [
   {
     id: 1,
-    code: 'business-website',
-    name: 'Starter Business Website',
+    code: 'starter-website',
+    name: 'Starter Website Package',
     category: 'website',
     billingCycle: 'one_time',
-    priceInr: 4999,
+    priceInr: 2999,
     includesPwa: false,
     active: true,
     featuresJson: JSON.stringify([
-      'Responsive industry storefront + /site/your-brand URL',
-      '12 Indian & global languages + Technical SEO schema',
-      'Custom domain DNS TXT wizard (100% owner-controlled)',
-      'Cash on Delivery & WhatsApp order inquiry ready',
+      'Mobile-responsive business website across 16 industry templates',
+      'Temporary preview subdomain (/site/your-brand) + custom domain DNS wizard',
+      'Contact, WhatsApp enquiry, Call & Quote Request lead forms',
+      'Technical SEO essentials (meta tags, sitemap.xml, robots.txt, JSON-LD)',
     ]),
     thirdPartyDisclosure:
-      'Excludes third-party domain registration/renewal, Razorpay transaction MDR, and optional WhatsApp Business API messaging fees.',
+      'Starting software setup fee. Domain registration/renewal, third-party hosting beyond free tier, payment gateway MDR, and WhatsApp/SMS API fees are billed separately.',
   },
   {
     id: 2,
-    code: 'ecommerce-growth',
-    name: 'Professional E-Commerce + CRM',
+    code: 'business-website',
+    name: 'Business Website Package',
     category: 'website',
     billingCycle: 'one_time',
-    priceInr: 12999,
+    priceInr: 7999,
     includesPwa: false,
     active: true,
     featuresJson: JSON.stringify([
-      'Full product catalog, variants, coupons & GST invoices',
-      'Delivery partner portal, branch locations & order tracking',
-      'Verified-purchase customer reviews & CRM lead desk',
-      'Gemini AI Studio (12 languages, 9 business tools)',
+      'Access to own website management dashboard',
+      'Edit website design, colours, layout and content',
+      'Upload, replace and manage photos and banners',
+      'Add, edit and delete products or services',
+      'Manage product prices, descriptions and categories',
+      'Manage orders and customer information',
+      'View reports and website analytics where supported',
+      'Manage website settings and publish/unpublish controls',
+      'Custom domain connection (customer provides own domain)',
     ]),
     thirdPartyDisclosure:
-      'Excludes third-party domain renewals, Razorpay/Route gateway charges, courier AWB fees, and external SMTP/WhatsApp API usage.',
+      'Customer owns and pays for their own domain, external hosting, and third-party payment gateway accounts. Free domain, payment gateway charges, and unverified third-party services are not included.',
   },
   {
     id: 3,
-    code: 'website-plus-pwa',
-    name: 'Flagship Store + Optional Branded PWA',
+    code: 'ecommerce-website',
+    name: 'E-Commerce Website Package',
     category: 'website',
     billingCycle: 'one_time',
-    priceInr: 19999,
+    priceInr: 14999,
+    includesPwa: false,
+    active: true,
+    featuresJson: JSON.stringify([
+      'Full e-commerce storefront with categories, variants, stock alerts & coupons',
+      'Cart, wishlist, COD/UPI & Razorpay checkout, GST invoices & order tracking',
+      'Wholesale B2B tiers, customer reviews, sales reports & refund tracking',
+      'Includes all Business Website SEO, custom domain DNS & CRM capabilities',
+    ]),
+    thirdPartyDisclosure:
+      'Razorpay transaction MDR, custom domain registration/renewal, courier shipping charges, and WhatsApp/SMS API conversation fees apply directly from third-party providers.',
+  },
+  {
+    id: 4,
+    code: 'website-plus-pwa',
+    name: 'Website + Optional Branded PWA Add-On',
+    category: 'website',
+    billingCycle: 'one_time',
+    priceInr: 22999,
     includesPwa: true,
     active: true,
     featuresJson: JSON.stringify([
-      'Everything in Professional E-Commerce + CRM',
+      'Everything in Business & E-Commerce packages',
       'Optional installable Progressive Web App (browser-installable, not Play Store)',
       'Custom brand icon, offline caching & priority onboarding',
       'Multi-currency live FX display & global storefront settings',
@@ -71,28 +94,29 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   if (env.DB) {
     try {
       const res = await env.DB.prepare(
-        `SELECT id, code, name, monthly_price_inr, annual_price_inr, includes_pwa, features_json, is_active
+        `SELECT rowid as id, code, name, monthly_price_inr, yearly_price_inr, setup_fee_inr, gst_percent, features_json, is_active
          FROM subscription_plans WHERE is_active = 1 ORDER BY monthly_price_inr ASC`
       ).all<{
         id: number;
         code: string;
         name: string;
         monthly_price_inr: number;
-        annual_price_inr: number;
-        includes_pwa: number;
+        yearly_price_inr: number;
+        setup_fee_inr: number;
+        gst_percent: number;
         features_json: string;
         is_active: number;
       }>();
 
       if (res.results && res.results.length > 0) {
         const plans = res.results.map((r) => ({
-          id: r.id,
+          id: r.id || 1,
           code: r.code,
           name: r.name,
           category: 'website',
-          billingCycle: 'monthly',
+          billingCycle: 'one_time',
           priceInr: Number(r.monthly_price_inr || 0),
-          includesPwa: Boolean(r.includes_pwa),
+          includesPwa: r.code === 'website-plus-pwa' || r.code.includes('pwa'),
           active: Boolean(r.is_active),
           featuresJson: r.features_json || '[]',
           thirdPartyDisclosure:

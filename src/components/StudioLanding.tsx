@@ -1,16 +1,23 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ArrowRight,
   Check,
+  CreditCard,
   ExternalLink,
   Globe,
   Instagram,
+  Loader2,
   Mail,
   MessageCircle,
   Search,
   Send,
+  ShieldCheck,
+  Sparkles,
   Truck,
+  X,
 } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
+import { initiatePlatformCheckout } from '../lib/razorpayClient';
 import {
   BUSINESS_CATEGORIES,
   CONTACT_INFO,
@@ -90,6 +97,50 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
   const [propBusy, setPropBusy] = useState(false);
   const [lockedProposal, setLockedProposal] = useState<{ proposalNumber: string; grandTotalInr: number; gstInr: number } | null>(null);
 
+  const { profile, openAuthModal } = useAuth();
+  const [buyingPlan, setBuyingPlan] = useState<PlatformPlanRecord | null>(null);
+  const [purchasing, setPurchasing] = useState(false);
+
+  const handleOpenBuyNow = (plan: PlatformPlanRecord) => {
+    if (!profile) {
+      openAuthModal('signin');
+      onNotify('Please sign in first to review and purchase your website package.');
+      return;
+    }
+    setBuyingPlan(plan);
+  };
+
+  const handleConfirmPurchase = async () => {
+    if (!buyingPlan) return;
+    setPurchasing(true);
+    try {
+      await initiatePlatformCheckout({
+        planCode: buyingPlan.code,
+        planName: buyingPlan.name,
+        prefill: {
+          name: profile?.name || '',
+          email: profile?.email || '',
+          contact: profile?.phone || '',
+        },
+        onSuccess: (res) => {
+          setBuyingPlan(null);
+          onNotify(`Payment verified! ${buyingPlan.name} package activated.`);
+          onNavigate('builder');
+        },
+        onError: (err) => {
+          onNotify(err.message || 'Payment verification failed.');
+        },
+        onDismiss: () => {
+          onNotify('Payment checkout was closed.');
+        },
+      });
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Unable to initialize Razorpay checkout.');
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
   // Platform Newsletter Consent Form
   const [platNewsEmail, setPlatNewsEmail] = useState('');
   const [platNewsConsent, setPlatNewsConsent] = useState(false);
@@ -102,9 +153,29 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
   const [contactMsg, setContactMsg] = useState('');
   const [submittingContact, setSubmittingContact] = useState(false);
 
+  const matchesCategory = useCallback((itemCategory: string, selectedCatId: string): boolean => {
+    if (selectedCatId === 'all') return true;
+    const ic = (itemCategory || '').toLowerCase();
+    const sc = selectedCatId.toLowerCase();
+    if (ic === sc) return true;
+    if (sc === 'grocery' && (ic.includes('grocery') || ic.includes('organic') || ic.includes('kirana') || ic.includes('provisions') || ic.includes('store') || ic.includes('dairy'))) return true;
+    if (sc === 'clothing' && (ic.includes('clothing') || ic.includes('fashion') || ic.includes('silk') || ic.includes('boutique') || ic.includes('textile') || ic.includes('apparel') || ic.includes('couture'))) return true;
+    if (sc === 'restaurant' && (ic.includes('restaurant') || ic.includes('cafe') || ic.includes('food') || ic.includes('kitchen') || ic.includes('dining') || ic.includes('biryani') || ic.includes('bakery'))) return true;
+    if (sc === 'photography' && (ic.includes('photo') || ic.includes('studio') || ic.includes('cinema') || ic.includes('film') || ic.includes('visual'))) return true;
+    if (sc === 'electronics' && (ic.includes('electro') || ic.includes('tech') || ic.includes('hardware') || ic.includes('gadget') || ic.includes('audio'))) return true;
+    if (sc === 'professional_services' && (ic.includes('agency') || ic.includes('marketing') || ic.includes('consult') || ic.includes('service') || ic.includes('digital') || ic.includes('media'))) return true;
+    if (sc === 'beauty_salon' && (ic.includes('beauty') || ic.includes('salon') || ic.includes('spa') || ic.includes('parlour'))) return true;
+    if (sc === 'hotel' && (ic.includes('hotel') || ic.includes('resort') || ic.includes('hospitality') || ic.includes('lodge'))) return true;
+    if (sc === 'gym' && (ic.includes('gym') || ic.includes('fitness') || ic.includes('workout') || ic.includes('crossfit'))) return true;
+    if (sc === 'education' && (ic.includes('educat') || ic.includes('coach') || ic.includes('school') || ic.includes('academy') || ic.includes('institute'))) return true;
+    if (sc === 'real_estate' && (ic.includes('real') || ic.includes('estate') || ic.includes('property') || ic.includes('realty'))) return true;
+    if (sc === 'automobile' && (ic.includes('auto') || ic.includes('motor') || ic.includes('car') || ic.includes('bike') || ic.includes('garage'))) return true;
+    return ic.includes(sc);
+  }, []);
+
   const filteredTenants = useMemo(() => {
     return tenants.filter((item) => {
-      const catMatch = selectedCategory === 'all' || item.category === selectedCategory;
+      const catMatch = matchesCategory(item.category, selectedCategory);
       const q = storeSearch.trim().toLowerCase();
       const textMatch =
         !q ||
@@ -113,7 +184,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
         item.category.toLowerCase().includes(q);
       return catMatch && textMatch;
     });
-  }, [tenants, selectedCategory, storeSearch]);
+  }, [tenants, selectedCategory, storeSearch, matchesCategory]);
 
   const togglePlanCode = (code: string) => {
     setSelectedPlanCodes((prev) =>
@@ -246,20 +317,23 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
           >
             All Categories ({tenants.length})
           </button>
-          {BUSINESS_CATEGORIES.map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
-                selectedCategory === cat.id
-                  ? 'bg-[#D4AF37] text-[#08080A]'
-                  : 'bg-[#12121A] text-[#A5A5B8] hover:text-white border border-[#222230]'
-              }`}
-            >
-              {lang === 'te' ? cat.te : cat.label}
-            </button>
-          ))}
+          {BUSINESS_CATEGORIES.map((cat) => {
+            const count = tenants.filter((t) => matchesCategory(t.category, cat.id)).length;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategory(cat.id)}
+                className={`px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
+                  selectedCategory === cat.id
+                    ? 'bg-[#D4AF37] text-[#08080A]'
+                    : 'bg-[#12121A] text-[#A5A5B8] hover:text-white border border-[#222230]'
+                }`}
+              >
+                {lang === 'te' ? cat.te : cat.label} {count > 0 ? `(${count})` : ''}
+              </button>
+            );
+          })}
         </div>
 
         {filteredTenants.length === 0 ? (
@@ -709,17 +783,36 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                         </li>
                       ))}
                     </ul>
-                    <button
-                      type="button"
-                      onClick={() => togglePlanCode(plan.code)}
-                      className={`w-full py-2 rounded-md text-xs font-semibold mb-3 transition-colors ${
-                        inCart
-                          ? 'bg-[#D4AF37] text-[#08080A]'
-                          : 'border border-[#D4AF37]/45 text-[#ECC86A] hover:bg-[#D4AF37] hover:text-[#08080A]'
-                      }`}
-                    >
-                      {inCart ? 'Selected in Quote Cart ✓' : 'Add to Quote Cart'}
-                    </button>
+                    <div className="space-y-2 mb-3">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenBuyNow(plan)}
+                        className="w-full py-2.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold hover:opacity-95 transition-opacity flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span>Buy Now · ₹{plan.priceInr.toLocaleString('en-IN')}</span>
+                      </button>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => onNavigate('builder')}
+                          className="py-1.5 px-2 rounded-md border border-[#2B2B3C] text-[11px] font-medium text-[#C8C8D8] hover:text-white hover:border-[#D4AF37]/50 transition-colors"
+                        >
+                          Draft First (Free)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => togglePlanCode(plan.code)}
+                          className={`py-1.5 px-2 rounded-md text-[11px] font-medium transition-colors ${
+                            inCart
+                              ? 'bg-[#D4AF37]/20 text-[#ECC86A] border border-[#D4AF37]/60'
+                              : 'border border-[#2B2B3C] text-[#8E8EA2] hover:text-[#ECC86A]'
+                          }`}
+                        >
+                          {inCart ? 'In Quote ✓' : '+ Add to Quote'}
+                        </button>
+                      </div>
+                    </div>
                     <p className="text-[11px] text-[#8A8A9C] border-t border-[#1D1D28] pt-3 leading-relaxed">
                       {plan.thirdPartyDisclosure}
                     </p>
@@ -822,6 +915,24 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     <span>₹{(serverCalc?.grandTotalInr ?? 0).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
+
+                {selectedPlanCodes.length > 0 && (() => {
+                  const primaryPlan =
+                    plans.find((p) => p.code === selectedPlanCodes[0] && p.category !== 'addon') ||
+                    plans.find((p) => p.code === 'business-website') ||
+                    plans[0];
+                  return primaryPlan ? (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenBuyNow(primaryPlan)}
+                      className="w-full mt-3 py-2.5 rounded-md bg-gold-gradient text-[#08080A] font-semibold text-xs flex items-center justify-center gap-1.5 hover:opacity-95 shadow-sm transition-opacity"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>Buy {primaryPlan.name} (₹{primaryPlan.priceInr.toLocaleString('en-IN')})</span>
+                    </button>
+                  ) : null;
+                })()}
+
                 <p className="text-[10px] text-[#858599] mt-2 leading-relaxed">
                   {serverCalc?.thirdPartyNote ||
                     'Excludes third-party domain registration/renewal, Razorpay MDR, WhatsApp Business API, and external hosting renewals.'}
@@ -1092,6 +1203,163 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
           </div>
         </div>
       </footer>
+
+      {/* Package Purchase Order Summary & Checkout Modal */}
+      {buyingPlan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg rounded-xl border border-[#2B2B3E] bg-[#0E0E15] p-6 text-xs text-[#E4E4EE] shadow-2xl max-h-[90vh] overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => !purchasing && setBuyingPlan(null)}
+              disabled={purchasing}
+              aria-label="Close modal"
+              className="absolute top-4 right-4 p-1.5 rounded-md text-[#8E8EA2] hover:text-white hover:bg-[#1A1A26] transition-colors disabled:opacity-50"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldCheck className="w-5 h-5 text-[#D4AF37]" />
+              <h2 className="font-luxury text-lg font-bold text-white">Review Order Summary &amp; Checkout</h2>
+            </div>
+            <p className="text-[#9E9EB2] text-[11px] mb-4">
+              Secure Vijay Visuals Platform Purchase · Server-Side Verified by Razorpay
+            </p>
+
+            {/* Selected Package Details */}
+            <div className="rounded-lg border border-[#232332] bg-[#12121B] p-4 mb-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-[#D4AF37]/20 text-[#ECC86A] mb-1">
+                    {buyingPlan.category.toUpperCase()} PACKAGE
+                  </span>
+                  <h3 className="font-luxury text-base font-bold text-white">{buyingPlan.name}</h3>
+                  <p className="text-[11px] text-[#A2A2B6]">Full website management access</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-mono-tabular text-xl font-bold text-[#ECC86A]">
+                    ₹{buyingPlan.priceInr.toLocaleString('en-IN')}
+                  </p>
+                  <p className="text-[10px] text-[#7A7A8E]">+ 18% GST</p>
+                </div>
+              </div>
+
+              {/* Price Calculation Breakdown */}
+              <div className="border-t border-[#1E1E2C] pt-2.5 space-y-1.5 font-mono-tabular text-[11px]">
+                <div className="flex justify-between text-[#A0A0B4]">
+                  <span>Package Base Price:</span>
+                  <span>₹{buyingPlan.priceInr.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between text-[#A0A0B4]">
+                  <span>GST (18% Goods &amp; Services Tax):</span>
+                  <span>₹{Math.round(buyingPlan.priceInr * 0.18).toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-[#1E1E2C]">
+                  <span>Total Amount Payable:</span>
+                  <span className="text-[#ECC86A]">
+                    ₹{Math.round(buyingPlan.priceInr * 1.18).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* What is Included */}
+            <div className="rounded-lg border border-[#20202F] bg-[#0A0A0F] p-3 mb-4 space-y-2">
+              <p className="font-semibold text-[#D4AF37] text-[11px]">Package Entitlements Included:</p>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] text-[#C2C2D4]">
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                  <span>Full website builder &amp; design</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                  <span>Product, catalog &amp; pricing</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                  <span>Orders, invoices &amp; customers</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                  <span>Photos, banners &amp; gallery</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                  <span>Publish &amp; unpublish controls</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                  <span>Custom domain connection</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Important Package Boundaries & Third-Party Disclosures */}
+            <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 p-3 mb-4 text-[10px] text-[#C4B79A] leading-relaxed space-y-1">
+              <p className="font-semibold text-amber-300">Important Package Boundaries:</p>
+              <p>• <strong>Custom Domain:</strong> Customer provides and owns their own domain (e.g. from Cloudflare or GoDaddy). Domain registration &amp; renewal fees are paid directly to your registrar.</p>
+              <p>• <strong>Hosting:</strong> Platform edge hosting is included under the verified hosting arrangement.</p>
+              <p>• <strong>Payment Gateway:</strong> Seller receives customer payments through the seller's separately configured Razorpay / UPI gateway. Gateway MDR charges apply directly.</p>
+            </div>
+
+            {/* Customer Prefill Summary */}
+            <div className="border border-[#1E1E2C] rounded-lg p-2.5 mb-5 bg-[#0A0A0F] flex items-center justify-between text-[11px]">
+              <div>
+                <span className="text-[#8E8EA0]">Billed to: </span>
+                <span className="text-white font-medium">{profile?.name || 'Customer'}</span>
+                <span className="text-[#8E8EA0]"> ({profile?.email || 'Signed-in account'})</span>
+              </div>
+              <span className="text-[10px] text-emerald-400 font-medium">✓ Verified Account</span>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleConfirmPurchase}
+                disabled={purchasing}
+                className="w-full py-3 rounded-md bg-gold-gradient text-[#08080A] text-xs font-bold hover:opacity-95 transition-opacity flex items-center justify-center gap-2 shadow-lg disabled:opacity-60"
+              >
+                {purchasing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Opening Razorpay Secure Checkout...</span>
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="w-4 h-4" />
+                    <span>
+                      Proceed to Razorpay Checkout (₹{Math.round(buyingPlan.priceInr * 1.18).toLocaleString('en-IN')})
+                    </span>
+                  </>
+                )}
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBuyingPlan(null);
+                    onNavigate('builder');
+                  }}
+                  disabled={purchasing}
+                  className="w-full py-2 rounded-md border border-[#2B2B3C] text-[11px] font-medium text-[#B8B8CA] hover:text-white hover:border-[#D4AF37]/50 transition-colors disabled:opacity-50"
+                >
+                  Customize Draft in Builder First
+                </button>
+                <button
+                  type="button"
+                  onClick={() => !purchasing && setBuyingPlan(null)}
+                  disabled={purchasing}
+                  className="w-full py-2 rounded-md border border-[#2B2B3C] text-[11px] font-medium text-[#8E8EA0] hover:text-white transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

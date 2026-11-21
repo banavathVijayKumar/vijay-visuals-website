@@ -10,6 +10,7 @@ export interface UserProfile {
   marketingConsent?: boolean;
   unsubscribed?: boolean;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface GalleryItem {
@@ -75,6 +76,7 @@ export interface TenantRecord {
   sectionOrder?: string[];
   customPages?: Array<{ slug: string; title: string; content: string }>;
   published: boolean;
+  status?: string;
   planTier: 'website_only' | 'website_pwa' | 'enterprise_ai';
   pwaEnabled: boolean;
   pwaAppName: string;
@@ -89,6 +91,7 @@ export interface TenantRecord {
   upiId: string;
   razorpayOnlineReady?: boolean;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ProductRecord {

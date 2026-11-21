@@ -4,14 +4,19 @@ import {
   ArrowUp,
   Building2,
   Check,
+  CreditCard,
   Edit3,
+  ExternalLink,
+  Globe,
   Image as ImageIcon,
   Package,
   Plus,
   Printer,
+  Receipt,
   Save,
   Settings,
   Shield,
+  ShieldCheck,
   Sparkles,
   Tag,
   Trash2,
@@ -22,6 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
+import { initiatePlatformCheckout } from '../lib/razorpayClient';
 import { readAndOptimizeImageFile } from '../lib/imageUpload';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -178,6 +184,29 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   const [ticketCategory, setTicketCategory] = useState<'order_issue' | 'refund' | 'platform_support'>('order_issue');
   const [ticketMsg, setTicketMsg] = useState('');
 
+  // Customer Platform Purchases & Entitlements
+  const [platformPayments, setPlatformPayments] = useState<Array<{
+    id: number;
+    receiptNumber: string;
+    amountInr: number;
+    gstAmountInr: number;
+    grandTotalInr: number;
+    planCode: string;
+    status: string;
+    razorpayPaymentId?: string;
+    websiteId?: string;
+    createdAt: string;
+  }>>([]);
+  const [activeSubscription, setActiveSubscription] = useState<{
+    id: number;
+    planCode: string;
+    billingCycle: string;
+    status: string;
+    currentPeriodEnd: string;
+  } | null>(null);
+  const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
+  const [buyingPackage, setBuyingPackage] = useState(false);
+
   // --- SUPER ADMIN STATE ---
   const [adminData, setAdminData] = useState<{
     stats: {
@@ -332,13 +361,29 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   const loadCustomerDashboard = useCallback(async () => {
     try {
       const [ordRes, tktRes, apptRes] = await Promise.all([
-        apiFetch<{ orders: OrderRecord[] }>('/api/customer/orders'),
-        apiFetch<{ tickets: SupportTicketRecord[] }>('/api/customer/tickets'),
-        apiFetch<{ appointments: AppointmentRecord[] }>('/api/customer/appointments'),
+        apiFetch<{ orders: OrderRecord[] }>('/api/customer/orders').catch(() => ({ orders: [] })),
+        apiFetch<{ tickets: SupportTicketRecord[] }>('/api/customer/tickets').catch(() => ({ tickets: [] })),
+        apiFetch<{ appointments: AppointmentRecord[] }>('/api/customer/appointments').catch(() => ({ appointments: [] })),
       ]);
       setCustomerOrders(ordRes.orders);
       setCustomerTickets(tktRes.tickets);
       setCustomerAppointments(apptRes.appointments || []);
+
+      try {
+        const histRes = await apiFetch<{ payments: any[] }>('/api/payments/platform/history');
+        setPlatformPayments(histRes.payments || []);
+      } catch {
+        // Platform payments unconfigured or empty
+      }
+
+      try {
+        const subRes = await apiFetch<{ subscriptions: any[] }>('/api/platform/subscriptions');
+        if (subRes.subscriptions && subRes.subscriptions.length > 0) {
+          setActiveSubscription(subRes.subscriptions[0]);
+        }
+      } catch {
+        // Subscriptions unconfigured or empty
+      }
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Unable to load customer data.');
     }
@@ -647,6 +692,40 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       onNotify('Delivery partner added to fleet.');
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Failed to add delivery partner.');
+    }
+  };
+
+  // --- PLATFORM PACKAGE RENEWAL & CHECKOUT ---
+  const handleRenewPackage = async (tenantId?: number) => {
+    if (!profile) return;
+    setBuyingPackage(true);
+    try {
+      await initiatePlatformCheckout({
+        planCode: 'business-website',
+        planName: 'Business Website Package (₹7,999)',
+        websiteId: tenantId ? String(tenantId) : ownedTenants[0]?.id ? String(ownedTenants[0].id) : undefined,
+        publishWebsite: true,
+        prefill: {
+          name: profile.name || '',
+          email: profile.email || '',
+          contact: profile.phone || '',
+        },
+        onSuccess: async () => {
+          await loadCustomerDashboard();
+          await refreshProfile();
+          onNotify('Payment verified! Your website package subscription is active.');
+        },
+        onError: (err) => {
+          onNotify(err.message || 'Payment verification failed.');
+        },
+        onDismiss: () => {
+          onNotify('Payment checkout was closed.');
+        },
+      });
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Unable to initialize Razorpay checkout.');
+    } finally {
+      setBuyingPackage(false);
     }
   };
 
@@ -2112,8 +2191,216 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
           {roleTab === 'customer' && (
             <div className="space-y-6">
               <div>
-                <p className="text-xs text-[#D4AF37]">Module 4 · Profile, Addresses, Orders, Returns & Support</p>
+                <p className="text-xs text-[#D4AF37]">Customer Workspace · Website Management, Packages &amp; Orders</p>
                 <h1 className="font-luxury text-2xl font-bold text-white">Customer Dashboard</h1>
+              </div>
+
+              {/* 1. My Websites & Management Access */}
+              <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-[#D4AF37]" />
+                      <span>My Websites &amp; Storefronts ({ownedTenants.length})</span>
+                    </h2>
+                    <p className="text-[11px] text-[#8E8EA2] mt-0.5">
+                      Each customer has isolated access to manage only their own website design, catalog, and orders.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onGoBuilder}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold hover:opacity-95 shadow-sm"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Create / Edit in Builder</span>
+                  </button>
+                </div>
+
+                {ownedTenants.length === 0 ? (
+                  <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-6 text-center space-y-3">
+                    <p className="text-xs text-[#9E9EB2]">
+                      You have not created a business website yet. Purchase the ₹7,999 Business Website Package to get full management access to your custom website.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={onGoBuilder}
+                      className="px-4 py-2 rounded-md border border-[#D4AF37]/50 text-[#ECC86A] text-xs font-medium hover:bg-[#D4AF37] hover:text-[#08080A] transition-colors"
+                    >
+                      Start Free Draft in Website Builder
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {ownedTenants.map((t) => {
+                      const isLive = t.published !== false;
+                      return (
+                        <div
+                          key={t.id}
+                          className="rounded-lg border border-[#222232] bg-[#0A0A0F] p-4 flex flex-col justify-between space-y-3"
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-2 mb-1.5">
+                              <h3 className="text-xs font-bold text-white truncate">{t.name}</h3>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                  isLive
+                                    ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-amber-950/60 text-amber-400 border border-amber-500/30'
+                                }`}
+                              >
+                                {isLive ? 'Live / Published' : 'Draft / Unpublished'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-mono-tabular text-[#D4AF37] truncate">/site/{t.slug}</p>
+                            <p className="text-[10px] text-[#7E7E92] mt-0.5 capitalize">{t.category || 'General Store'}</p>
+                          </div>
+
+                          <div className="space-y-1.5 pt-2 border-t border-[#1C1C28]">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedTenantId(t.id);
+                                setRoleTab('owner');
+                              }}
+                              className="w-full py-1.5 rounded bg-gold-gradient text-[#08080A] text-[11px] font-semibold flex items-center justify-center gap-1.5 hover:opacity-95 shadow-sm"
+                            >
+                              <Building2 className="w-3 h-3" />
+                              <span>Manage Website Dashboard</span>
+                            </button>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={onGoBuilder}
+                                className="py-1 px-2 rounded border border-[#262638] text-[11px] text-[#A5A5B8] hover:text-white hover:border-[#D4AF37]/40 text-center"
+                              >
+                                Edit Builder
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onOpenStorefront(t.slug)}
+                                className="py-1 px-2 rounded border border-[#262638] text-[11px] text-[#ECC86A] hover:underline flex items-center justify-center gap-1"
+                              >
+                                <span>Preview</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. My Package & Active Subscriptions */}
+              <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-[#D4AF37]" />
+                      <span>My Website Package &amp; Platform Subscriptions</span>
+                    </h2>
+                    <p className="text-[11px] text-[#8E8EA2] mt-0.5">
+                      Platform package status for your independent website operations.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRenewPackage()}
+                    disabled={buyingPackage}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#D4AF37]/60 text-[#ECC86A] text-xs font-semibold hover:bg-[#D4AF37] hover:text-[#08080A] transition-colors disabled:opacity-50"
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>{buyingPackage ? 'Opening Razorpay...' : 'Renew / Upgrade Package'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-4 space-y-2">
+                    <span className="text-[10px] text-[#8E8EA0] uppercase tracking-wider">Active Package</span>
+                    <p className="font-luxury text-base font-bold text-white">Business Website Package</p>
+                    <p className="font-mono-tabular text-sm text-[#ECC86A] font-semibold">
+                      ₹7,999 <span className="text-[10px] text-[#8A8A9E] font-normal">+ 18% GST (₹9,439 Total)</span>
+                    </p>
+                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-500/30">
+                      Entitlement: {activeSubscription?.status ? activeSubscription.status.toUpperCase() : 'ACTIVE'}
+                    </span>
+                  </div>
+
+                  <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-4 space-y-1.5 text-[11px]">
+                    <span className="text-[10px] text-[#8E8EA0] uppercase tracking-wider block mb-1">Included Entitlements</span>
+                    <p className="text-[#C2C2D4] flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                      <span>Exclusive website management dashboard</span>
+                    </p>
+                    <p className="text-[#C2C2D4] flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                      <span>Edit colors, banners, fonts &amp; layout</span>
+                    </p>
+                    <p className="text-[#C2C2D4] flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                      <span>Catalog, pricing &amp; customer orders</span>
+                    </p>
+                    <p className="text-[#C2C2D4] flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                      <span>Custom domain linking &amp; live publishing</span>
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 p-4 space-y-1.5 text-[10px] text-[#C4B79A] leading-relaxed">
+                    <span className="text-[10px] text-amber-300 font-semibold uppercase tracking-wider block mb-1">
+                      Package Boundaries
+                    </span>
+                    <p>• <strong>Custom Domain:</strong> Customer provides own domain (registrar fees paid directly).</p>
+                    <p>• <strong>Seller Payments:</strong> Store checkout payments go directly to your own Razorpay account.</p>
+                    <p>• <strong>Platform Hosting:</strong> Cloudflare edge hosting included under platform arrangement.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Vijay Visuals Platform Payment Receipts & Invoices */}
+              <div className="rounded-xl border border-[#222230] bg-[#0D0D13] overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-[#1E1E2B] flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Receipt className="w-4 h-4 text-[#D4AF37]" />
+                    <span>Vijay Visuals Platform Payment History &amp; Invoices ({platformPayments.length})</span>
+                  </h2>
+                  <span className="text-[10px] text-[#7E7E92]">Authoritative GST Receipts</span>
+                </div>
+
+                {platformPayments.length === 0 ? (
+                  <p className="p-6 text-center text-xs text-[#8E8EA2]">
+                    No platform payments recorded yet under {profile.email}. Once you purchase a package, your official GST tax invoices will appear here.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-[#1D1D28]">
+                    {platformPayments.map((pay) => (
+                      <div key={pay.id} className="p-4 flex flex-wrap items-center justify-between gap-4 text-xs">
+                        <div>
+                          <p className="font-mono-tabular text-[#ECC86A] font-semibold">
+                            {pay.receiptNumber} · Business Website Package · ₹{(pay.grandTotalInr || 9439).toLocaleString('en-IN')}
+                          </p>
+                          <p className="text-[#9E9EB2] mt-0.5">
+                            Status: <strong className="text-emerald-400 capitalize">{pay.status}</strong> · Date: {new Date(pay.createdAt).toLocaleDateString('en-IN')}
+                            {pay.razorpayPaymentId && (
+                              <span className="font-mono-tabular text-[10px] ml-2 text-[#7E7E92]">
+                                Ref: {pay.razorpayPaymentId}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedReceipt(pay)}
+                          className="px-3 py-1.5 rounded border border-[#D4AF37]/50 text-[#ECC86A] text-xs font-medium hover:bg-[#D4AF37] hover:text-[#08080A] transition-colors"
+                        >
+                          View Platform Tax Invoice
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -2782,6 +3069,118 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
           )}
         </main>
       </div>
+
+      {/* Platform Tax Invoice Modal */}
+      {selectedReceipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg rounded-xl border border-[#2B2B3E] bg-[#0E0E15] p-6 text-xs text-[#E4E4EE] shadow-2xl max-h-[90vh] overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => setSelectedReceipt(null)}
+              aria-label="Close modal"
+              className="absolute top-4 right-4 p-1.5 rounded-md text-[#8E8EA2] hover:text-white hover:bg-[#1A1A26] transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Invoice Header */}
+            <div className="border-b border-[#242436] pb-4 mb-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="font-luxury text-lg font-bold text-white tracking-wider">VIJAY VISUALS</h2>
+                  <p className="text-[10px] text-[#A0A0B4] mt-0.5">Platform Web Engineering &amp; Multi-Tenant Cloud Services</p>
+                  <p className="text-[10px] text-[#7E7E92]">Tax Invoice · SAC Code: 998314 (GSTIN: Pending Registration / Business Settings)</p>
+                </div>
+                <div className="text-right">
+                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/70 text-emerald-400 border border-emerald-500/40 mb-1">
+                    PAID / TAX INVOICE
+                  </span>
+                  <p className="font-mono-tabular text-[11px] text-[#ECC86A] font-semibold">
+                    {selectedReceipt.receiptNumber || `RCPT-${selectedReceipt.id}`}
+                  </p>
+                  <p className="text-[10px] text-[#8E8EA2]">
+                    Date: {new Date(selectedReceipt.createdAt).toLocaleDateString('en-IN')}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Billed To */}
+            <div className="rounded-lg border border-[#1E1E2C] bg-[#09090E] p-3 mb-4 text-[11px] space-y-1">
+              <span className="text-[10px] text-[#8E8EA0] uppercase tracking-wider block">Customer Details</span>
+              <p className="text-white font-medium">{profile?.name || 'Customer'}</p>
+              <p className="text-[#A2A2B6]">{profile?.email}</p>
+              {profile?.phone && <p className="text-[#A2A2B6]">Mobile: {profile.phone}</p>}
+            </div>
+
+            {/* Items Table */}
+            <div className="rounded-lg border border-[#20202F] overflow-hidden mb-4">
+              <div className="grid grid-cols-12 bg-[#12121A] px-3 py-2 text-[10px] text-[#8E8EA0] font-semibold uppercase tracking-wider">
+                <span className="col-span-8">Description</span>
+                <span className="col-span-4 text-right">Amount (INR)</span>
+              </div>
+              <div className="p-3 space-y-2 text-[11px]">
+                <div className="grid grid-cols-12">
+                  <div className="col-span-8">
+                    <p className="text-white font-medium">Business Website Management Package</p>
+                    <p className="text-[10px] text-[#7E7E92]">Website Management &amp; Storefront Access (SAC: 998314)</p>
+                  </div>
+                  <span className="col-span-4 text-right font-mono-tabular text-white">
+                    ₹{(selectedReceipt.amountInr || 7999).toLocaleString('en-IN')}
+                  </span>
+                </div>
+
+                <div className="border-t border-[#1C1C28] pt-2 space-y-1 text-[10px] text-[#9A9AB0] font-mono-tabular">
+                  <div className="flex justify-between">
+                    <span>Taxable Base Subtotal:</span>
+                    <span>₹{(selectedReceipt.amountInr || 7999).toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>CGST (9.0%):</span>
+                    <span>₹{Math.round((selectedReceipt.amountInr || 7999) * 0.09).toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>SGST (9.0%):</span>
+                    <span>₹{Math.round((selectedReceipt.amountInr || 7999) * 0.09).toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-bold text-white pt-1.5 border-t border-[#1C1C28]">
+                    <span>Grand Total (Settled):</span>
+                    <span className="text-[#ECC86A]">
+                      ₹{(selectedReceipt.grandTotalInr || 9439).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Verification Metadata */}
+            <div className="rounded-lg border border-[#1C1C28] bg-[#09090E] p-2.5 mb-4 text-[10px] text-[#7E7E92] font-mono-tabular space-y-0.5">
+              <p>Payment Gateway: Razorpay PG (Server-Side Verified HMAC-SHA256)</p>
+              {selectedReceipt.razorpayPaymentId && <p>Razorpay Payment ID: {selectedReceipt.razorpayPaymentId}</p>}
+              <p>Status: Completed &amp; Entitlement Granted</p>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex-1 py-2.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-bold hover:opacity-95 transition-opacity flex items-center justify-center gap-1.5 shadow-md"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print / Save Tax Invoice</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedReceipt(null)}
+                className="px-4 py-2.5 rounded-md border border-[#2B2B3C] text-xs text-[#8E8EA2] hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -10,7 +10,7 @@ import {
   parseJsonBody,
   writeAuditLog,
 } from '../../../_shared';
-import { requireTenantOwnerAccess } from '../../../_tenantAccess';
+import { checkTenantSubscriptionEntitlement, requireTenantOwnerAccess } from '../../../_tenantAccess';
 import { mapPublicationToTenant } from '../../../_tenantMapper';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -30,6 +30,27 @@ export async function onRequestPatch(
   const body = await parseJsonBody<{ published?: boolean }>(request);
   if (!body || typeof body.published !== 'boolean') {
     return jsonResponse({ error: 'Boolean "published" field is required.' }, 400);
+  }
+
+  // Server-side entitlement verification before allowing website to be published live
+  if (body.published) {
+    const entitlement = await checkTenantSubscriptionEntitlement(
+      env,
+      access.row.website_id,
+      auth.user.id,
+      auth.user.isSuperAdmin
+    );
+
+    if (!entitlement.canPublish) {
+      return jsonResponse(
+        {
+          error:
+            'An active package or subscription is required to publish this website live. Please complete your website package purchase (₹7,999 Business Website package).',
+          code: 'PAYMENT_REQUIRED',
+        },
+        402
+      );
+    }
   }
 
   const nextStatus = body.published ? 'published' : 'unpublished';

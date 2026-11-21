@@ -5,6 +5,7 @@ import {
   ArrowUp,
   Check,
   CheckCircle2,
+  CreditCard,
   ExternalLink,
   Globe,
   History,
@@ -16,11 +17,13 @@ import {
   RotateCcw,
   Save,
   Search,
+  ShieldCheck,
   Smartphone,
   Sparkles,
   Trash2,
   Upload,
   Wand2,
+  X,
 } from 'lucide-react';
 import { BUSINESS_CATEGORIES, GLOBAL_CURRENCIES } from '../data/content';
 import { TEMPLATES_DATA, BusinessTemplate } from '../lib/templatesData';
@@ -28,6 +31,7 @@ import { apiFetch } from '../lib/api';
 import { generateSlugFromName, validateSlug } from '../lib/slug';
 import { optimizeImageFileToDataUrl } from '../lib/imageUpload';
 import { useAuth } from '../hooks/useAuth';
+import { initiatePlatformCheckout } from '../lib/razorpayClient';
 import { AiSetupDraft, GalleryItem, TenantModules, TenantRecord } from '../types/platform';
 
 import fashionBanner from '../assets/images/store_fashion_royal_1795055802960.jpg';
@@ -127,9 +131,12 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   onOpenStorefront,
   onNotify,
 }) => {
-  const { profile, ownedTenants, signInWithGoogle, refreshProfile } = useAuth();
+  const { profile, ownedTenants, openAuthModal, signInWithGoogle, refreshProfile } = useAuth();
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [editingTenantId, setEditingTenantId] = useState<number | null>(null);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [purchaseModalTenantId, setPurchaseModalTenantId] = useState<number | null>(null);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
 
   // Core business identity
   const [name, setName] = useState('Sri Lakshmi Silks & Boutique');
@@ -342,7 +349,65 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
       onPublished(res.tenant);
       onNotify(res.tenant.published ? 'Website is now PUBLISHED live!' : 'Website switched to DRAFT / Unpublished mode.');
     } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Unable to update publish state.');
+      const msg = err instanceof Error ? err.message : 'Unable to update publish state.';
+      if (
+        msg.toLowerCase().includes('payment') ||
+        msg.toLowerCase().includes('subscription') ||
+        msg.toLowerCase().includes('package')
+      ) {
+        setPurchaseModalTenantId(editingTenantId);
+        setPublishModalOpen(true);
+      }
+      onNotify(msg);
+    }
+  };
+
+  const handlePurchaseAndPublish = async () => {
+    if (!profile) {
+      openAuthModal('signin');
+      return;
+    }
+    setCheckoutBusy(true);
+    try {
+      await initiatePlatformCheckout({
+        planCode: 'business-website',
+        planName: 'Business Website Package (₹7,999)',
+        websiteId: purchaseModalTenantId
+          ? String(purchaseModalTenantId)
+          : editingTenantId
+            ? String(editingTenantId)
+            : undefined,
+        publishWebsite: true,
+        prefill: {
+          name: profile?.name || '',
+          email: profile?.email || '',
+          contact: profile?.phone || '',
+        },
+        onSuccess: async (verifyRes) => {
+          setPublishModalOpen(false);
+          setSitePublished(true);
+          await refreshProfile();
+          setPublishedSlug(slug);
+          onNotify(`Payment verified! "${name}" is now live with the Business Website Package.`);
+          if (verifyRes.verified) {
+            const targetId = purchaseModalTenantId || editingTenantId;
+            const existing = ownedTenants.find((t) => t.id === targetId);
+            if (existing) {
+              onPublished({ ...existing, published: true, status: 'active' });
+            }
+          }
+        },
+        onError: (err) => {
+          onNotify(err.message || 'Payment verification failed.');
+        },
+        onDismiss: () => {
+          onNotify('Payment checkout was closed.');
+        },
+      });
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Unable to initialize Razorpay checkout.');
+    } finally {
+      setCheckoutBusy(false);
     }
   };
 
@@ -594,12 +659,13 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     };
   }, [slug, slugValidation.valid, slugValidation.error, slugValidation.normalized, name, suggestedSlugFromName, editingTenantId]);
 
-  const handlePublish = async (e: React.FormEvent) => {
+  const handlePublish = async (e: React.FormEvent, publishIntent: boolean = true) => {
     e.preventDefault();
     setFormError(null);
 
     if (!profile) {
-      await signInWithGoogle();
+      openAuthModal('signin');
+      onNotify('Please sign in to save or publish your website.');
       return;
     }
 
@@ -677,29 +743,84 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
         deliveryFee: Number(deliveryFee) || 0,
         codEnabled,
         upiId: upiId.trim(),
+        published: publishIntent,
+        status: publishIntent ? 'active' : 'unpublished',
       };
 
-      const res = editingTenantId
-        ? await apiFetch<{ tenant: TenantRecord }>(`/api/tenants/${editingTenantId}`, {
-            method: 'PATCH',
-            body: JSON.stringify(payload),
-          })
-        : await apiFetch<{ tenant: TenantRecord }>('/api/tenants', {
-            method: 'POST',
-            body: JSON.stringify(payload),
-          });
+      if (!publishIntent) {
+        const res = editingTenantId
+          ? await apiFetch<{ tenant: TenantRecord }>(`/api/tenants/${editingTenantId}`, {
+              method: 'PATCH',
+              body: JSON.stringify(payload),
+            })
+          : await apiFetch<{ tenant: TenantRecord }>('/api/tenants', {
+              method: 'POST',
+              body: JSON.stringify(payload),
+            });
 
-      await refreshProfile();
-      setEditingTenantId(res.tenant.id);
-      setPublishedSlug(res.tenant.slug);
-      setSlug(res.tenant.slug);
-      setFormError(null);
-      onPublished(res.tenant);
-      onNotify(
-        editingTenantId
-          ? `Saved updates to "${res.tenant.name}" — live at /site/${res.tenant.slug}.`
-          : `Published "${res.tenant.name}" live at /site/${res.tenant.slug}!`
-      );
+        await refreshProfile();
+        setEditingTenantId(res.tenant.id);
+        setSitePublished(false);
+        setSlug(res.tenant.slug);
+        setFormError(null);
+        onPublished(res.tenant);
+        onNotify(`Draft saved for "${res.tenant.name}"! You can customize design, products, and gallery anytime.`);
+        return;
+      }
+
+      try {
+        const res = editingTenantId
+          ? await apiFetch<{ tenant: TenantRecord }>(`/api/tenants/${editingTenantId}`, {
+              method: 'PATCH',
+              body: JSON.stringify(payload),
+            })
+          : await apiFetch<{ tenant: TenantRecord }>('/api/tenants', {
+              method: 'POST',
+              body: JSON.stringify(payload),
+            });
+
+        await refreshProfile();
+        setEditingTenantId(res.tenant.id);
+        setPublishedSlug(res.tenant.slug);
+        setSitePublished(true);
+        setSlug(res.tenant.slug);
+        setFormError(null);
+        onPublished(res.tenant);
+        onNotify(
+          editingTenantId
+            ? `Saved updates to "${res.tenant.name}" — live at /site/${res.tenant.slug}.`
+            : `Published "${res.tenant.name}" live at /site/${res.tenant.slug}!`
+        );
+      } catch (publishErr) {
+        const pMsg = publishErr instanceof Error ? publishErr.message : 'Unable to publish website.';
+        const isPaymentRequired =
+          pMsg.toLowerCase().includes('payment') ||
+          pMsg.toLowerCase().includes('subscription') ||
+          pMsg.toLowerCase().includes('package');
+
+        if (isPaymentRequired) {
+          let savedId = editingTenantId;
+          if (!savedId) {
+            try {
+              const draftSave = await apiFetch<{ tenant: TenantRecord }>('/api/tenants', {
+                method: 'POST',
+                body: JSON.stringify({ ...payload, published: false, status: 'unpublished' }),
+              });
+              savedId = draftSave.tenant.id;
+              setEditingTenantId(draftSave.tenant.id);
+              setSitePublished(false);
+              await refreshProfile();
+            } catch {
+              // ignore
+            }
+          }
+          setPurchaseModalTenantId(savedId);
+          setPublishModalOpen(true);
+          setFormError('Business Website Package (₹7,999) required to publish live. Complete payment below to activate.');
+        } else {
+          throw publishErr;
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to save website.';
       setFormError(msg);
@@ -1277,12 +1398,37 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
 
           {/* 05. Package & Optional Branded PWA */}
           <div className="border-t border-[#1E1E2B] pt-4">
-            <h2 className="text-sm font-semibold text-white mb-3">05. Package & Optional Branded PWA</h2>
-            <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-sm font-semibold text-white">05. Select Website Package</h2>
+              <span className="text-[11px] text-[#8E8EA2]">Draft is free · Package activates upon live publishing</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-3">
               {[
-                { id: 'website_only', label: 'Website Only' },
-                { id: 'website_pwa', label: 'Website + PWA' },
-                { id: 'enterprise_ai', label: 'Enterprise AI' },
+                {
+                  id: 'website_only',
+                  name: 'Business Website Package',
+                  price: '₹7,999',
+                  gst: '+ 18% GST (Total ₹9,439)',
+                  highlight: 'Recommended',
+                  desc: 'Full website design, products, orders, gallery, publishing & custom domain connection.',
+                },
+                {
+                  id: 'website_pwa',
+                  name: 'Website + Branded PWA',
+                  price: '₹22,999',
+                  gst: '+ 18% GST (Total ₹27,139)',
+                  highlight: 'Optional PWA',
+                  desc: 'Everything in Business Website + installable mobile home-screen web app (PWA).',
+                },
+                {
+                  id: 'enterprise_ai',
+                  name: 'Custom Dev & Enterprise AI',
+                  price: '₹49,999',
+                  gst: '+ 18% GST (Total ₹58,999)',
+                  highlight: 'Enterprise',
+                  desc: 'Custom workflows, dedicated AI engines, ERP sync & high-volume multi-branch routing.',
+                },
               ].map((tier) => (
                 <button
                   key={tier.id}
@@ -1291,13 +1437,23 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                     setPlanTier(tier.id as typeof planTier);
                     setPwaEnabled(tier.id !== 'website_only');
                   }}
-                  className={`py-2 px-2 rounded-md text-xs font-medium border ${
+                  className={`p-3 rounded-lg text-left border transition-all ${
                     planTier === tier.id
-                      ? 'border-[#D4AF37] bg-[#1A170E] text-[#ECC86A]'
-                      : 'border-[#252534] text-[#9E9EB2]'
+                      ? 'border-[#D4AF37] bg-[#16130C] text-white shadow-sm ring-1 ring-[#D4AF37]/50'
+                      : 'border-[#222232] bg-[#0A0A0F] text-[#9E9EB2] hover:border-[#333348]'
                   }`}
                 >
-                  {tier.label}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-white">{tier.name}</span>
+                    <span className="text-[10px] font-semibold text-[#D4AF37] px-1.5 py-0.5 rounded bg-[#D4AF37]/15">
+                      {tier.highlight}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-1.5 mb-1.5 font-mono-tabular">
+                    <span className="text-sm font-bold text-[#ECC86A]">{tier.price}</span>
+                    <span className="text-[10px] text-[#7A7A8E]">{tier.gst}</span>
+                  </div>
+                  <p className="text-[10px] text-[#8E8EA2] line-clamp-2 leading-relaxed">{tier.desc}</p>
                 </button>
               ))}
             </div>
@@ -1522,19 +1678,35 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full py-3 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold hover:opacity-95 transition-opacity disabled:opacity-60"
-          >
-            {!profile
-              ? 'Sign In to Publish Your Website'
-              : saving
-                ? 'Saving to Cloudflare D1...'
-                : editingTenantId
-                  ? 'Save & Republish Website Changes'
-                  : 'Publish Live Business Website'}
-          </button>
+          <div className="space-y-2 pt-2">
+            <button
+              type="button"
+              onClick={(e) => handlePublish(e, true)}
+              disabled={saving}
+              className="w-full py-3 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold hover:opacity-95 transition-opacity disabled:opacity-60 flex items-center justify-center gap-2 shadow-md"
+            >
+              <Globe className="w-4 h-4" />
+              <span>
+                {!profile
+                  ? 'Sign In to Publish Your Website'
+                  : saving
+                    ? 'Processing Website...'
+                    : editingTenantId
+                      ? 'Save & Publish Live Changes'
+                      : 'Publish Live Business Website'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => handlePublish(e, false)}
+              disabled={saving}
+              className="w-full py-2.5 rounded-md border border-[#2B2B3C] bg-[#0E0E15] text-[#C5C5D6] text-xs font-medium hover:text-white hover:border-[#D4AF37]/50 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              <Save className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>Save as Unpublished Draft (Free)</span>
+            </button>
+          </div>
 
           {publishedSlug && (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-3.5 flex items-center justify-between gap-3 text-xs">
@@ -1846,6 +2018,142 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Package Purchase & Publish Modal */}
+      {publishModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg rounded-xl border border-[#2B2B3E] bg-[#0E0E15] p-6 text-xs text-[#E4E4EE] shadow-2xl max-h-[90vh] overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => !checkoutBusy && setPublishModalOpen(false)}
+              disabled={checkoutBusy}
+              aria-label="Close modal"
+              className="absolute top-4 right-4 p-1.5 rounded-md text-[#8E8EA2] hover:text-white hover:bg-[#1A1A26] transition-colors disabled:opacity-50"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldCheck className="w-5 h-5 text-[#D4AF37]" />
+              <h2 className="font-luxury text-lg font-bold text-white">Activate Package &amp; Publish Website</h2>
+            </div>
+            <p className="text-[#9E9EB2] text-[11px] mb-4">
+              Your website is saved as a secure draft. To publish live to the public at your custom URL, activate your Business Website package.
+            </p>
+
+            {/* Selected Package Details */}
+            <div className="rounded-lg border border-[#232332] bg-[#12121B] p-4 mb-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-[#D4AF37]/20 text-[#ECC86A] mb-1">
+                    ACTIVE SELECTION
+                  </span>
+                  <h3 className="font-luxury text-base font-bold text-white">
+                    {planTier === 'enterprise_ai'
+                      ? 'Custom Dev & Enterprise AI'
+                      : planTier === 'website_pwa'
+                        ? 'Website + Branded PWA'
+                        : 'Business Website Package'}
+                  </h3>
+                  <p className="text-[11px] text-[#A2A2B6]">Publishing target: /site/{slug}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-mono-tabular text-xl font-bold text-[#ECC86A]">
+                    {planTier === 'enterprise_ai'
+                      ? '₹49,999'
+                      : planTier === 'website_pwa'
+                        ? '₹22,999'
+                        : '₹7,999'}
+                  </p>
+                  <p className="text-[10px] text-[#7A7A8E]">+ 18% GST</p>
+                </div>
+              </div>
+
+              {/* Price Calculation Breakdown */}
+              <div className="border-t border-[#1E1E2C] pt-2.5 space-y-1.5 font-mono-tabular text-[11px]">
+                <div className="flex justify-between text-[#A0A0B4]">
+                  <span>Package Base Price:</span>
+                  <span>
+                    {planTier === 'enterprise_ai'
+                      ? '₹49,999'
+                      : planTier === 'website_pwa'
+                        ? '₹22,999'
+                        : '₹7,999'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-[#A0A0B4]">
+                  <span>GST (18% Goods &amp; Services Tax):</span>
+                  <span>
+                    {planTier === 'enterprise_ai'
+                      ? '₹9,000'
+                      : planTier === 'website_pwa'
+                        ? '₹4,140'
+                        : '₹1,440'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-[#1E1E2C]">
+                  <span>Total Amount Payable:</span>
+                  <span className="text-[#ECC86A]">
+                    {planTier === 'enterprise_ai'
+                      ? '₹58,999'
+                      : planTier === 'website_pwa'
+                        ? '₹27,139'
+                        : '₹9,439'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Package Boundaries & Ownership Disclosures */}
+            <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 p-3 mb-4 text-[10px] text-[#C4B79A] leading-relaxed space-y-1">
+              <p className="font-semibold text-amber-300">Package Scope &amp; Responsibilities:</p>
+              <p>• <strong>Custom Domain:</strong> Customer owns their domain (e.g. from Cloudflare, GoDaddy). Registration &amp; renewal fees are paid directly to your registrar.</p>
+              <p>• <strong>Hosting:</strong> Cloudflare edge hosting is provided under platform arrangements.</p>
+              <p>• <strong>Payment Gateway:</strong> Seller website payments flow directly to your own separately linked merchant account.</p>
+              <p>• <strong>Tenant Isolation:</strong> You receive exclusive management access to your website. No access to other tenants or platform admin controls.</p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handlePurchaseAndPublish}
+                disabled={checkoutBusy}
+                className="w-full py-3 rounded-md bg-gold-gradient text-[#08080A] text-xs font-bold hover:opacity-95 transition-opacity flex items-center justify-center gap-2 shadow-lg disabled:opacity-60"
+              >
+                {checkoutBusy ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verifying with Razorpay...</span>
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="w-4 h-4" />
+                    <span>
+                      Pay via Razorpay &amp; Publish (
+                      {planTier === 'enterprise_ai'
+                        ? '₹58,999'
+                        : planTier === 'website_pwa'
+                          ? '₹27,139'
+                          : '₹9,439'}
+                      )
+                    </span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPublishModalOpen(false)}
+                disabled={checkoutBusy}
+                className="w-full py-2 rounded-md border border-[#2B2B3C] text-[11px] font-medium text-[#A0A0B2] hover:text-white transition-colors"
+              >
+                Keep Saved as Unpublished Draft
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

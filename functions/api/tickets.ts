@@ -16,6 +16,125 @@ export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
 }
 
+export async function onRequestGet(context: PagesContext): Promise<Response> {
+  const { request, env } = context;
+  const auth = await requireUser(request, env);
+  if (!auth.ok) return auth.response;
+
+  if (!env.DB) return jsonResponse({ tickets: [] });
+
+  try {
+    const isSuperAdmin = auth.user.isSuperAdmin;
+    const rows = isSuperAdmin
+      ? await env.DB.prepare('SELECT * FROM support_tickets ORDER BY id DESC LIMIT 50').all<Record<string, any>>()
+      : await env.DB.prepare('SELECT * FROM support_tickets WHERE owner_id = ? ORDER BY id DESC LIMIT 50')
+          .bind(auth.user.id)
+          .all<Record<string, any>>();
+
+    const tickets = (rows.results || []).map((t) => {
+      let messages: Array<{ sender: string; text: string; at: string; attachmentUrl?: string }> = [];
+      try {
+        messages = JSON.parse(t.messages_json || '[]');
+      } catch {}
+      return {
+        id: t.id,
+        ownerId: t.owner_id,
+        subject: t.subject,
+        category: t.category,
+        priority: t.priority,
+        status: t.status,
+        messages,
+        createdAt: t.created_at,
+        updatedAt: t.updated_at,
+      };
+    });
+
+    return jsonResponse({ tickets });
+  } catch (err) {
+    if (isMissingTableError(err)) {
+      return jsonResponse({ tickets: [] });
+    }
+    return jsonResponse({ error: 'Unable to load tickets.' }, 500);
+  }
+}
+
+export async function onRequestPatch(context: PagesContext): Promise<Response> {
+  const { request, env } = context;
+  const auth = await requireUser(request, env);
+  if (!auth.ok) return auth.response;
+
+  if (!env.DB) return jsonResponse({ error: 'Support storage is not configured.' }, 503);
+
+  const body = await parseJsonBody<{
+    ticketId?: number;
+    message?: string;
+    status?: 'open' | 'in_progress' | 'resolved' | 'closed';
+    attachmentUrl?: string;
+  }>(request);
+
+  if (!body || !body.ticketId) {
+    return jsonResponse({ error: 'Ticket ID is required.' }, 400);
+  }
+
+  const ticketId = Number(body.ticketId);
+  const text = sanitizeText(body.message || '', 2000);
+  const nextStatus = body.status;
+  const attachmentUrl = body.attachmentUrl ? sanitizeText(body.attachmentUrl, 500) : undefined;
+
+  try {
+    const existing = await env.DB.prepare('SELECT * FROM support_tickets WHERE id = ? LIMIT 1')
+      .bind(ticketId)
+      .first<Record<string, any>>();
+
+    if (!existing) {
+      return jsonResponse({ error: 'Ticket not found.' }, 404);
+    }
+
+    // Tenant isolation: customers can only reply to their own tickets
+    if (existing.owner_id !== auth.user.id && !auth.user.isSuperAdmin) {
+      return jsonResponse({ error: 'Unauthorized to reply to this ticket.' }, 403);
+    }
+
+    let messages: Array<{ sender: string; text: string; at: string; attachmentUrl?: string }> = [];
+    try {
+      messages = JSON.parse(existing.messages_json || '[]');
+    } catch {}
+
+    if (text) {
+      messages.push({
+        sender: auth.user.email,
+        text,
+        at: new Date().toISOString(),
+        attachmentUrl,
+      });
+    }
+
+    const updatedStatus = nextStatus || (auth.user.isSuperAdmin ? 'answered' : 'open');
+    const nowIso = new Date().toISOString();
+
+    await env.DB.prepare(
+      `UPDATE support_tickets 
+       SET messages_json = ?, status = ?, updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(JSON.stringify(messages), updatedStatus, nowIso, ticketId)
+      .run();
+
+    return jsonResponse({
+      success: true,
+      ticket: {
+        id: ticketId,
+        status: updatedStatus,
+        messages,
+        updatedAt: nowIso,
+      },
+    });
+  } catch (err) {
+    return jsonResponse({ error: 'Failed to update ticket.' }, 500);
+  }
+}
+
+
 export async function onRequestPost(context: PagesContext): Promise<Response> {
   const { request, env } = context;
   const auth = await requireUser(request, env);

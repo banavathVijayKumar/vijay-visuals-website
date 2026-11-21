@@ -24,36 +24,111 @@ interface SeoCheckItem {
   detail: string;
 }
 
+const FALLBACK_BLOG_POSTS = [
+  {
+    id: 1,
+    slug: 'how-to-launch-business-website-india',
+    title: 'How to Launch a High-Converting Business Website in India',
+    excerpt: 'Step-by-step guidance on setting up custom domains, WhatsApp integration, and UPI payments for Indian small businesses.',
+    content_markdown: 'Setting up a digital storefront for your business requires clear branding, fast mobile loading, and direct contact CTAs.',
+    category: 'Business Growth',
+    language: 'en',
+    author_name: 'Vijay Visuals Editorial Team',
+    seo_title: 'Launch a High-Converting Business Website in India',
+    seo_description: 'Practical guide to establishing your business presence online with Vijay Visuals.',
+    published_at: '2026-11-20T00:00:00.000Z',
+  },
+  {
+    id: 2,
+    slug: 'pwa-vs-native-mobile-apps-for-local-retailers',
+    title: 'PWA vs Native Apps: Why Indian Retailers Are Choosing Progressive Web Apps',
+    excerpt: 'Discover how Progressive Web Apps eliminate app store commissions and provide instant homescreen installation without high download drop-offs.',
+    content_markdown: 'Progressive Web Apps (PWAs) combine the speed and accessibility of the web with the offline and home screen install capabilities of native apps.',
+    category: 'Technology',
+    language: 'en',
+    author_name: 'Vijay Visuals Tech Desk',
+    seo_title: 'Why Retailers Choose Progressive Web Apps',
+    seo_description: 'Discover the advantages of PWAs over expensive native app development.',
+    published_at: '2026-11-19T00:00:00.000Z',
+  },
+];
+
+const FALLBACK_TEMPLATES = [
+  {
+    id: 'obsidian-luxury',
+    name: 'Obsidian Gold Luxury',
+    category: 'Luxury & Jewelry',
+    description: 'Deep charcoal canvas with metallic gold typography for boutiques, jewelry, and studios.',
+    preview_theme_json: JSON.stringify({ primaryColor: '#D4AF37', accentColor: '#0D0D12', fontFamily: 'Cinzel' }),
+    is_featured: 1,
+  },
+  {
+    id: 'slate-precision',
+    name: 'Slate Precision Commerce',
+    category: 'Electronics & Tech',
+    description: 'Structured dark navy surfaces engineered for electronics, audio, and SaaS storefronts.',
+    preview_theme_json: JSON.stringify({ primaryColor: '#E5B94C', accentColor: '#0E131A', fontFamily: 'Plus Jakarta Sans' }),
+    is_featured: 1,
+  },
+  {
+    id: 'culinary-warm',
+    name: 'Heritage Culinary Warmth',
+    category: 'Food & Dining',
+    description: 'Rich espresso backdrop with saffron gold accents tailored for restaurants & hotels.',
+    preview_theme_json: JSON.stringify({ primaryColor: '#DFBA5A', accentColor: '#120D0A', fontFamily: 'Cinzel' }),
+    is_featured: 1,
+  },
+];
+
 export async function onRequestGet(context: PagesContext): Promise<Response> {
   const { request, env } = context;
-  if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
   const url = new URL(request.url);
   const scope = (url.searchParams.get('scope') || 'blog').toLowerCase();
 
   if (scope === 'blog') {
     const lang = sanitizeText(url.searchParams.get('lang') || '', 10).toLowerCase();
-    const res = lang
-      ? await env.DB.prepare(
-          `SELECT id, slug, title, excerpt, content_markdown, category, language, author_name, seo_title, seo_description, published_at
-           FROM public_blog_posts WHERE is_published = 1 AND (language = ? OR language = 'en') ORDER BY published_at DESC LIMIT 30`
-        )
-          .bind(lang)
-          .all()
-      : await env.DB.prepare(
-          `SELECT id, slug, title, excerpt, content_markdown, category, language, author_name, seo_title, seo_description, published_at
-           FROM public_blog_posts WHERE is_published = 1 ORDER BY published_at DESC LIMIT 30`
-        ).all();
-    return json({ posts: res.results || [] });
+    try {
+      if (!env.DB) {
+        return json({ posts: FALLBACK_BLOG_POSTS });
+      }
+      const res = lang
+        ? await env.DB.prepare(
+            `SELECT id, slug, title, excerpt, content_markdown, category, language, author_name, seo_title, seo_description, published_at
+             FROM public_blog_posts WHERE is_published = 1 AND (language = ? OR language = 'en') ORDER BY published_at DESC LIMIT 30`
+          )
+            .bind(lang)
+            .all()
+        : await env.DB.prepare(
+            `SELECT id, slug, title, excerpt, content_markdown, category, language, author_name, seo_title, seo_description, published_at
+             FROM public_blog_posts WHERE is_published = 1 ORDER BY published_at DESC LIMIT 30`
+          ).all();
+
+      const posts = Array.isArray(res?.results) && res.results.length > 0 ? res.results : FALLBACK_BLOG_POSTS;
+      return json({ posts });
+    } catch {
+      return json({ posts: FALLBACK_BLOG_POSTS });
+    }
   }
 
   if (scope === 'templates') {
-    const res = await env.DB.prepare(
-      `SELECT id, name, category, description, preview_theme_json, is_featured
-       FROM website_templates ORDER BY is_featured DESC, id ASC`
-    ).all();
-    return json({ templates: res.results || [] });
+    try {
+      if (!env.DB) {
+        return json({ templates: FALLBACK_TEMPLATES });
+      }
+      const res = await env.DB.prepare(
+        `SELECT id, name, category, description, preview_theme_json, is_featured
+         FROM website_templates ORDER BY is_featured DESC, id ASC`
+      ).all();
+
+      const templates = Array.isArray(res?.results) && res.results.length > 0 ? res.results : FALLBACK_TEMPLATES;
+      return json({ templates });
+    } catch {
+      return json({ templates: FALLBACK_TEMPLATES });
+    }
   }
+
+  if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
   if (scope === 'my_referrals') {
     const auth = await requireUser(request, env);

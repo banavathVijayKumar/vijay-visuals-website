@@ -1,11 +1,13 @@
 import { CloudflareEnv, handleOptions, jsonResponse } from '../_shared';
-import { isResponse, requireUser } from '../marketplace/_auth';
+import { requireUser } from '../_auth';
+import { checkTenantSubscriptionEntitlement } from '../_tenantAccess';
 
 export const onRequestOptions = () => handleOptions();
 
 export const onRequestPost = async ({ request, env }: { request: Request; env: CloudflareEnv }) => {
-  const user = await requireUser(request, env);
-  if (isResponse(user)) return user;
+  const auth = await requireUser(request, env);
+  if (!auth.ok) return auth.response;
+  const user = auth.user;
 
   let body: any;
   try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid JSON request.' }, 400); }
@@ -26,9 +28,31 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
       'SELECT website_id, owner_id FROM customer_website_publications WHERE public_slug = ?'
     ).bind(slug).first<any>();
     const now = new Date().toISOString();
-    if (existing && existing.owner_id !== user.id) {
+    if (existing && existing.owner_id !== user.id && !user.isSuperAdmin) {
       return jsonResponse({ error: 'This website URL is already in use. Change the business name and try again.' }, 409);
     }
+
+    const websiteId = existing?.website_id || crypto.randomUUID();
+
+    // Check entitlement before allowing live publishing
+    const entitlement = await checkTenantSubscriptionEntitlement(
+      env,
+      websiteId,
+      user.id,
+      user.isSuperAdmin
+    );
+
+    if (!entitlement.canPublish) {
+      return jsonResponse(
+        {
+          error:
+            'An active package or subscription is required to publish this website live. Please complete your website package purchase (₹7,999 Business Website package).',
+          code: 'PAYMENT_REQUIRED',
+        },
+        402
+      );
+    }
+
     if (existing) {
       await env.DB!.prepare(`UPDATE customer_website_publications
         SET business_name = ?, website_json = ?, status = 'published', published_at = ?, updated_at = ?
@@ -38,9 +62,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
       await env.DB!.prepare(`INSERT INTO customer_website_publications
         (website_id, owner_id, public_slug, business_name, website_json, status, published_at, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 'published', ?, ?, ?)`)
-        .bind(crypto.randomUUID(), user.id, slug, businessName, serialized, now, now, now).run();
+        .bind(websiteId, user.id, slug, businessName, serialized, now, now, now).run();
     }
-    return jsonResponse({ success: true, slug, url: `/sites/${slug}`, publishedAt: now });
+    return jsonResponse({ success: true, slug, url: `/site/${slug}`, publishedAt: now });
   } catch (error) {
     console.error('Website publication failed:', error);
     return jsonResponse({ error: 'Website publishing database is not ready. Apply the customer website publication migration, then retry.' }, 503);

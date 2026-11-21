@@ -1,5 +1,6 @@
 // VIJAY VISUALS Multi-Tenant SaaS Platform Domain Services & Reactive Stores
 import { subscribeToStore, UserProfile } from './supabase';
+import { apiFetch } from './api';
 
 // ============================================================================
 // TYPES & DATA CONTRACTS
@@ -684,30 +685,37 @@ export const subscriptionService = {
     const found = list.find(s => s.business_id === businessId);
     if (found) return found;
 
-    // Default Starter Tier
+    // Default Business Website Tier (₹7,999)
     return {
       id: 'sub-def',
       business_id: businessId,
-      plan_id: 'professional',
+      plan_id: 'business',
       status: 'active',
-      billing_cycle: 'monthly',
-      amount: 2499,
+      billing_cycle: 'yearly',
+      amount: 7999,
       started_at: '2026-01-01T00:00:00Z',
-      expires_at: '2026-12-31T23:59:59Z',
-      auto_renew: true,
-      features: ['35+ Templates', 'E-commerce Cart & Checkout', 'Delivery Boy Dispatch', '15 AI Business Engines', 'Custom Domain'],
+      expires_at: '2027-01-01T00:00:00Z',
+      auto_renew: false,
+      features: [
+        '36+ Templates & Custom Visuals',
+        'Products & Catalog Management',
+        'Customer Orders & Database',
+        'Photo & Banner Gallery Uploads',
+        'Publish & Unpublish Controls',
+        'Custom Domain Connection',
+      ],
     };
   },
 
   upgradePlan(businessId: string, planId: TenantSubscription['plan_id'], cycle: 'monthly' | 'yearly'): TenantSubscription {
     const list = getStore<TenantSubscription[]>(SAAS_KEYS.SUBSCRIPTIONS, []);
     const prices: Record<string, number> = {
-      starter: 999,
-      professional: 2499,
-      business: 4999,
-      enterprise: 8999,
+      starter: 2999,
+      professional: 7999,
+      business: 7999,
+      enterprise: 49999,
     };
-    const multi = cycle === 'yearly' ? 10 : 1; // 2 months free on yearly
+    const multi = cycle === 'yearly' ? 1 : 0.12;
 
     const updated: TenantSubscription = {
       id: 'sub-' + Date.now().toString(36),
@@ -715,11 +723,18 @@ export const subscriptionService = {
       plan_id: planId,
       status: 'active',
       billing_cycle: cycle,
-      amount: prices[planId] * multi,
+      amount: Math.round(prices[planId] * multi),
       started_at: new Date().toISOString(),
       expires_at: new Date(Date.now() + (cycle === 'yearly' ? 365 : 30) * 86400000).toISOString(),
-      auto_renew: true,
-      features: ['Full Multi-Tenant Access', 'Priority Delivery Dispatch', '15 AI Business Tools', 'Dedicated CRM & Invoices'],
+      auto_renew: false,
+      features: [
+        '36+ Templates & Custom Visuals',
+        'Products & Catalog Management',
+        'Customer Orders & Database',
+        'Photo & Banner Gallery Uploads',
+        'Publish & Unpublish Controls',
+        'Custom Domain Connection',
+      ],
     };
 
     const idx = list.findIndex(s => s.business_id === businessId);
@@ -730,6 +745,25 @@ export const subscriptionService = {
     }
     setStore(SAAS_KEYS.SUBSCRIPTIONS, list);
     return updated;
+  },
+
+  async fetchRemoteSubscriptions(websiteId?: string): Promise<any[]> {
+    try {
+      const q = websiteId ? `?websiteId=${encodeURIComponent(websiteId)}` : '';
+      const res = await apiFetch<{ subscriptions: any[] }>(`/api/platform/subscriptions${q}`);
+      return res.subscriptions || [];
+    } catch {
+      return [];
+    }
+  },
+
+  async fetchPlatformPaymentHistory(): Promise<any[]> {
+    try {
+      const res = await apiFetch<{ payments: any[] }>('/api/payments/platform/history');
+      return res.payments || [];
+    } catch {
+      return [];
+    }
   },
 };
 

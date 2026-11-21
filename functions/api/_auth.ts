@@ -300,13 +300,36 @@ export async function requireWebsiteAccess(
     return { ok: false, response: errorJson('Database binding is not configured.', 503) };
   }
 
-  const website = await env.DB.prepare(
-    `SELECT website_id, owner_id, public_slug, business_name, website_json, status
-     FROM customer_website_publications
-     WHERE website_id = ? LIMIT 1`
-  )
-    .bind(websiteId)
-    .first<WebsiteRow>();
+  const trimmedId = websiteId.trim();
+  const isNumeric = /^\d+$/.test(trimmedId);
+  let website: WebsiteRow | null = null;
+  try {
+    if (isNumeric) {
+      website = await env.DB.prepare(
+        `SELECT website_id, owner_id, public_slug, business_name, website_json, status
+         FROM customer_website_publications
+         WHERE rowid = ? OR website_id = ? OR public_slug = ? LIMIT 1`
+      )
+        .bind(Number(trimmedId), trimmedId, trimmedId.toLowerCase())
+        .first<WebsiteRow>();
+    } else {
+      website = await env.DB.prepare(
+        `SELECT website_id, owner_id, public_slug, business_name, website_json, status
+         FROM customer_website_publications
+         WHERE website_id = ? OR public_slug = ? LIMIT 1`
+      )
+        .bind(trimmedId, trimmedId.toLowerCase())
+        .first<WebsiteRow>();
+    }
+  } catch {
+    website = await env.DB.prepare(
+      `SELECT website_id, owner_id, public_slug, business_name, website_json, status
+       FROM customer_website_publications
+       WHERE website_id = ? OR public_slug = ? LIMIT 1`
+    )
+      .bind(trimmedId, trimmedId.toLowerCase())
+      .first<WebsiteRow>();
+  }
 
   if (!website) {
     return { ok: false, response: errorJson('Website not found.', 404) };
