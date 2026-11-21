@@ -9,7 +9,13 @@ export interface VerifiedUser {
 
 export async function requireUser(request: Request, env: CloudflareEnv): Promise<VerifiedUser | Response> {
   if (!env.DB) return jsonResponse({ error: 'Marketplace database is not configured.', code: 'D1_NOT_CONFIGURED' }, 503);
-  const supabaseUrl = (env.VITE_SUPABASE_URL || env.SUPABASE_URL || '').trim().replace(/\/$/, '');
+  const rawSupabaseUrl = (env.VITE_SUPABASE_URL || env.SUPABASE_URL || '').trim();
+  let supabaseUrl = rawSupabaseUrl.replace(/\/+$/, '');
+  try {
+    if (rawSupabaseUrl) supabaseUrl = new URL(rawSupabaseUrl).origin;
+  } catch {
+    supabaseUrl = rawSupabaseUrl.replace(/\/rest\/v1\/?$/i, '').replace(/\/auth\/v1\/?$/i, '').replace(/\/+$/, '');
+  }
   const supabaseAnonKey = (env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || '').trim();
   if (!supabaseUrl || !supabaseAnonKey) {
     return jsonResponse({ error: 'Authentication provider is not configured.', code: 'AUTH_NOT_CONFIGURED' }, 503);

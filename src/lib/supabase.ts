@@ -118,8 +118,24 @@ export interface BusinessTemplate {
 }
 
 // Supabase Client Initialization (Build-time Vite env + Cloudflare Pages runtime config fallback)
+/**
+ * Normalizes a Supabase project URL to its root origin (e.g. "https://xxxx.supabase.co").
+ * Strips accidental paths such as "/rest/v1", "/auth/v1", and trailing slashes
+ * so that Supabase Auth (GoTrue) does not fail with PGRST125 ("Invalid path specified in request URL").
+ */
+export function normalizeSupabaseUrl(rawUrl: string): string {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.origin;
+  } catch {
+    return trimmed.replace(/\/rest\/v1\/?$/i, '').replace(/\/auth\/v1\/?$/i, '').replace(/\/+$/, '');
+  }
+}
+
 function isUsableSupabaseConfig(url: string, anonKey: string): boolean {
-  const cleanUrl = url.trim();
+  const cleanUrl = normalizeSupabaseUrl(url);
   const cleanKey = anonKey.trim();
   if (!cleanUrl || !cleanKey) return false;
   if (
@@ -133,7 +149,7 @@ function isUsableSupabaseConfig(url: string, anonKey: string): boolean {
   return cleanUrl.startsWith('https://') && cleanKey.length >= 20;
 }
 
-const buildSupabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+const buildSupabaseUrl = normalizeSupabaseUrl(String(import.meta.env.VITE_SUPABASE_URL || ''));
 const buildSupabaseAnonKey = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
 export let isSupabaseConfigured: boolean = isUsableSupabaseConfig(buildSupabaseUrl, buildSupabaseAnonKey);
@@ -173,7 +189,7 @@ export async function initSupabaseClient(): Promise<SupabaseClient | null> {
         supabaseUrl?: string;
         supabaseAnonKey?: string;
       };
-      const url = String(data?.supabaseUrl || '').trim().replace(/\/+$/, '');
+      const url = normalizeSupabaseUrl(String(data?.supabaseUrl || ''));
       const anonKey = String(data?.supabaseAnonKey || '').trim();
       if (data?.configured && isUsableSupabaseConfig(url, anonKey)) {
         supabase = createClient(url, anonKey);

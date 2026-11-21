@@ -10,12 +10,28 @@ import { PagesContext, handleOptions, jsonResponse } from '../_shared';
 const PLACEHOLDER_URLS = new Set(['https://your-project.supabase.co', 'https://your_project_ref.supabase.co']);
 const PLACEHOLDER_KEYS = new Set(['your-anon-key', 'your_supabase_anon_key']);
 
+/**
+ * Normalizes a Supabase project URL to its root origin (e.g. "https://xxxx.supabase.co").
+ * Strips accidental paths such as "/rest/v1", "/auth/v1", and trailing slashes.
+ */
+export function normalizeSupabaseUrl(rawUrl: string): string {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) return '';
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.origin;
+  } catch {
+    return trimmed.replace(/\/rest\/v1\/?$/i, '').replace(/\/auth\/v1\/?$/i, '').replace(/\/+$/, '');
+  }
+}
+
 function isValidSupabaseUrl(url: string): boolean {
   if (!url) return false;
-  const lower = url.toLowerCase();
+  const clean = normalizeSupabaseUrl(url);
+  const lower = clean.toLowerCase();
   if (PLACEHOLDER_URLS.has(lower)) return false;
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(clean);
     return parsed.protocol === 'https:' && parsed.hostname.length > 3;
   } catch {
     return false;
@@ -38,9 +54,8 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   // Read ONLY public Supabase browser client credentials from Cloudflare env/secrets.
   // Never read or return SUPABASE_SERVICE_ROLE_KEY or any private backend key.
-  const supabaseUrl = String(env.VITE_SUPABASE_URL || env.SUPABASE_URL || '')
-    .trim()
-    .replace(/\/+$/, '');
+  const rawUrl = String(env.VITE_SUPABASE_URL || env.SUPABASE_URL || '');
+  const supabaseUrl = normalizeSupabaseUrl(rawUrl);
   const supabaseAnonKey = String(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || '').trim();
 
   const configured = isValidSupabaseUrl(supabaseUrl) && isValidAnonKey(supabaseAnonKey);

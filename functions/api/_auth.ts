@@ -63,7 +63,13 @@ export interface WebsiteAccessSuccess {
 export type WebsiteAccessResult = WebsiteAccessSuccess | AuthFailure;
 
 function getSupabaseConfig(env: CloudflareEnv): { url: string; anonKey: string } | null {
-  const url = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  const rawUrl = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').trim();
+  let url = rawUrl.replace(/\/+$/, '');
+  try {
+    if (rawUrl) url = new URL(rawUrl).origin;
+  } catch {
+    url = rawUrl.replace(/\/rest\/v1\/?$/i, '').replace(/\/auth\/v1\/?$/i, '').replace(/\/+$/, '');
+  }
   const anonKey = (env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim();
   if (!url || !anonKey) return null;
   return { url, anonKey };
