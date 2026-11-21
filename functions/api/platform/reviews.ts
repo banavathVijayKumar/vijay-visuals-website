@@ -1,10 +1,12 @@
 // ============================================================================
 // GET & POST /api/platform/reviews
 // Complete Verified Customer Reviews & Ratings System (Zero Fake Reviews!)
-// - 1-5 star product & overall shop ratings + customer review photos
+// - 1-5 star product, service & overall business ratings + customer review photos
 // - Verified purchase check against store_orders (paid or delivered)
 // - Duplicate prevention via UNIQUE index per (website, product, user, order)
 // - Customer edit/delete own reviews, Shop Owner replies, Abuse reporting,
+//   Business owner review analytics & in-app review notifications,
+//   Google Reviews integration (official external link),
 //   and Vijay Visuals Super Admin moderation with audit logging.
 // ============================================================================
 
@@ -16,37 +18,61 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
   const url = new URL(request.url);
-  const websiteId = sanitizeText(url.searchParams.get('websiteId') || '', 120);
+  const websiteIdParam = sanitizeText(url.searchParams.get('websiteId') || url.searchParams.get('slug') || '', 120);
   const productIdParam = url.searchParams.get('productId');
   const includeModerated = url.searchParams.get('includeModerated') === 'true';
+  const includeAnalytics = url.searchParams.get('includeAnalytics') === 'true';
 
-  if (!websiteId && !includeModerated) {
+  if (!websiteIdParam && !includeModerated) {
     return errorJson('websiteId query parameter is required.', 400);
   }
 
+  // Resolve publication record if websiteIdParam is provided (accepts website_id or public_slug)
+  let resolvedWebsiteId = websiteIdParam;
+  let pubRow: { website_id: string; website_json?: string; business_name?: string } | null = null;
+  if (websiteIdParam) {
+    pubRow = await env.DB.prepare(
+      `SELECT website_id, website_json, business_name
+       FROM customer_website_publications
+       WHERE website_id = ? OR public_slug = ?
+       LIMIT 1`
+    )
+      .bind(websiteIdParam, websiteIdParam)
+      .first<{ website_id: string; website_json?: string; business_name?: string }>();
+
+    if (pubRow?.website_id) {
+      resolvedWebsiteId = pubRow.website_id;
+    }
+  }
+
   let canSeeModerated = false;
-  if (includeModerated && request.headers.get('Authorization')) {
+  let isOwner = false;
+  if (request.headers.get('Authorization')) {
     const auth = await requireUser(request, env);
     if (auth.ok) {
       if (auth.user.isSuperAdmin) {
         canSeeModerated = true;
-      } else if (websiteId) {
-        const access = await requireWebsiteAccess(env, auth.user, websiteId, [
+      } else if (resolvedWebsiteId) {
+        const access = await requireWebsiteAccess(env, auth.user, resolvedWebsiteId, [
           'business_owner',
           'business_manager',
         ]);
-        if (access.ok) canSeeModerated = true;
+        if (access.ok) {
+          canSeeModerated = true;
+          isOwner = true;
+        }
       }
     }
   }
 
   // Super Admin global moderation queue when websiteId omitted
-  if (!websiteId && canSeeModerated) {
+  if (!resolvedWebsiteId && canSeeModerated) {
     const flagged = await env.DB.prepare(
-      `SELECT r.*, p.business_name
+      `SELECT r.*, p.business_name, prod.name AS product_name
        FROM product_reviews r
        LEFT JOIN customer_website_publications p ON p.website_id = r.website_id
-       ORDER BY (CASE WHEN r.moderation_status = 'flagged' THEN 0 ELSE 1 END), r.created_at DESC
+       LEFT JOIN store_products prod ON prod.id = r.product_id
+       ORDER BY (CASE WHEN r.moderation_status = 'flagged' THEN 0 WHEN r.moderation_status = 'hidden' THEN 1 ELSE 2 END), r.created_at DESC
        LIMIT 100`
     ).all();
     return json({ reviews: flagged.results || [] });
@@ -54,26 +80,37 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   const productId = productIdParam ? Number(productIdParam) : null;
   const statusClause = canSeeModerated
-    ? `moderation_status != 'removed'`
-    : `moderation_status = 'published'`;
+    ? `r.moderation_status != 'removed'`
+    : `r.moderation_status = 'published'`;
 
   const reviewsRes =
     productId && Number.isInteger(productId)
       ? await env.DB.prepare(
-          `SELECT * FROM product_reviews WHERE website_id = ? AND product_id = ? AND ${statusClause} ORDER BY created_at DESC LIMIT 100`
+          `SELECT r.*, p.name AS product_name
+           FROM product_reviews r
+           LEFT JOIN store_products p ON p.id = r.product_id
+           WHERE r.website_id = ? AND r.product_id = ? AND ${statusClause}
+           ORDER BY r.created_at DESC
+           LIMIT 100`
         )
-          .bind(websiteId, productId)
+          .bind(resolvedWebsiteId, productId)
           .all<Record<string, unknown>>()
       : await env.DB.prepare(
-          `SELECT * FROM product_reviews WHERE website_id = ? AND ${statusClause} ORDER BY created_at DESC LIMIT 100`
+          `SELECT r.*, p.name AS product_name
+           FROM product_reviews r
+           LEFT JOIN store_products p ON p.id = r.product_id
+           WHERE r.website_id = ? AND ${statusClause}
+           ORDER BY r.created_at DESC
+           LIMIT 100`
         )
-          .bind(websiteId)
+          .bind(resolvedWebsiteId)
           .all<Record<string, unknown>>();
 
+  // Load photos attached to reviews
   const photosRes = await env.DB.prepare(
     'SELECT id, review_id, photo_url, caption FROM review_photos WHERE website_id = ? ORDER BY id ASC'
   )
-    .bind(websiteId)
+    .bind(resolvedWebsiteId)
     .all<{ id: number; review_id: number; photo_url: string; caption: string }>();
 
   const photoMap = new Map<number, Array<{ id: number; photoUrl: string; caption: string }>>();
@@ -86,6 +123,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   const reviews = (reviewsRes.results || []).map((r) => ({
     ...r,
     verified_purchase: Boolean(r.verified_purchase),
+    verifiedPurchase: Boolean(r.verified_purchase),
     photos: photoMap.get(Number(r.id)) || [],
   }));
 
@@ -96,25 +134,124 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
      FROM product_reviews
      WHERE website_id = ? AND moderation_status = 'published'`
   )
-    .bind(websiteId)
+    .bind(resolvedWebsiteId)
     .first<{ total_count: number; avg_rating: number; verified_count: number }>();
+
+  const totalReviews = Number(shopAgg?.total_count || 0);
+  const avgRating = totalReviews > 0 ? Number(Number(shopAgg?.avg_rating || 0).toFixed(2)) : 0;
+  const verifiedCount = Number(shopAgg?.verified_count || 0);
+  const verifiedPurchasePercentage = totalReviews > 0 ? Number(((verifiedCount / totalReviews) * 100).toFixed(1)) : 0;
+
+  // Rating distribution (5-star down to 1-star)
+  const distRows = await env.DB.prepare(
+    `SELECT rating, COUNT(*) AS count
+     FROM product_reviews
+     WHERE website_id = ? AND moderation_status = 'published'
+     GROUP BY rating`
+  )
+    .bind(resolvedWebsiteId)
+    .all<{ rating: number; count: number }>();
+
+  const distribution: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const row of distRows.results || []) {
+    const star = Number(row.rating);
+    if (star >= 1 && star <= 5) {
+      distribution[star as 1 | 2 | 3 | 4 | 5] = Number(row.count) || 0;
+    }
+  }
 
   const productAgg =
     productId && Number.isInteger(productId)
       ? await env.DB.prepare(
-          `SELECT COUNT(*) AS total_count, COALESCE(AVG(rating), 0) AS avg_rating
+          `SELECT COUNT(*) AS total_count, COALESCE(AVG(rating), 0) AS avg_rating,
+                  SUM(CASE WHEN verified_purchase = 1 THEN 1 ELSE 0 END) AS verified_count
            FROM product_reviews
            WHERE website_id = ? AND product_id = ? AND moderation_status = 'published'`
         )
-          .bind(websiteId, productId)
-          .first<{ total_count: number; avg_rating: number }>()
+          .bind(resolvedWebsiteId, productId)
+          .first<{ total_count: number; avg_rating: number; verified_count: number }>()
       : null;
 
+  // Monthly trends and product comparisons for analytics
+  let monthlyTrends: Array<{ month: string; count: number; avgRating: number }> = [];
+  let productComparisons: Array<{ productId: number; productName: string; reviewCount: number; avgRating: number }> = [];
+
+  if (includeAnalytics || isOwner) {
+    try {
+      const trendRes = await env.DB.prepare(
+        `SELECT strftime('%Y-%m', created_at) AS month, COUNT(*) AS count, AVG(rating) AS avg_rating
+         FROM product_reviews
+         WHERE website_id = ? AND moderation_status = 'published'
+         GROUP BY strftime('%Y-%m', created_at)
+         ORDER BY month DESC
+         LIMIT 12`
+      )
+        .bind(resolvedWebsiteId)
+        .all<{ month: string; count: number; avg_rating: number }>();
+
+      monthlyTrends = (trendRes.results || []).map((t) => ({
+        month: t.month || '',
+        count: Number(t.count) || 0,
+        avgRating: Number(Number(t.avg_rating || 0).toFixed(2)),
+      }));
+
+      const prodRes = await env.DB.prepare(
+        `SELECT p.id AS product_id, p.name AS product_name, COUNT(r.id) AS review_count, COALESCE(AVG(r.rating), 0) AS avg_rating
+         FROM store_products p
+         LEFT JOIN product_reviews r ON r.product_id = p.id AND r.moderation_status = 'published'
+         WHERE p.website_id = ?
+         GROUP BY p.id
+         ORDER BY review_count DESC, avg_rating DESC
+         LIMIT 50`
+      )
+        .bind(resolvedWebsiteId)
+        .all<{ product_id: number; product_name: string; review_count: number; avg_rating: number }>();
+
+      productComparisons = (prodRes.results || []).map((p) => ({
+        productId: Number(p.product_id),
+        productName: p.product_name || `Product #${p.product_id}`,
+        reviewCount: Number(p.review_count) || 0,
+        avgRating: Number(Number(p.avg_rating || 0).toFixed(2)),
+      }));
+    } catch {
+      // ignore analytics query errors if tables or views are empty
+    }
+  }
+
+  // Google Reviews integration config from publication website_json
+  let googleReviewUrl = '';
+  let googlePlaceId = '';
+  try {
+    if (pubRow?.website_json) {
+      const parsed = JSON.parse(pubRow.website_json);
+      googleReviewUrl = parsed.googleReviewUrl || parsed.googleMapsUrl || '';
+      googlePlaceId = parsed.googlePlaceId || '';
+    }
+  } catch {}
+
   return json({
+    websiteId: resolvedWebsiteId,
     shopSummary: {
-      totalReviews: Number(shopAgg?.total_count || 0),
-      averageRating: Number(shopAgg?.total_count || 0) > 0 ? Number(Number(shopAgg?.avg_rating || 0).toFixed(2)) : 0,
-      verifiedPurchaseCount: Number(shopAgg?.verified_count || 0),
+      totalReviews,
+      averageRating: avgRating,
+      verifiedPurchaseCount: verifiedCount,
+      verifiedPurchasePercentage,
+      distribution,
+    },
+    distribution,
+    analytics: {
+      totalReviews,
+      averageRating: avgRating,
+      verifiedPurchaseCount: verifiedCount,
+      verifiedPurchasePercentage,
+      distribution,
+      monthlyTrends,
+      productComparisons,
+    },
+    googleReviews: {
+      googleReviewUrl,
+      googlePlaceId,
+      notice: 'External Google Reviews are verified directly on Google Business Profile. Vijay Visuals never fabricates or copies external reviews.',
     },
     ...(productAgg
       ? {
@@ -122,6 +259,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
             productId,
             totalReviews: Number(productAgg.total_count || 0),
             averageRating: Number(productAgg.total_count || 0) > 0 ? Number(Number(productAgg.avg_rating || 0).toFixed(2)) : 0,
+            verifiedPurchaseCount: Number(productAgg.verified_count || 0),
           },
         }
       : {}),
@@ -143,15 +281,15 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   // 1. Submit Review (Strict Verified Purchase Check + Duplicate Prevention)
   // -------------------------------------------------------------------------
   if (action === 'submit') {
-    const websiteId = sanitizeText(body.websiteId || '', 120);
+    const rawWebsiteId = sanitizeText(body.websiteId || body.slug || '', 120);
     const productId = body.productId ? Number(body.productId) : null;
     const orderId = body.orderId ? Number(body.orderId) : null;
     const rating = Math.round(Number(body.rating || 0));
     const title = sanitizeText(body.title || '', 140);
     const comment = sanitizeText(body.comment || '', 1500);
-    const requireVerifiedPurchase = body.requireVerifiedPurchase !== false;
+    const requireVerifiedPurchase = body.requireVerifiedPurchase === true;
 
-    if (!websiteId) return errorJson('websiteId is required.', 400);
+    if (!rawWebsiteId) return errorJson('websiteId is required.', 400);
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
       return errorJson('Rating must be an integer between 1 and 5 stars.', 400);
     }
@@ -159,25 +297,37 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       return errorJson('Please write a review comment of at least 5 characters.', 400);
     }
 
+    // Resolve publication website_id
+    const pub = await env.DB.prepare(
+      `SELECT website_id, owner_id, business_name FROM customer_website_publications WHERE website_id = ? OR public_slug = ? LIMIT 1`
+    )
+      .bind(rawWebsiteId, rawWebsiteId)
+      .first<{ website_id: string; owner_id: string; business_name: string }>();
+
+    const websiteId = pub?.website_id || rawWebsiteId;
+
     // Verify authentic purchase eligibility from store_orders (paid or delivered)
     let verifiedPurchase = 0;
     let matchedOrderId: number | null = null;
 
+    const userEmail = (auth.user.email || '').trim().toLowerCase();
     const orderQuery = orderId
       ? env.DB.prepare(
           `SELECT id, items_json, payment_status, order_status
            FROM store_orders
-           WHERE id = ? AND website_id = ? AND (customer_user_id = ? OR customer_user_id = ?)
+           WHERE id = ? AND website_id = ?
+             AND (customer_user_id = ? OR customer_user_id = ? OR (LOWER(customer_email) = ? AND customer_email != ''))
              AND (payment_status = 'paid' OR order_status = 'delivered')
            LIMIT 1`
-        ).bind(orderId, websiteId, auth.user.id, auth.user.authSubject)
+        ).bind(orderId, websiteId, auth.user.id, auth.user.authSubject, userEmail)
       : env.DB.prepare(
           `SELECT id, items_json, payment_status, order_status
            FROM store_orders
-           WHERE website_id = ? AND (customer_user_id = ? OR customer_user_id = ?)
+           WHERE website_id = ?
+             AND (customer_user_id = ? OR customer_user_id = ? OR (LOWER(customer_email) = ? AND customer_email != ''))
              AND (payment_status = 'paid' OR order_status = 'delivered')
            ORDER BY created_at DESC LIMIT 20`
-        ).bind(websiteId, auth.user.id, auth.user.authSubject);
+        ).bind(websiteId, auth.user.id, auth.user.authSubject, userEmail);
 
     const eligibleOrders = (await orderQuery.all<{
       id: number;
@@ -188,13 +338,14 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
     for (const ord of eligibleOrders) {
       if (!productId) {
+        // Overall shop review
         verifiedPurchase = 1;
         matchedOrderId = ord.id;
         break;
       }
       try {
-        const items = JSON.parse(ord.items_json || '[]') as Array<{ productId?: number }>;
-        if (items.some((i) => Number(i.productId) === productId)) {
+        const items = JSON.parse(ord.items_json || '[]') as Array<{ productId?: number; id?: number }>;
+        if (items.some((i) => Number(i.productId || i.id) === productId)) {
           verifiedPurchase = 1;
           matchedOrderId = ord.id;
           break;
@@ -206,12 +357,14 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
     if (requireVerifiedPurchase && verifiedPurchase !== 1) {
       return errorJson(
-        'Only verified purchasers with a paid or delivered order from this store can submit a verified purchase review.',
+        'Only verified purchasers with a paid or delivered order from this business can submit a verified purchase review.',
         403
       );
     }
 
     try {
+      const reviewerName = sanitizeText(body.reviewerName || auth.user.fullName || 'Verified Customer', 100);
+
       const insertRes = await env.DB.prepare(
         `INSERT INTO product_reviews
           (website_id, product_id, order_id, reviewer_user_id, reviewer_name, rating, title, comment,
@@ -223,7 +376,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           productId,
           matchedOrderId,
           auth.user.id,
-          sanitizeText(body.reviewerName || auth.user.fullName, 100),
+          reviewerName,
           rating,
           title,
           comment,
@@ -251,12 +404,39 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         }
       }
 
-      const saved = await env.DB.prepare('SELECT * FROM product_reviews WHERE id = ? LIMIT 1')
+      // Notify Business Owner in notification_logs (In-App Notification)
+      if (pub?.owner_id) {
+        await env.DB.prepare(
+          `INSERT INTO notification_logs
+           (website_id, recipient_user_id, recipient_contact, channel, event_type, subject, message_preview, consent_verified, delivery_status, created_at)
+           VALUES (?, ?, '', 'in_app', 'new_customer_review', ?, ?, 1, 'delivered', datetime('now'))`
+        )
+          .bind(
+            websiteId,
+            pub.owner_id,
+            `New ${rating}★ Review from ${reviewerName}`,
+            sanitizeText(comment, 150)
+          )
+          .run()
+          .catch(() => null);
+      }
+
+      const saved = await env.DB.prepare(
+        `SELECT r.*, p.name AS product_name
+         FROM product_reviews r
+         LEFT JOIN store_products p ON p.id = r.product_id
+         WHERE r.id = ?
+         LIMIT 1`
+      )
         .bind(reviewId)
         .first();
+
       return json(
         {
-          review: saved,
+          review: {
+            ...saved,
+            verifiedPurchase: Boolean(verifiedPurchase),
+          },
           verifiedPurchase: Boolean(verifiedPurchase),
         },
         201
@@ -264,7 +444,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       if (msg.toLowerCase().includes('unique')) {
-        return errorJson('You have already submitted a review for this purchase.', 409);
+        return errorJson('You have already submitted a review for this purchase or item.', 409);
       }
       return errorJson('Unable to save review.', 500);
     }
@@ -282,11 +462,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       return errorJson('Valid rating (1–5) and comment (5+ chars) are required.', 400);
     }
 
-    const existing = await env.DB.prepare('SELECT id, reviewer_user_id FROM product_reviews WHERE id = ? LIMIT 1')
+    const existing = await env.DB.prepare('SELECT id, website_id, reviewer_user_id FROM product_reviews WHERE id = ? LIMIT 1')
       .bind(reviewId)
-      .first<{ id: number; reviewer_user_id: string }>();
+      .first<{ id: number; website_id: string; reviewer_user_id: string }>();
     if (!existing) return errorJson('Review not found.', 404);
-    if (existing.reviewer_user_id !== auth.user.id && existing.reviewer_user_id !== auth.user.authSubject) {
+    if (existing.reviewer_user_id !== auth.user.id && existing.reviewer_user_id !== auth.user.authSubject && !auth.user.isSuperAdmin) {
       return errorJson('Forbidden: you can only edit your own review.', 403);
     }
 
@@ -295,6 +475,24 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     )
       .bind(rating, sanitizeText(body.title || '', 140), comment, reviewId)
       .run();
+
+    // If updated photos are provided, update them
+    if (Array.isArray(body.photos)) {
+      await env.DB.prepare('DELETE FROM review_photos WHERE review_id = ?').bind(reviewId).run();
+      for (const ph of body.photos.slice(0, 4)) {
+        const rawUrl = typeof ph === 'string' ? ph : ph?.url || ph?.photoUrl || '';
+        const rawCaption = typeof ph === 'string' ? '' : ph?.caption || '';
+        const photoUrl = sanitizeText(rawUrl, 600);
+        if (/^https:\/\//i.test(photoUrl)) {
+          await env.DB.prepare(
+            `INSERT INTO review_photos (review_id, website_id, photo_url, caption, created_at)
+             VALUES (?, ?, ?, ?, datetime('now'))`
+          )
+            .bind(reviewId, existing.website_id, photoUrl, sanitizeText(rawCaption, 160))
+            .run();
+        }
+      }
+    }
 
     return json({ updated: true, reviewId });
   }
@@ -317,6 +515,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       return errorJson('Forbidden: you can only delete your own review.', 403);
     }
 
+    await env.DB.prepare('DELETE FROM review_photos WHERE review_id = ?').bind(reviewId).run();
     await env.DB.prepare('DELETE FROM product_reviews WHERE id = ?').bind(reviewId).run();
     return json({ deleted: true, reviewId });
   }
@@ -396,13 +595,24 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       return errorJson('A moderation audit reason (5+ chars) is mandatory.', 400);
     }
 
-    await env.DB.prepare(
-      `UPDATE product_reviews
-       SET moderation_status = ?, moderated_by = ?, moderation_reason = ?, updated_at = datetime('now')
-       WHERE id = ?`
-    )
-      .bind(decision, adminAuth.user.id, reason, reviewId)
-      .run();
+    if (decision === 'removed') {
+      await env.DB.prepare('DELETE FROM review_photos WHERE review_id = ?').bind(reviewId).run();
+      await env.DB.prepare(
+        `UPDATE product_reviews
+         SET moderation_status = 'removed', moderated_by = ?, moderation_reason = ?, updated_at = datetime('now')
+         WHERE id = ?`
+      )
+        .bind(adminAuth.user.id, reason, reviewId)
+        .run();
+    } else {
+      await env.DB.prepare(
+        `UPDATE product_reviews
+         SET moderation_status = ?, moderated_by = ?, moderation_reason = ?, updated_at = datetime('now')
+         WHERE id = ?`
+      )
+        .bind(decision, adminAuth.user.id, reason, reviewId)
+        .run();
+    }
 
     await writeAuditLog(env, {
       actorId: adminAuth.user.id,
@@ -414,6 +624,60 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     });
 
     return json({ moderated: true, reviewId, moderationStatus: decision });
+  }
+
+  // -------------------------------------------------------------------------
+  // 7. Business Owner Update Google Reviews Integration
+  // -------------------------------------------------------------------------
+  if (action === 'update_google_reviews') {
+    const websiteIdParam = sanitizeText(body.websiteId || '', 120);
+    if (!websiteIdParam) return errorJson('websiteId is required.', 400);
+
+    const access = await requireWebsiteAccess(env, auth.user, websiteIdParam, [
+      'business_owner',
+      'business_manager',
+    ]);
+    if (!access.ok) return access.response;
+
+    const googleReviewUrl = sanitizeText(body.googleReviewUrl || '', 400);
+    const googlePlaceId = sanitizeText(body.googlePlaceId || '', 100);
+
+    if (googleReviewUrl && !/^https?:\/\//i.test(googleReviewUrl)) {
+      return errorJson('Google Review URL must start with http:// or https://', 400);
+    }
+
+    const pub = await env.DB.prepare(
+      'SELECT website_id, website_json FROM customer_website_publications WHERE website_id = ? LIMIT 1'
+    )
+      .bind(websiteIdParam)
+      .first<{ website_id: string; website_json?: string }>();
+
+    let currentJson: Record<string, unknown> = {};
+    try {
+      if (pub?.website_json) currentJson = JSON.parse(pub.website_json);
+    } catch {}
+
+    currentJson.googleReviewUrl = googleReviewUrl;
+    currentJson.googlePlaceId = googlePlaceId;
+
+    await env.DB.prepare(
+      `UPDATE customer_website_publications
+       SET website_json = ?, updated_at = datetime('now')
+       WHERE website_id = ?`
+    )
+      .bind(JSON.stringify(currentJson), websiteIdParam)
+      .run();
+
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: 'business_owner',
+      action: 'update_google_reviews',
+      targetType: 'customer_website_publications',
+      targetId: websiteIdParam,
+      details: { googleReviewUrl, googlePlaceId },
+    });
+
+    return json({ updated: true, googleReviewUrl, googlePlaceId });
   }
 
   return errorJson('Unsupported reviews action.', 400);

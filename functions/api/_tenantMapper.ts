@@ -45,6 +45,7 @@ export interface TenantGlobalEnrichment {
   gsc_site_url?: string | null;
   gsc_verification_token?: string | null;
   gbp_profile_url?: string | null;
+  gbp_place_id?: string | null;
 }
 
 export interface MappedGalleryItem {
@@ -123,6 +124,8 @@ export interface MappedTenantRecord {
   codEnabled: boolean;
   upiId: string;
   razorpayOnlineReady?: boolean;
+  googleReviewUrl?: string;
+  googlePlaceId?: string;
   createdAt: string;
 }
 
@@ -494,6 +497,8 @@ export function mapPublicationToTenant(
     codEnabled,
     upiId,
     razorpayOnlineReady: Boolean(enrichment?.razorpayOnlineReady),
+    googleReviewUrl: cleanString(parsed.googleReviewUrl || parsed.googleMapsUrl || enrichment?.globalSettings?.gbp_profile_url, 400),
+    googlePlaceId: cleanString(parsed.googlePlaceId || enrichment?.globalSettings?.gbp_place_id, 100),
     createdAt:
       row.published_at || row.created_at || row.updated_at || '',
   };

@@ -65,9 +65,15 @@ interface StoreCouponRow {
 interface ProductReviewRow {
   id: number;
   product_id?: number | null;
+  product_name?: string | null;
+  reviewer_user_id?: string;
   reviewer_name: string;
   rating: number;
+  title?: string;
   comment: string;
+  verified_purchase?: number;
+  owner_reply?: string;
+  owner_replied_at?: string;
   created_at: string;
 }
 
@@ -197,36 +203,73 @@ export async function onRequestGet(
     razorpayOnlineReady,
   });
 
-  // Load real reviews first
+  // Load real reviews with photos & verified purchase badges
   const reviews: Array<{
     id: number;
     tenantId: number;
+    websiteId: string;
     productId: number;
+    productName: string;
+    reviewerUserId: string;
     customerName: string;
     rating: number;
+    title: string;
     comment: string;
+    verifiedPurchase: boolean;
+    ownerReply: string;
+    ownerRepliedAt: string;
+    photos: Array<{ id: number; photoUrl: string; caption: string }>;
     createdAt: string;
   }> = [];
 
+  const distribution: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
   try {
     const revRes = await env.DB.prepare(
-      `SELECT id, product_id, reviewer_name, rating, comment, created_at
-       FROM product_reviews
-       WHERE website_id = ? AND moderation_status = 'published'
-       ORDER BY created_at DESC
+      `SELECT r.id, r.product_id, r.reviewer_user_id, r.reviewer_name, r.rating, r.title, r.comment,
+              r.verified_purchase, r.owner_reply, r.owner_replied_at, r.created_at, p.name AS product_name
+       FROM product_reviews r
+       LEFT JOIN store_products p ON p.id = r.product_id
+       WHERE r.website_id = ? AND r.moderation_status = 'published'
+       ORDER BY r.created_at DESC
        LIMIT 100`
     )
       .bind(row.website_id)
       .all<ProductReviewRow>();
 
+    // Load review photos
+    const photosRes = await env.DB.prepare(
+      'SELECT id, review_id, photo_url, caption FROM review_photos WHERE website_id = ? ORDER BY id ASC'
+    )
+      .bind(row.website_id)
+      .all<{ id: number; review_id: number; photo_url: string; caption: string }>();
+
+    const photoMap = new Map<number, Array<{ id: number; photoUrl: string; caption: string }>>();
+    for (const ph of photosRes.results || []) {
+      const list = photoMap.get(ph.review_id) || [];
+      list.push({ id: ph.id, photoUrl: ph.photo_url, caption: ph.caption });
+      photoMap.set(ph.review_id, list);
+    }
+
     for (const r of revRes.results || []) {
+      const star = Math.max(1, Math.min(5, Math.round(Number(r.rating) || 5)));
+      distribution[star as 1 | 2 | 3 | 4 | 5] = (distribution[star as 1 | 2 | 3 | 4 | 5] || 0) + 1;
+
       reviews.push({
         id: Number(r.id),
         tenantId: tenant.id,
+        websiteId: row.website_id,
         productId: Number(r.product_id || 0),
+        productName: r.product_name || '',
+        reviewerUserId: r.reviewer_user_id || '',
         customerName: cleanString(r.reviewer_name, 120) || 'Verified Customer',
         rating: Number(r.rating) || 0,
+        title: cleanString(r.title, 140) || '',
         comment: cleanString(r.comment, 1000),
+        verifiedPurchase: Boolean(r.verified_purchase),
+        ownerReply: cleanString(r.owner_reply, 1000) || '',
+        ownerRepliedAt: r.owner_replied_at || '',
+        photos: photoMap.get(Number(r.id)) || [],
         createdAt: r.created_at || '',
       });
     }
@@ -308,12 +351,27 @@ export async function onRequestGet(
     // Optional table
   }
 
+  const verifiedPurchaseCount = reviews.filter((r) => r.verifiedPurchase).length;
+  const averageRating = reviews.length > 0
+    ? Number((reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(2))
+    : 0;
+  const verifiedPurchasePercentage = reviews.length > 0
+    ? Number(((verifiedPurchaseCount / reviews.length) * 100).toFixed(1))
+    : 0;
+
   return jsonResponse(
     {
       tenant,
       products,
       coupons,
       reviews,
+      reviewSummary: {
+        totalReviews: reviews.length,
+        averageRating,
+        verifiedPurchaseCount,
+        verifiedPurchasePercentage,
+        distribution,
+      },
     },
     200,
     { 'Cache-Control': 'public, max-age=30, s-maxage=60' }

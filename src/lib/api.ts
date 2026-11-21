@@ -15,12 +15,23 @@ export async function getAuthAccessToken(): Promise<string | null> {
   }
 }
 
+export interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
+  body?: BodyInit | Record<string, unknown> | unknown[] | null;
+}
+
 export async function apiFetch<T = unknown>(
   url: string,
-  options: RequestInit = {}
+  options: ApiFetchOptions = {}
 ): Promise<T> {
   const headers = new Headers(options.headers || {});
-  if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
+  let body = options.body;
+
+  if (body && typeof body === 'object' && !(body instanceof FormData) && !(body instanceof Blob)) {
+    body = JSON.stringify(body);
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+  } else if (!headers.has('Content-Type') && body && typeof body === 'string') {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -32,6 +43,7 @@ export async function apiFetch<T = unknown>(
   const res = await fetch(url, {
     ...options,
     headers,
+    body,
   });
 
   const contentType = (res.headers.get('content-type') || '').toLowerCase();

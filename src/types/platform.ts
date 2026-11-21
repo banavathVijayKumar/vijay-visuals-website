@@ -90,6 +90,8 @@ export interface TenantRecord {
   codEnabled: boolean;
   upiId: string;
   razorpayOnlineReady?: boolean;
+  googleReviewUrl?: string;
+  googlePlaceId?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -129,14 +131,70 @@ export interface CouponRecord {
   active: boolean;
 }
 
+export interface ReviewPhoto {
+  id: number;
+  photoUrl: string;
+  caption: string;
+}
+
 export interface ReviewRecord {
   id: number;
   tenantId: number;
+  websiteId?: string;
   productId: number;
+  productName?: string;
+  orderId?: number | null;
+  reviewerUserId?: string;
   customerName: string;
   rating: number;
+  title?: string;
   comment: string;
+  verifiedPurchase?: boolean;
+  ownerReply?: string;
+  ownerRepliedAt?: string;
+  moderationStatus?: 'published' | 'flagged' | 'hidden' | 'removed';
+  reportedCount?: number;
+  lastReportReason?: string;
+  photos?: ReviewPhoto[];
   createdAt: string;
+  updatedAt?: string;
+}
+
+export interface RatingDistributionItem {
+  stars: number;
+  count: number;
+  percentage: number;
+}
+
+export interface MonthlyRatingTrend {
+  month: string;
+  count: number;
+  avgRating: number;
+}
+
+export interface ProductRatingComparison {
+  productId: number;
+  productName: string;
+  reviewCount: number;
+  avgRating: number;
+}
+
+export interface ReviewAnalytics {
+  totalReviews: number;
+  averageRating: number;
+  verifiedPurchaseCount: number;
+  verifiedPurchasePercentage: number;
+  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
+  monthlyTrends: MonthlyRatingTrend[];
+  productComparisons: ProductRatingComparison[];
+}
+
+export interface ReviewSummary {
+  totalReviews: number;
+  averageRating: number;
+  verifiedPurchaseCount: number;
+  verifiedPurchasePercentage: number;
+  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
 }
 
 export interface OrderItemLine {

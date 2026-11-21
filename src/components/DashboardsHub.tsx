@@ -55,6 +55,8 @@ import { BusinessLocationsManager } from './BusinessLocationsManager';
 import { DeliveryGpsSharer } from './DeliveryGpsSharer';
 import { DomainManagementCenter } from './DomainManagementCenter';
 import { AdminDomainManagement } from './AdminDomainManagement';
+import { OwnerReviewsManager } from './OwnerReviewsManager';
+import { AdminReviewsModeration } from './AdminReviewsModeration';
 import { Lang } from '../data/content';
 
 interface DashboardsHubProps {
@@ -96,6 +98,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     | 'products'
     | 'gallery'
     | 'customers'
+    | 'reviews'
     | 'store_settings'
     | 'inventory_po'
     | 'orders'
@@ -252,7 +255,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       expiryDate: string;
     }>;
   } | null>(null);
-  const [adminSubTab, setAdminSubTab] = useState<'tenants' | 'domains' | 'ecosystem' | 'proposals' | 'plans' | 'users' | 'tickets' | 'audits'>('tenants');
+  const [adminSubTab, setAdminSubTab] = useState<'tenants' | 'domains' | 'ecosystem' | 'proposals' | 'plans' | 'users' | 'tickets' | 'audits' | 'reviews_mod'>('tenants');
   const [customerDomainTenantId, setCustomerDomainTenantId] = useState<number | null>(null);
   const [planPriceDrafts, setPlanPriceDrafts] = useState<Record<number, number>>({});
 
@@ -953,6 +956,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       { id: 'onboarding', label: '12-Step Setup' },
                       { id: 'overview', label: 'Orders & Dispatch' },
                       { id: 'products', label: 'Products & Catalog' },
+                      { id: 'reviews', label: 'Reviews & Ratings' },
                       { id: 'gallery', label: 'Business Gallery' },
                       { id: 'customers', label: 'Customers' },
                       { id: 'store_settings', label: 'Store & Payment Settings' },
@@ -1456,6 +1460,15 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                         </table>
                       </div>
                     </div>
+                  )}
+
+                  {/* CUSTOMER REVIEWS & RATINGS SUITE */}
+                  {ownerSection === 'reviews' && ownerData && (
+                    <OwnerReviewsManager
+                      tenant={ownerData.tenant}
+                      products={ownerData.products || []}
+                      onNotify={onNotify}
+                    />
                   )}
 
                   {/* BUSINESS GALLERY MANAGER */}
@@ -2773,6 +2786,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   { id: 'plans', label: 'Pricing & Packages' },
                   { id: 'users', label: 'Users & Roles' },
                   { id: 'tickets', label: 'Support Desk' },
+                  { id: 'reviews_mod', label: 'Review Moderation Queue' },
                   { id: 'audits', label: 'Security Audit Logs' },
                 ].map((tab) => (
                   <button
@@ -3063,6 +3077,8 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   ))}
                 </div>
               )}
+
+              {adminSubTab === 'reviews_mod' && <AdminReviewsModeration onNotify={onNotify} />}
 
               {adminSubTab === 'ecosystem' && <AdminEcosystemPanel onNotify={onNotify} />}
             </div>

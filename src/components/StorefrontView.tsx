@@ -47,6 +47,7 @@ import {
 } from '../types/platform';
 import { PWAInstallButton } from './PWAControls';
 import { StorefrontMapPreview } from './StorefrontMapPreview';
+import { StorefrontReviews } from './StorefrontReviews';
 import defaultHeroBanner from '../assets/images/hero_vijay_studio_1795055804014.jpg';
 import restaurantFallbackBanner from '../assets/images/store_gourmet_dining_1795055802368.jpg';
 import fashionFallbackBanner from '../assets/images/store_fashion_royal_1795055802960.jpg';
@@ -1276,6 +1277,20 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
         </section>
       )}
 
+      {/* Customer Reviews & Ratings Section (1 to 5 Stars, Verified Purchases, Photos, Google Integration) */}
+      {modules.reviews && (
+        <StorefrontReviews
+          websiteId={tenant.websiteId || tenant.slug}
+          slug={tenant.slug}
+          businessName={tenant.name}
+          products={products}
+          initialReviews={reviews}
+          googleReviewUrl={tenant.googleReviewUrl}
+          googlePlaceId={tenant.googlePlaceId}
+          onNotify={onNotify}
+        />
+      )}
+
       {/* Stage 3 & Stage 5: Published Multi-Branch Map Preview, Direct Contact/Quote Actions & Consent Newsletter */}
       <section id="store-contact" className="max-w-7xl mx-auto px-6 pb-16 space-y-6">
         <StorefrontMapPreview
@@ -1712,12 +1727,27 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                     reviews
                       .filter((r) => r.productId === selectedProduct.id)
                       .map((r) => (
-                        <div key={r.id} className="rounded-lg border border-[#20202C] bg-[#0B0B10] p-3 text-xs">
-                          <div className="flex justify-between mb-1">
-                            <strong className="text-white">{r.customerName}</strong>
-                            <span className="text-[#ECC86A]">{r.rating} / 5</span>
+                        <div key={r.id} className="rounded-lg border border-[#20202C] bg-[#0B0B10] p-3 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <strong className="text-white">{r.customerName}</strong>
+                              {r.verifiedPurchase && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/15 text-emerald-400 font-semibold border border-emerald-500/30">
+                                  <ShieldCheck className="w-2.5 h-2.5" />
+                                  Verified
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[#ECC86A] font-semibold">{r.rating} / 5 ★</span>
                           </div>
+                          {r.title && <p className="font-semibold text-white text-[11px]">{r.title}</p>}
                           <p className="text-[#A8A8BA]">{r.comment}</p>
+                          {r.ownerReply && (
+                            <div className="mt-1.5 pl-2 border-l-2 border-[#D4AF37] text-[11px] text-[#ECC86A] bg-[#14120A] p-1.5 rounded-r">
+                              <p className="font-semibold">Owner response:</p>
+                              <p className="text-[#DFD7BE]">{r.ownerReply}</p>
+                            </div>
+                          )}
                         </div>
                       ))
                   )}
