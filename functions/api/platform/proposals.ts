@@ -9,7 +9,7 @@ import { requireUser } from '../_auth';
 import { PagesContext, errorJson, json, parseJsonBody, randomHex, sanitizeText } from '../_shared';
 
 export interface WebsitePackageSpec {
-  code: 'starter' | 'professional' | 'premium' | 'custom_enterprise';
+  code: string;
   name: string;
   oneTimeDevelopmentInr: number;
   optionalMaintenanceMonthlyInr: number;
@@ -21,18 +21,18 @@ export interface WebsitePackageSpec {
 
 export const WEBSITE_PACKAGES: WebsitePackageSpec[] = [
   {
-    code: 'starter',
+    code: 'starter-website',
     name: 'Starter Website Package',
-    oneTimeDevelopmentInr: 7999,
+    oneTimeDevelopmentInr: 2999,
     optionalMaintenanceMonthlyInr: 499,
     optionalDomainHostingYearlyInr: 1499,
     gstPercent: 18,
     included: [
-      'Responsive mobile-first business website (up to 5 sections)',
-      'Industry template (Clothing, Cafe, Salon, Gym, Local Business, etc.)',
-      'Custom logo, colors, fonts & WhatsApp contact CTA',
+      'Responsive mobile-first business website (up to 5 sections across 16 templates)',
+      'Subdomain preview + custom domain DNS connection wizard',
+      'Contact, WhatsApp enquiry, Call & Quote Request lead forms',
       'Basic on-page SEO meta tags, sitemap.xml & robots.txt',
-      '1 custom domain connection setup & SSL configuration guidance',
+      '1 custom domain connection setup & SSL guidance',
     ],
     excluded: [
       'Domain registrar renewal fees (paid directly in customer registrar account)',
@@ -41,9 +41,31 @@ export const WEBSITE_PACKAGES: WebsitePackageSpec[] = [
     ],
   },
   {
-    code: 'professional',
-    name: 'Professional E-Commerce Package',
-    oneTimeDevelopmentInr: 18999,
+    code: 'business-website',
+    name: 'Business Website Package',
+    oneTimeDevelopmentInr: 7999,
+    optionalMaintenanceMonthlyInr: 999,
+    optionalDomainHostingYearlyInr: 1999,
+    gstPercent: 18,
+    included: [
+      'Access to own business website management dashboard',
+      'Visual section layout, branding & content editor',
+      'Upload, replace and manage photos, hero banners and gallery',
+      'Add, edit and delete products, services, descriptions and categories',
+      'Orders and customer inquiries lead management panel',
+      'Analytics reports, publish/unpublish controls & domain manager',
+      '18% GST Tax Invoice & instant platform activation',
+    ],
+    excluded: [
+      'Domain registration/renewal (customer owns and pays registrar directly)',
+      'Payment gateway MDR fees (charged directly by Razorpay)',
+      'Third-party SMS/WhatsApp API charges',
+    ],
+  },
+  {
+    code: 'ecommerce-website',
+    name: 'E-Commerce Website Package',
+    oneTimeDevelopmentInr: 14999,
     optionalMaintenanceMonthlyInr: 1499,
     optionalDomainHostingYearlyInr: 1999,
     gstPercent: 18,
@@ -51,49 +73,49 @@ export const WEBSITE_PACKAGES: WebsitePackageSpec[] = [
       'Full online store with categories, variants, inventory & coupons',
       'Verified customer reviews & ratings with shop owner moderation',
       'Shop Owner Admin Dashboard, CRM leads & GST sales summaries',
-      'Cash on Delivery + Seller direct/Razorpay Route readiness (subject to KYC)',
-      'Multi-branch Google Maps / Mapbox location preview & directions',
+      'Cash on Delivery + Seller direct/Razorpay Route readiness',
+      'Includes all Business Website SEO, custom domain DNS & CRM capabilities',
     ],
     excluded: [
       'Payment gateway MDR fees (charged directly by Razorpay)',
-      'Courier shipping charges (paid directly to Shiprocket/carrier)',
-      'Statutory CA tax filing (finance reports are operational estimates)',
+      'Courier shipping charges (paid directly to carrier)',
+      'Domain registration renewal fees',
     ],
   },
   {
-    code: 'premium',
-    name: 'Premium Growth & Automation Suite',
-    oneTimeDevelopmentInr: 34999,
-    optionalMaintenanceMonthlyInr: 2999,
-    optionalDomainHostingYearlyInr: 2999,
+    code: 'website-plus-pwa',
+    name: 'Website + Optional Branded PWA Add-On',
+    oneTimeDevelopmentInr: 22999,
+    optionalMaintenanceMonthlyInr: 2499,
+    optionalDomainHostingYearlyInr: 2499,
     gstPercent: 18,
     included: [
-      'Everything in Professional + Multi-warehouse inventory & Delivery Partner dashboard',
-      'Shiprocket integration support + WhatsApp Cloud API notification templates',
-      'AI Business Assistant (English, Telugu & Hindi) with metered usage',
-      'Staff accounts & role permissions + priority support & handover training',
+      'Everything in Business & E-Commerce packages',
+      'Optional installable Progressive Web App (browser-installable for Android Chrome & iOS Safari)',
+      'Custom brand icon, offline caching & priority onboarding',
+      'Multi-currency live FX display & global storefront settings',
     ],
     excluded: [
-      'Third-party API subscription & usage charges (WhatsApp, SMS, Maps)',
-      'External registrar domain renewal charges',
+      'Native Google Play Store / Apple App Store developer account fees',
+      'Third-party API subscription & usage charges',
     ],
   },
   {
-    code: 'custom_enterprise',
-    name: 'Custom Enterprise Solution',
-    oneTimeDevelopmentInr: 75000,
-    optionalMaintenanceMonthlyInr: 7999,
-    optionalDomainHostingYearlyInr: 5999,
+    code: 'custom-dev-enterprise',
+    name: 'Custom Development & Multi-Branch Enterprise',
+    oneTimeDevelopmentInr: 49999,
+    optionalMaintenanceMonthlyInr: 4999,
+    optionalDomainHostingYearlyInr: 4999,
     gstPercent: 18,
     included: [
-      'Bespoke multi-branch / multi-storefront architecture & custom workflows',
+      'Bespoke multi-branch / multi-storefront architecture & custom ERP integrations',
+      'Dedicated multi-branch inventory & wholesale B2B pricing tiers',
       'Cloudflare for SaaS custom hostname scaling beyond 100 domains',
-      'Dedicated onboarding engineer, custom integrations & SLA',
       'Complete data portability, audit logging & enterprise handover package',
     ],
     excluded: [
       'Dedicated cloud infrastructure overages billed at provider cost',
-      'Custom native mobile app store developer accounts (Apple/Google)',
+      'Custom native mobile app store developer accounts',
     ],
   },
 ];
@@ -204,7 +226,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   const pkg =
-    WEBSITE_PACKAGES.find((p) => p.code === body.packageCode) || WEBSITE_PACKAGES[0];
+    WEBSITE_PACKAGES.find((p) => p.code === body.packageCode) ||
+    WEBSITE_PACKAGES.find((p) => p.code === 'business-website') ||
+    WEBSITE_PACKAGES[0];
   const devFee = pkg.oneTimeDevelopmentInr;
   const maintFee = body.includeMaintenance ? pkg.optionalMaintenanceMonthlyInr : 0;
   const domainHostingFee = body.includeDomainHosting ? pkg.optionalDomainHostingYearlyInr : 0;

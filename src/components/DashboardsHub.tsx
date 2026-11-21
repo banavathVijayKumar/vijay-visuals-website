@@ -74,6 +74,38 @@ interface DashboardsHubProps {
 
 type RoleTab = 'owner' | 'delivery' | 'customer' | 'super_admin';
 
+const getReceiptNumber = (p: any): string =>
+  p?.receipt || p?.receiptNumber || (p?.id ? `RCPT-${p.id}` : 'RCPT-UNAVAILABLE');
+
+const getPlanName = (p: any): string =>
+  p?.plan_name || p?.planName || p?.plan_code || p?.planCode || 'Business Website Package';
+
+const getBaseAmount = (p: any): number | null => {
+  if (typeof p?.base_amount_inr === 'number' && p.base_amount_inr > 0) return p.base_amount_inr;
+  if (typeof p?.baseAmountInr === 'number' && p.baseAmountInr > 0) return p.baseAmountInr;
+  if (typeof p?.amountInr === 'number' && p.amountInr > 0 && typeof p?.grandTotalInr === 'number' && p.grandTotalInr > p.amountInr) return p.amountInr;
+  return null;
+};
+
+const getGstAmount = (p: any): number | null => {
+  if (typeof p?.gst_amount_inr === 'number' && p.gst_amount_inr >= 0) return p.gst_amount_inr;
+  if (typeof p?.gstAmountInr === 'number' && p.gstAmountInr >= 0) return p.gstAmountInr;
+  return null;
+};
+
+const getGrandTotal = (p: any): number | null => {
+  if (typeof p?.amount_inr === 'number' && p.amount_inr > 0) return p.amount_inr;
+  if (typeof p?.grandTotalInr === 'number' && p.grandTotalInr > 0) return p.grandTotalInr;
+  if (typeof p?.amountInr === 'number' && p.amountInr > 0) return p.amountInr;
+  return null;
+};
+
+const getPaymentDate = (p: any): string | null =>
+  p?.paid_at || p?.paidAt || p?.created_at || p?.createdAt || null;
+
+const getPaymentId = (p: any): string | null =>
+  p?.razorpay_payment_id || p?.razorpayPaymentId || null;
+
 export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   allTenants,
   wishlistIds,
@@ -188,18 +220,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   const [ticketMsg, setTicketMsg] = useState('');
 
   // Customer Platform Purchases & Entitlements
-  const [platformPayments, setPlatformPayments] = useState<Array<{
-    id: number;
-    receiptNumber: string;
-    amountInr: number;
-    gstAmountInr: number;
-    grandTotalInr: number;
-    planCode: string;
-    status: string;
-    razorpayPaymentId?: string;
-    websiteId?: string;
-    createdAt: string;
-  }>>([]);
+  const [platformPayments, setPlatformPayments] = useState<any[]>([]);
   const [activeSubscription, setActiveSubscription] = useState<{
     id: number;
     planCode: string;
@@ -2388,30 +2409,41 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   </p>
                 ) : (
                   <div className="divide-y divide-[#1D1D28]">
-                    {platformPayments.map((pay) => (
-                      <div key={pay.id} className="p-4 flex flex-wrap items-center justify-between gap-4 text-xs">
-                        <div>
-                          <p className="font-mono-tabular text-[#ECC86A] font-semibold">
-                            {pay.receiptNumber} · Business Website Package · ₹{(pay.grandTotalInr || 9439).toLocaleString('en-IN')}
-                          </p>
-                          <p className="text-[#9E9EB2] mt-0.5">
-                            Status: <strong className="text-emerald-400 capitalize">{pay.status}</strong> · Date: {new Date(pay.createdAt).toLocaleDateString('en-IN')}
-                            {pay.razorpayPaymentId && (
-                              <span className="font-mono-tabular text-[10px] ml-2 text-[#7E7E92]">
-                                Ref: {pay.razorpayPaymentId}
-                              </span>
-                            )}
-                          </p>
+                    {platformPayments.map((pay) => {
+                      const receiptNo = getReceiptNumber(pay);
+                      const planName = getPlanName(pay);
+                      const grandTotal = getGrandTotal(pay);
+                      const payDate = getPaymentDate(pay);
+                      const paymentId = getPaymentId(pay);
+                      const dateFormatted = payDate && !isNaN(new Date(payDate).getTime())
+                        ? new Date(payDate).toLocaleDateString('en-IN')
+                        : 'Date Unavailable';
+
+                      return (
+                        <div key={pay.id} className="p-4 flex flex-wrap items-center justify-between gap-4 text-xs">
+                          <div>
+                            <p className="font-mono-tabular text-[#ECC86A] font-semibold">
+                              {receiptNo} · {planName} {grandTotal !== null ? `· ₹${grandTotal.toLocaleString('en-IN')}` : ''}
+                            </p>
+                            <p className="text-[#9E9EB2] mt-0.5">
+                              Status: <strong className="text-emerald-400 capitalize">{pay.status || 'Paid'}</strong> · Date: {dateFormatted}
+                              {paymentId && (
+                                <span className="font-mono-tabular text-[10px] ml-2 text-[#7E7E92]">
+                                  Ref: {paymentId}
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedReceipt(pay)}
+                            className="px-3 py-1.5 rounded border border-[#D4AF37]/50 text-[#ECC86A] text-xs font-medium hover:bg-[#D4AF37] hover:text-[#08080A] transition-colors"
+                          >
+                            View Platform Tax Invoice
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedReceipt(pay)}
-                          className="px-3 py-1.5 rounded border border-[#D4AF37]/50 text-[#ECC86A] text-xs font-medium hover:bg-[#D4AF37] hover:text-[#08080A] transition-colors"
-                        >
-                          View Platform Tax Invoice
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -3112,10 +3144,16 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                     PAID / TAX INVOICE
                   </span>
                   <p className="font-mono-tabular text-[11px] text-[#ECC86A] font-semibold">
-                    {selectedReceipt.receiptNumber || `RCPT-${selectedReceipt.id}`}
+                    {getReceiptNumber(selectedReceipt)}
                   </p>
                   <p className="text-[10px] text-[#8E8EA2]">
-                    Date: {new Date(selectedReceipt.createdAt).toLocaleDateString('en-IN')}
+                    Date:{' '}
+                    {(() => {
+                      const d = getPaymentDate(selectedReceipt);
+                      if (!d) return 'Date Unavailable';
+                      const dateObj = new Date(d);
+                      return isNaN(dateObj.getTime()) ? 'Date Unavailable' : dateObj.toLocaleDateString('en-IN');
+                    })()}
                   </p>
                 </div>
               </div>
@@ -3136,44 +3174,71 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                 <span className="col-span-4 text-right">Amount (INR)</span>
               </div>
               <div className="p-3 space-y-2 text-[11px]">
-                <div className="grid grid-cols-12">
-                  <div className="col-span-8">
-                    <p className="text-white font-medium">Business Website Management Package</p>
-                    <p className="text-[10px] text-[#7E7E92]">Website Management &amp; Storefront Access (SAC: 998314)</p>
-                  </div>
-                  <span className="col-span-4 text-right font-mono-tabular text-white">
-                    ₹{(selectedReceipt.amountInr || 7999).toLocaleString('en-IN')}
-                  </span>
-                </div>
+                {(() => {
+                  const base = getBaseAmount(selectedReceipt);
+                  const gst = getGstAmount(selectedReceipt);
+                  const total = getGrandTotal(selectedReceipt);
 
-                <div className="border-t border-[#1C1C28] pt-2 space-y-1 text-[10px] text-[#9A9AB0] font-mono-tabular">
-                  <div className="flex justify-between">
-                    <span>Taxable Base Subtotal:</span>
-                    <span>₹{(selectedReceipt.amountInr || 7999).toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>CGST (9.0%):</span>
-                    <span>₹{Math.round((selectedReceipt.amountInr || 7999) * 0.09).toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>SGST (9.0%):</span>
-                    <span>₹{Math.round((selectedReceipt.amountInr || 7999) * 0.09).toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between text-xs font-bold text-white pt-1.5 border-t border-[#1C1C28]">
-                    <span>Grand Total (Settled):</span>
-                    <span className="text-[#ECC86A]">
-                      ₹{(selectedReceipt.grandTotalInr || 9439).toLocaleString('en-IN')}
-                    </span>
-                  </div>
-                </div>
+                  if (base === null && total === null) {
+                    return (
+                      <div className="p-4 text-center text-amber-400 text-xs border border-amber-500/20 rounded bg-amber-950/20">
+                        Payment breakdown details are unavailable for this receipt.
+                      </div>
+                    );
+                  }
+
+                  const taxableBase = base !== null ? base : (total !== null ? Math.round(total / 1.18) : 0);
+                  const calculatedGst = gst !== null ? gst : (total !== null ? total - taxableBase : 0);
+                  const finalTotal = total !== null ? total : (taxableBase + calculatedGst);
+                  const cgst = Math.round(calculatedGst / 2);
+                  const sgst = calculatedGst - cgst;
+                  const planName = getPlanName(selectedReceipt);
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-12">
+                        <div className="col-span-8">
+                          <p className="text-white font-medium">{planName}</p>
+                          <p className="text-[10px] text-[#7E7E92]">Website Management &amp; Storefront Access (SAC: 998314)</p>
+                        </div>
+                        <span className="col-span-4 text-right font-mono-tabular text-white">
+                          ₹{taxableBase.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+
+                      <div className="border-t border-[#1C1C28] pt-2 space-y-1 text-[10px] text-[#9A9AB0] font-mono-tabular">
+                        <div className="flex justify-between">
+                          <span>Taxable Base Subtotal:</span>
+                          <span>₹{taxableBase.toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>CGST (9.0%):</span>
+                          <span>₹{cgst.toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>SGST (9.0%):</span>
+                          <span>₹{sgst.toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="flex justify-between text-xs font-bold text-white pt-1.5 border-t border-[#1C1C28]">
+                          <span>Grand Total (Settled):</span>
+                          <span className="text-[#ECC86A]">
+                            ₹{finalTotal.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
             {/* Verification Metadata */}
             <div className="rounded-lg border border-[#1C1C28] bg-[#09090E] p-2.5 mb-4 text-[10px] text-[#7E7E92] font-mono-tabular space-y-0.5">
               <p>Payment Gateway: Razorpay PG (Server-Side Verified HMAC-SHA256)</p>
-              {selectedReceipt.razorpayPaymentId && <p>Razorpay Payment ID: {selectedReceipt.razorpayPaymentId}</p>}
-              <p>Status: Completed &amp; Entitlement Granted</p>
+              {getPaymentId(selectedReceipt) && (
+                <p>Razorpay Payment ID: {getPaymentId(selectedReceipt)}</p>
+              )}
+              <p>Status: {selectedReceipt.status ? String(selectedReceipt.status).toUpperCase() : 'COMPLETED'} &amp; Entitlement Granted</p>
             </div>
 
             {/* Modal Actions */}

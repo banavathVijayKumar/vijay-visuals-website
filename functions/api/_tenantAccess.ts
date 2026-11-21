@@ -493,6 +493,23 @@ export function mapOrderRowToUi(
   };
 }
 
+export const AUTHORIZED_WEBSITE_PUBLISHING_PLANS = new Set([
+  'starter-website',
+  'business-website',
+  'ecommerce-website',
+  'website-only',
+  'website-plus-pwa',
+  'custom-dev-enterprise',
+]);
+
+export const LEGACY_SAAS_ONLY_PLANS = new Set([
+  'starter',
+  'business',
+  'ecommerce',
+  'premium',
+  'enterprise',
+]);
+
 export interface SubscriptionEntitlement {
   hasActiveSubscription: boolean;
   canPublish: boolean;
@@ -514,7 +531,7 @@ export async function checkTenantSubscriptionEntitlement(
     return {
       hasActiveSubscription: true,
       canPublish: true,
-      planCode: 'enterprise',
+      planCode: 'custom-dev-enterprise',
       planTier: 'enterprise_ai',
       pwaEnabled: true,
       enterpriseAiEnabled: true,
@@ -551,21 +568,25 @@ export async function checkTenantSubscriptionEntitlement(
       .first<{
         plan_code: string;
         status: string;
-        current_period_end: string;
+        current_period_end: string | null;
         max_websites?: number;
         max_products?: number;
       }>();
 
     if (sub) {
       const code = String(sub.plan_code || '').toLowerCase();
+      const isWebsitePackage = AUTHORIZED_WEBSITE_PUBLISHING_PLANS.has(code);
+      const isEnterprise = code === 'custom-dev-enterprise' || code === 'enterprise' || code.includes('enterprise');
       const isPwa = code === 'website-plus-pwa' || code.includes('pwa');
-      const isEnterprise = code === 'enterprise' || code.includes('enterprise');
       const planTier: 'website_only' | 'website_pwa' | 'enterprise_ai' =
         isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : 'website_only';
 
+      // Legacy SaaS plans (e.g. starter ₹499 or business ₹1,499) never grant website publishing entitlement!
+      const canPublish = isWebsitePackage || isEnterprise;
+
       return {
         hasActiveSubscription: true,
-        canPublish: true,
+        canPublish,
         planCode: code,
         planTier,
         pwaEnabled: isPwa || isEnterprise,
@@ -589,14 +610,17 @@ export async function checkTenantSubscriptionEntitlement(
 
     if (payment) {
       const code = String(payment.plan_code || '').toLowerCase();
+      const isWebsitePackage = AUTHORIZED_WEBSITE_PUBLISHING_PLANS.has(code);
+      const isEnterprise = code === 'custom-dev-enterprise' || code === 'enterprise' || code.includes('enterprise');
       const isPwa = code === 'website-plus-pwa' || code.includes('pwa');
-      const isEnterprise = code === 'enterprise' || code.includes('enterprise');
       const planTier: 'website_only' | 'website_pwa' | 'enterprise_ai' =
         isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : 'website_only';
 
+      const canPublish = isWebsitePackage || isEnterprise;
+
       return {
         hasActiveSubscription: true,
-        canPublish: true,
+        canPublish,
         planCode: code,
         planTier,
         pwaEnabled: isPwa || isEnterprise,

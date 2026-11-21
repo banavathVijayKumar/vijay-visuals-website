@@ -12,6 +12,7 @@
 
 import { PagesContext, errorJson, json, sanitizeText } from '../_shared';
 import { verifyEdgeRazorpayWebhookSignature } from './_razorpay';
+import { ALLOWED_WEBSITE_PACKAGE_CODES } from './platform/create-order';
 
 interface RazorpayWebhookPayload {
   event?: string;
@@ -111,6 +112,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     id: number;
     website_id: string | null;
     owner_id: string;
+    purpose: string;
     plan_code: string;
     billing_cycle: string;
     base_amount_inr: number;
@@ -122,14 +124,14 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   const platformRow = rzpOrderId
     ? await env.DB.prepare(
-        `SELECT id, website_id, owner_id, plan_code, billing_cycle, base_amount_inr, gst_amount_inr, amount_inr, setup_fee_inr, subscription_id
+        `SELECT id, website_id, owner_id, purpose, plan_code, billing_cycle, base_amount_inr, gst_amount_inr, amount_inr, setup_fee_inr, subscription_id
          FROM platform_payments WHERE razorpay_order_id = ? LIMIT 1`
       )
         .bind(rzpOrderId)
         .first<PlatformRow>()
     : rzpPaymentId
       ? await env.DB.prepare(
-          `SELECT id, website_id, owner_id, plan_code, billing_cycle, base_amount_inr, gst_amount_inr, amount_inr, setup_fee_inr, subscription_id
+          `SELECT id, website_id, owner_id, purpose, plan_code, billing_cycle, base_amount_inr, gst_amount_inr, amount_inr, setup_fee_inr, subscription_id
            FROM platform_payments WHERE razorpay_payment_id = ? LIMIT 1`
         )
           .bind(rzpPaymentId)
@@ -170,28 +172,57 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           .bind(platformRow.plan_code)
           .first();
         if (planExists) {
-          const durationExpr = platformRow.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
-          const subRes = await env.DB.prepare(
-            `INSERT INTO tenant_subscriptions
-              (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-               total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-               current_period_start, current_period_end, created_at, updated_at)
-             VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
-          )
-            .bind(
-              platformRow.website_id,
-              platformRow.owner_id,
-              platformRow.plan_code,
-              platformRow.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
-              platformRow.base_amount_inr,
-              platformRow.gst_amount_inr,
-              platformRow.amount_inr,
-              platformRow.setup_fee_inr,
-              rzpPaymentId || rzpOrderId,
-              durationExpr
+          const isWebsitePackage = ALLOWED_WEBSITE_PACKAGE_CODES.has(platformRow.plan_code);
+          const isOneTime =
+            platformRow.billing_cycle === 'one_time' ||
+            platformRow.purpose === 'website_purchase' ||
+            isWebsitePackage;
+
+          if (isOneTime) {
+            // One-time website purchases do not expire: current_period_end is NULL
+            const subRes = await env.DB.prepare(
+              `INSERT INTO tenant_subscriptions
+                (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+                 total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+                 current_period_start, current_period_end, created_at, updated_at)
+               VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
             )
-            .run();
-          subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+              .bind(
+                platformRow.website_id,
+                platformRow.owner_id,
+                platformRow.plan_code,
+                platformRow.base_amount_inr,
+                platformRow.gst_amount_inr,
+                platformRow.amount_inr,
+                platformRow.setup_fee_inr,
+                rzpPaymentId || rzpOrderId
+              )
+              .run();
+            subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+          } else {
+            const durationExpr = platformRow.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
+            const subRes = await env.DB.prepare(
+              `INSERT INTO tenant_subscriptions
+                (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+                 total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+                 current_period_start, current_period_end, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+            )
+              .bind(
+                platformRow.website_id,
+                platformRow.owner_id,
+                platformRow.plan_code,
+                platformRow.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+                platformRow.base_amount_inr,
+                platformRow.gst_amount_inr,
+                platformRow.amount_inr,
+                platformRow.setup_fee_inr,
+                rzpPaymentId || rzpOrderId,
+                durationExpr
+              )
+              .run();
+            subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+          }
         }
       }
       await env.DB.prepare(

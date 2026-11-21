@@ -19,6 +19,23 @@ import {
 } from '../../_shared';
 import { createEdgeRazorpayOrder, getEdgeRazorpayStatus } from '../_razorpay';
 
+export const ALLOWED_WEBSITE_PACKAGE_CODES = new Set([
+  'starter-website',
+  'business-website',
+  'ecommerce-website',
+  'website-only',
+  'website-plus-pwa',
+  'custom-dev-enterprise',
+]);
+
+export const LEGACY_SAAS_PLAN_CODES = new Set([
+  'starter',
+  'business',
+  'ecommerce',
+  'premium',
+  'enterprise',
+]);
+
 interface PlanRow {
   code: string;
   name: string;
@@ -64,12 +81,22 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   const planCode = sanitizeText(body.planCode, 40).toLowerCase();
   const billingCycle = body.billingCycle === 'yearly' ? 'yearly' : 'monthly';
-  const purpose =
+  let purpose =
     body.purpose === 'website_purchase' ||
     body.purpose === 'domain_service' ||
     body.purpose === 'addon'
       ? body.purpose
       : 'platform_subscription';
+
+  const isWebsitePackage = ALLOWED_WEBSITE_PACKAGE_CODES.has(planCode);
+  const isLegacySaas = LEGACY_SAAS_PLAN_CODES.has(planCode);
+
+  if (purpose === 'website_purchase' && !isWebsitePackage) {
+    return errorJson(
+      `Plan "${planCode}" is a legacy SaaS subscription tier and cannot be purchased as a website package. Please select an authorized website package (₹2,999 Starter or ₹7,999 Business Website).`,
+      400
+    );
+  }
 
   // Optional website/tenant ownership check when attaching purchase to a specific website
   let websiteId: string | null = null;
@@ -83,6 +110,16 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     websiteId = access.website.website_id;
   }
 
+  if (isLegacySaas && (websiteId || purpose === 'website_purchase')) {
+    return errorJson(
+      `Legacy SaaS plan "${planCode}" cannot be attached to a business website purchase. Please select an authorized website package.`,
+      400
+    );
+  }
+
+  const effectivePurpose = isWebsitePackage ? 'website_purchase' : purpose;
+  const effectiveBillingCycle = isWebsitePackage ? 'one_time' : billingCycle;
+
   // Authoritative server-side pricing lookup from Cloudflare D1 (never trust client price)
   const plan = await env.DB.prepare(
     'SELECT code, name, monthly_price_inr, yearly_price_inr, setup_fee_inr, gst_percent FROM subscription_plans WHERE code = ? AND is_active = 1 LIMIT 1'
@@ -94,7 +131,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson(`Unknown or inactive planCode "${planCode}".`, 404);
   }
 
-  const baseAmountInr = billingCycle === 'yearly' ? plan.yearly_price_inr : plan.monthly_price_inr;
+  const baseAmountInr = effectiveBillingCycle === 'yearly' ? plan.yearly_price_inr : plan.monthly_price_inr;
   const setupFeeInr = plan.setup_fee_inr;
   const taxableSubtotal = baseAmountInr + setupFeeInr;
   const gstAmountInr = Math.round((taxableSubtotal * plan.gst_percent) / 100);
@@ -113,9 +150,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       receipt,
       notes: {
         flow_type: 'platform_payment',
-        purpose,
+        purpose: effectivePurpose,
         plan_code: plan.code,
-        billing_cycle: billingCycle,
+        billing_cycle: effectiveBillingCycle,
         owner_id: auth.user.id,
         website_id: websiteId || '',
       },
@@ -131,10 +168,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       .bind(
         websiteId,
         auth.user.id,
-        purpose,
+        effectivePurpose,
         plan.code,
         plan.name,
-        billingCycle,
+        effectiveBillingCycle,
         baseAmountInr,
         setupFeeInr,
         gstAmountInr,
@@ -162,7 +199,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         razorpayOrder: created.order,
         invoiceBreakdown: {
           planName: plan.name,
-          billingCycle,
+          billingCycle: effectiveBillingCycle,
           baseAmountInr,
           setupFeeInr,
           gstPercent: plan.gst_percent,

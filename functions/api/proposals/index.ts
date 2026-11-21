@@ -50,7 +50,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     let name = 'Business Website Package';
     if (code === 'starter-website') { price = 2999; name = 'Starter Website Package'; }
     else if (code === 'ecommerce-website') { price = 14999; name = 'E-Commerce Website Package'; }
+    else if (code === 'website-only') { price = 14999; name = 'Website-Only Business Package'; }
     else if (code === 'website-plus-pwa') { price = 22999; name = 'Website + Optional Branded PWA Add-On'; }
+    else if (code === 'custom-dev-enterprise') { price = 49999; name = 'Custom Development & Multi-Branch Enterprise'; }
     subtotal += price;
     return { code, name, price };
   });

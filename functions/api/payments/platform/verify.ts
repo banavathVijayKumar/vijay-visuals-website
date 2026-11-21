@@ -8,6 +8,7 @@
 import { requireUser } from '../../_auth';
 import { PagesContext, errorJson, json, parseJsonBody, sanitizeText, writeAuditLog } from '../../_shared';
 import { verifyEdgeRazorpayPaymentSignature } from '../_razorpay';
+import { ALLOWED_WEBSITE_PACKAGE_CODES } from './create-order';
 
 interface PlatformPaymentRow {
   id: number;
@@ -147,32 +148,65 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   // 5. Activate subscription when linked to a website
   let subscriptionId = existing.subscription_id;
+  const isWebsitePackage = ALLOWED_WEBSITE_PACKAGE_CODES.has(existing.plan_code);
+  const isOneTime =
+    existing.billing_cycle === 'one_time' ||
+    existing.purpose === 'website_purchase' ||
+    isWebsitePackage;
+
   if (targetWebsiteId && existing.plan_code) {
-    const durationExpr = existing.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
-    const subRes = await env.DB.prepare(
-      `INSERT INTO tenant_subscriptions
-        (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-         total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-         current_period_start, current_period_end, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
-    )
-      .bind(
-        targetWebsiteId,
-        existing.owner_id,
-        existing.plan_code,
-        existing.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
-        existing.base_amount_inr,
-        existing.gst_amount_inr,
-        existing.amount_inr,
-        existing.setup_fee_inr,
-        paymentId,
-        durationExpr
+    if (isOneTime) {
+      // One-time website purchases never expire: current_period_end is NULL
+      const subRes = await env.DB.prepare(
+        `INSERT INTO tenant_subscriptions
+          (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+           total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+           current_period_start, current_period_end, created_at, updated_at)
+         VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
       )
-      .run();
-    subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+        .bind(
+          targetWebsiteId,
+          existing.owner_id,
+          existing.plan_code,
+          existing.base_amount_inr,
+          existing.gst_amount_inr,
+          existing.amount_inr,
+          existing.setup_fee_inr,
+          paymentId
+        )
+        .run();
+      subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+    } else {
+      // Recurring monthly/yearly SaaS subscriptions maintain their period expiration
+      const durationExpr = existing.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
+      const subRes = await env.DB.prepare(
+        `INSERT INTO tenant_subscriptions
+          (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+           total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+           current_period_start, current_period_end, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+      )
+        .bind(
+          targetWebsiteId,
+          existing.owner_id,
+          existing.plan_code,
+          existing.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+          existing.base_amount_inr,
+          existing.gst_amount_inr,
+          existing.amount_inr,
+          existing.setup_fee_inr,
+          paymentId,
+          durationExpr
+        )
+        .run();
+      subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+    }
 
     // If client requested publish or website was waiting for payment activation
     if (body.publishWebsite) {
+      if (!isWebsitePackage && !auth.user.isSuperAdmin) {
+        return errorJson('Cannot publish website with a non-website subscription tier.', 403);
+      }
       await env.DB.prepare(
         `UPDATE customer_website_publications
          SET status = 'published',

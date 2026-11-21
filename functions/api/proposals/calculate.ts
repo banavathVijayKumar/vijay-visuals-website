@@ -42,35 +42,41 @@ const DEFAULT_PLANS_MAP: Record<string, { name: string; category: string; billin
     billingCycle: 'one_time',
     priceInr: 14999,
   },
+  'website-only': {
+    name: 'Website-Only Business Package',
+    category: 'website',
+    billingCycle: 'one_time',
+    priceInr: 14999,
+  },
   'website-plus-pwa': {
     name: 'Website + Optional Branded PWA Add-On',
     category: 'bundle',
     billingCycle: 'one_time',
     priceInr: 22999,
   },
-  'starter': {
-    name: 'Starter Website Plan',
-    category: 'website',
-    billingCycle: 'monthly',
-    priceInr: 4990,
-  },
-  'business': {
-    name: 'Business Growth Plan',
-    category: 'website',
-    billingCycle: 'monthly',
-    priceInr: 14990,
-  },
-  'ecommerce': {
-    name: 'E-Commerce Pro Plan',
-    category: 'ecommerce',
-    billingCycle: 'monthly',
-    priceInr: 29990,
-  },
   'custom-dev-enterprise': {
     name: 'Custom Development & Multi-Branch Enterprise',
     category: 'enterprise',
     billingCycle: 'one_time',
     priceInr: 49999,
+  },
+  'starter': {
+    name: 'Starter SaaS Hosting',
+    category: 'saas',
+    billingCycle: 'monthly',
+    priceInr: 499,
+  },
+  'business': {
+    name: 'Business Growth SaaS',
+    category: 'saas',
+    billingCycle: 'monthly',
+    priceInr: 1499,
+  },
+  'ecommerce': {
+    name: 'Pro Commerce SaaS',
+    category: 'saas',
+    billingCycle: 'monthly',
+    priceInr: 2999,
   },
 };
 
@@ -105,9 +111,12 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     try {
       const placeholders = uniqueCodes.map(() => '?').join(',');
       const rows = await env.DB.prepare(
-        `SELECT code, name, category, billing_cycle AS billingCycle, price_inr AS priceInr 
-         FROM platform_plans 
-         WHERE code IN (${placeholders}) AND active = 1`
+        `SELECT code, name,
+                CASE WHEN code IN ('starter', 'business', 'ecommerce', 'premium', 'enterprise') THEN 'saas' ELSE 'website' END AS category,
+                CASE WHEN code IN ('starter', 'business', 'ecommerce', 'premium', 'enterprise') THEN 'monthly' ELSE 'one_time' END AS billingCycle,
+                monthly_price_inr AS priceInr
+         FROM subscription_plans
+         WHERE code IN (${placeholders}) AND is_active = 1`
       )
         .bind(...uniqueCodes)
         .all<any>();
