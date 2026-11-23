@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { PagesContext, handleOptions, jsonResponse } from './_shared';
+import { getTrimmedEnvVar } from './payments/_cashfree';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -23,10 +24,12 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     }
   }
 
-  const cashfreeConfigured = Boolean(env.CASHFREE_CLIENT_ID && env.CASHFREE_CLIENT_SECRET);
+  const clientId = getTrimmedEnvVar(env, 'CASHFREE_CLIENT_ID');
+  const clientSecret = getTrimmedEnvVar(env, 'CASHFREE_CLIENT_SECRET');
+  const cashfreeConfigured = Boolean(clientId && clientSecret);
   const cashfreeMode = !cashfreeConfigured
     ? 'not_configured'
-    : (env.CASHFREE_ENV || 'sandbox').toLowerCase() === 'production'
+    : (getTrimmedEnvVar(env, 'CASHFREE_ENV') || 'sandbox').toLowerCase() === 'production'
       ? 'production'
       : 'sandbox';
 

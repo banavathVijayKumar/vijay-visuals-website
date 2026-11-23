@@ -10,6 +10,30 @@
 
 import { CloudflareEnv, hmacSha256Base64, safeEqual } from '../_shared';
 
+/**
+ * Resilient environment variable reader:
+ * Handles exact key match, trimmed key match (e.g. accidental trailing spaces in Cloudflare Pages dashboard secrets),
+ * and automatically trims leading/trailing whitespace from returned values.
+ */
+export function getTrimmedEnvVar(env: Record<string, any> | undefined | null, keyName: string): string {
+  if (!env || typeof env !== 'object') return '';
+  const direct = env[keyName];
+  if (typeof direct === 'string' && direct.trim()) {
+    return direct.trim();
+  }
+  // Check keys that match when trimmed (e.g. "CASHFREE_CLIENT_SECRET ")
+  const keys = Object.keys(env);
+  for (const k of keys) {
+    if (k.trim() === keyName) {
+      const val = env[k];
+      if (typeof val === 'string' && val.trim()) {
+        return val.trim();
+      }
+    }
+  }
+  return '';
+}
+
 export interface EdgeCashfreeStatus {
   configured: boolean;
   mode: 'unconfigured' | 'sandbox' | 'production';
@@ -19,11 +43,11 @@ export interface EdgeCashfreeStatus {
 }
 
 export function getEdgeCashfreeStatus(env: CloudflareEnv): EdgeCashfreeStatus {
-  const clientId = (env.CASHFREE_CLIENT_ID || '').trim();
-  const clientSecret = (env.CASHFREE_CLIENT_SECRET || '').trim();
-  const webhookSecret = (env.CASHFREE_WEBHOOK_SECRET || '').trim();
-  const envMode = (env.CASHFREE_ENV || 'sandbox').trim().toLowerCase();
-  const apiVersion = (env.CASHFREE_API_VERSION || '2023-08-01').trim();
+  const clientId = getTrimmedEnvVar(env, 'CASHFREE_CLIENT_ID');
+  const clientSecret = getTrimmedEnvVar(env, 'CASHFREE_CLIENT_SECRET');
+  const webhookSecret = getTrimmedEnvVar(env, 'CASHFREE_WEBHOOK_SECRET');
+  const envMode = (getTrimmedEnvVar(env, 'CASHFREE_ENV') || 'sandbox').toLowerCase();
+  const apiVersion = getTrimmedEnvVar(env, 'CASHFREE_API_VERSION') || '2023-08-01';
 
   if (!clientId || !clientSecret) {
     return {
@@ -50,16 +74,16 @@ export function getEdgeCashfreeStatus(env: CloudflareEnv): EdgeCashfreeStatus {
 }
 
 export function getCashfreeBaseUrl(env: CloudflareEnv): string {
-  const envMode = (env.CASHFREE_ENV || 'sandbox').trim().toLowerCase();
+  const envMode = (getTrimmedEnvVar(env, 'CASHFREE_ENV') || 'sandbox').toLowerCase();
   return envMode === 'production'
     ? 'https://api.cashfree.com/pg'
     : 'https://sandbox.cashfree.com/pg';
 }
 
 export function getCashfreeHeaders(env: CloudflareEnv): HeadersInit {
-  const clientId = (env.CASHFREE_CLIENT_ID || '').trim();
-  const clientSecret = (env.CASHFREE_CLIENT_SECRET || '').trim();
-  const apiVersion = (env.CASHFREE_API_VERSION || '2023-08-01').trim();
+  const clientId = getTrimmedEnvVar(env, 'CASHFREE_CLIENT_ID');
+  const clientSecret = getTrimmedEnvVar(env, 'CASHFREE_CLIENT_SECRET');
+  const apiVersion = getTrimmedEnvVar(env, 'CASHFREE_API_VERSION') || '2023-08-01';
 
   return {
     'x-client-id': clientId,
@@ -325,7 +349,9 @@ export async function verifyEdgeCashfreeWebhookSignature(
   signature: string,
   timestamp: string
 ): Promise<boolean> {
-  const secret = (env.CASHFREE_WEBHOOK_SECRET || env.CASHFREE_CLIENT_SECRET || '').trim();
+  const webhookSecret = getTrimmedEnvVar(env, 'CASHFREE_WEBHOOK_SECRET');
+  const clientSecret = getTrimmedEnvVar(env, 'CASHFREE_CLIENT_SECRET');
+  const secret = webhookSecret || clientSecret;
   if (!secret || !signature || !timestamp) {
     return false;
   }

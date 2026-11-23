@@ -2,15 +2,18 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Bot,
+  Building2,
   Calendar,
   ChevronLeft,
   ChevronRight,
   Clock,
+  CreditCard,
   ExternalLink,
   FileText,
   Globe,
   Heart,
   Image as ImageIcon,
+  Lock,
   MapPin,
   MessageCircle,
   MessageSquare,
@@ -19,6 +22,7 @@ import {
   Phone,
   Plus,
   Printer,
+  QrCode,
   Search,
   Send,
   ShieldCheck,
@@ -2151,15 +2155,42 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                       className="w-full rounded-md border border-[#2A2A38] bg-[#09090D] px-3 py-2 text-xs text-white"
                     />
 
-                    {/* Honest Configured-Only Payment Methods */}
-                    <div className="space-y-2 pt-1">
-                      <p className="text-xs text-[#9D9DB0]">Available Payment Methods</p>
+                    {/* Honest Configured-Only Payment Methods with Complete Cashfree PG Suite */}
+                    <div className="space-y-3 pt-1">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-white">Select Payment Method</p>
+                        <span className="text-[10px] text-[#8E8EA2] flex items-center gap-1">
+                          <Lock className="w-3 h-3 text-emerald-400" />
+                          <span>256-Bit SSL Encrypted</span>
+                        </span>
+                      </div>
                       {(() => {
-                        const availableMethods: Array<{ id: 'cod' | 'upi_reference' | 'cashfree_online'; label: string }> = [];
-                        if (tenant.codEnabled) availableMethods.push({ id: 'cod', label: 'Cash on Delivery' });
-                        if (tenant.upiId) availableMethods.push({ id: 'upi_reference', label: 'Direct UPI Transfer' });
+                        const availableMethods: Array<{
+                          id: 'cod' | 'upi_reference' | 'cashfree_online';
+                          label: string;
+                          badge: string;
+                        }> = [];
+
                         if (tenant.cashfreeOnlineReady || tenant.razorpayOnlineReady) {
-                          availableMethods.push({ id: 'cashfree_online', label: 'Cashfree PG (Instant UPI, Cards & NetBanking)' });
+                          availableMethods.push({
+                            id: 'cashfree_online',
+                            label: 'Online Payment (Cashfree PG)',
+                            badge: 'Instant · UPI, QR, Cards, NetBanking',
+                          });
+                        }
+                        if (tenant.codEnabled) {
+                          availableMethods.push({
+                            id: 'cod',
+                            label: 'Cash on Delivery (COD)',
+                            badge: 'Pay cash at doorstep',
+                          });
+                        }
+                        if (tenant.upiId) {
+                          availableMethods.push({
+                            id: 'upi_reference',
+                            label: 'Direct UPI Transfer',
+                            badge: 'Merchant UPI ID transfer',
+                          });
                         }
 
                         if (availableMethods.length === 0) {
@@ -2171,23 +2202,81 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                         }
 
                         return (
-                          <>
-                            <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-2.5">
+                            <div className="grid grid-cols-1 gap-2">
                               {availableMethods.map((m) => (
                                 <button
                                   key={m.id}
                                   type="button"
                                   onClick={() => setPaymentMethod(m.id)}
-                                  className={`py-2 px-3 rounded-md text-xs font-medium border ${
+                                  className={`p-3 rounded-lg text-left transition-all border ${
                                     paymentMethod === m.id
-                                      ? 'border-[#D4AF37] bg-[#1A170E] text-[#ECC86A]'
-                                      : 'border-[#272736] text-[#A5A5B8]'
+                                      ? 'border-[#D4AF37] bg-[#16140E] text-white shadow-[0_0_12px_rgba(212,175,55,0.15)]'
+                                      : 'border-[#222230] bg-[#0A0A0F] text-[#A5A5B8] hover:border-[#333346]'
                                   }`}
                                 >
-                                  {m.label}
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2.5">
+                                      <div
+                                        className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                                          paymentMethod === m.id
+                                            ? 'border-[#D4AF37] bg-[#D4AF37]'
+                                            : 'border-[#444458] bg-transparent'
+                                        }`}
+                                      >
+                                        {paymentMethod === m.id && <div className="w-1.5 h-1.5 rounded-full bg-black" />}
+                                      </div>
+                                      <span className="text-xs font-semibold text-white">{m.label}</span>
+                                    </div>
+                                    <span className="text-[10px] text-[#ECC86A] font-mono-tabular">{m.badge}</span>
+                                  </div>
+
+                                  {/* Cashfree PG Method Badges */}
+                                  {m.id === 'cashfree_online' && paymentMethod === 'cashfree_online' && (
+                                    <div className="mt-3 pt-3 border-t border-[#26241B] space-y-2.5 text-[11px]">
+                                      <p className="text-[#B9B9CC] text-[10px]">
+                                        Choose any payment option inside Cashfree secure checkout:
+                                      </p>
+                                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                        <div className="rounded border border-[#2D2A1C] bg-[#0E0D08] p-2 flex items-start gap-2">
+                                          <Smartphone className="w-3.5 h-3.5 text-[#ECC86A] shrink-0 mt-0.5" />
+                                          <div>
+                                            <p className="font-semibold text-white">UPI Apps</p>
+                                            <p className="text-[#8E8EA2] text-[9px] mt-0.5">Google Pay, PhonePe, Paytm, BHIM, Cred</p>
+                                          </div>
+                                        </div>
+                                        <div className="rounded border border-[#2D2A1C] bg-[#0E0D08] p-2 flex items-start gap-2">
+                                          <QrCode className="w-3.5 h-3.5 text-[#ECC86A] shrink-0 mt-0.5" />
+                                          <div>
+                                            <p className="font-semibold text-white">Dynamic UPI QR</p>
+                                            <p className="text-[#8E8EA2] text-[9px] mt-0.5">Scan &amp; Pay with any UPI app</p>
+                                          </div>
+                                        </div>
+                                        <div className="rounded border border-[#2D2A1C] bg-[#0E0D08] p-2 flex items-start gap-2">
+                                          <CreditCard className="w-3.5 h-3.5 text-[#ECC86A] shrink-0 mt-0.5" />
+                                          <div>
+                                            <p className="font-semibold text-white">Cards</p>
+                                            <p className="text-[#8E8EA2] text-[9px] mt-0.5">RuPay, Visa, Mastercard, Maestro</p>
+                                          </div>
+                                        </div>
+                                        <div className="rounded border border-[#2D2A1C] bg-[#0E0D08] p-2 flex items-start gap-2">
+                                          <Building2 className="w-3.5 h-3.5 text-[#ECC86A] shrink-0 mt-0.5" />
+                                          <div>
+                                            <p className="font-semibold text-white">Net Banking</p>
+                                            <p className="text-[#8E8EA2] text-[9px] mt-0.5">50+ Banks (SBI, HDFC, ICICI, Axis)</p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 text-[9px] text-emerald-400 pt-0.5">
+                                        <ShieldCheck className="w-3 h-3 shrink-0" />
+                                        <span>RBI Authorized Payment Aggregator · Verified Server-Side by Vijay Visuals</span>
+                                      </div>
+                                    </div>
+                                  )}
                                 </button>
                               ))}
                             </div>
+
                             {paymentMethod === 'upi_reference' && tenant.upiId && (
                               <div className="rounded-md border border-[#272736] bg-[#09090D] p-3 space-y-2 text-[11px]">
                                 <p className="text-[#C8C8D8]">
@@ -2207,7 +2296,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                                 </p>
                               </div>
                             )}
-                          </>
+                          </div>
                         );
                       })()}
                     </div>
@@ -2216,9 +2305,23 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                       <button
                         type="submit"
                         disabled={placingOrder}
-                        className="w-full py-3 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold disabled:opacity-60"
+                        className="w-full py-3 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold disabled:opacity-60 flex items-center justify-center gap-2 shadow-md hover:opacity-95 transition-opacity"
                       >
-                        {placingOrder ? 'Placing Order...' : `Place Order · ₹${grandTotal.toLocaleString('en-IN')}`}
+                        {placingOrder ? (
+                          'Initiating Secure Payment...'
+                        ) : paymentMethod === 'cashfree_online' ? (
+                          <>
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>Pay ₹{grandTotal.toLocaleString('en-IN')} via Cashfree (UPI / QR / Cards / NetBanking)</span>
+                          </>
+                        ) : paymentMethod === 'cod' ? (
+                          <>
+                            <Truck className="w-3.5 h-3.5" />
+                            <span>Confirm Order (Cash on Delivery) · ₹{grandTotal.toLocaleString('en-IN')}</span>
+                          </>
+                        ) : (
+                          <span>Submit Order with UPI Reference · ₹{grandTotal.toLocaleString('en-IN')}</span>
+                        )}
                       </button>
                     )}
 

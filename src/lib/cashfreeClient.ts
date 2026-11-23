@@ -183,7 +183,16 @@ export async function initiateCashfreeStorefrontCheckout(
   });
 
   if (checkoutResult?.error) {
-    options.onDismiss?.();
+    const isDismiss =
+      checkoutResult.error.code === 'USER_DROPPED' ||
+      checkoutResult.error.message?.toLowerCase().includes('dismiss') ||
+      checkoutResult.error.message?.toLowerCase().includes('close');
+    if (isDismiss) {
+      options.onDismiss?.();
+    } else {
+      const err = new Error(checkoutResult.error.message || 'Payment was cancelled or unsuccessful.');
+      options.onError?.(err);
+    }
     return;
   }
 

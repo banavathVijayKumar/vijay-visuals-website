@@ -16,6 +16,7 @@ import {
   safeEqual,
   sanitizeText,
 } from '../_shared';
+import { getTrimmedEnvVar } from '../payments/_cashfree';
 
 export async function onRequestGet(context: PagesContext): Promise<Response> {
   const { request, env } = context;
@@ -37,8 +38,10 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     .bind(websiteId)
     .first();
 
-  const cashfreeConfigured = Boolean(env.CASHFREE_CLIENT_ID && env.CASHFREE_CLIENT_SECRET);
-  const isProduction = env.CASHFREE_ENV === 'production';
+  const cashfreeConfigured = Boolean(
+    getTrimmedEnvVar(env, 'CASHFREE_CLIENT_ID') && getTrimmedEnvVar(env, 'CASHFREE_CLIENT_SECRET')
+  );
+  const isProduction = (getTrimmedEnvVar(env, 'CASHFREE_ENV') || 'sandbox').toLowerCase() === 'production';
 
   return json({
     flow1PlatformBilling: {

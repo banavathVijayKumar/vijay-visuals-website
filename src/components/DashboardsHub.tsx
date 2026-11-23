@@ -362,7 +362,11 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       } catch {
         setSavedAddresses([]);
       }
-      if (profile.role === 'super_admin' && !selectedTenantId && ownedTenants[0]) {
+      if (profile.role === 'customer' && ownedTenants.length === 0) {
+        setRoleTab((prev) => (prev === 'owner' ? 'customer' : prev));
+      } else if (profile.role === 'delivery_partner') {
+        setRoleTab((prev) => (prev === 'owner' ? 'delivery' : prev));
+      } else if (profile.role === 'super_admin' && !selectedTenantId && ownedTenants[0]) {
         setSelectedTenantId(ownedTenants[0].id);
       } else if (ownedTenants[0] && !selectedTenantId) {
         setSelectedTenantId(ownedTenants[0].id);

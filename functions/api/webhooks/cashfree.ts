@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { PagesContext, errorJson, handleOptions, json, sanitizeText, writeAuditLog } from '../_shared';
-import { verifyEdgeCashfreeWebhookSignature } from '../payments/_cashfree';
+import { getTrimmedEnvVar, verifyEdgeCashfreeWebhookSignature } from '../payments/_cashfree';
 
 interface CashfreeWebhookPayload {
   type?: string;
@@ -73,13 +73,15 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     rawBody.includes('LOW_BALANCE_ALERT') ||
     rawBody.length === 0;
 
-  const hasSecret = Boolean((env.CASHFREE_WEBHOOK_SECRET || env.CASHFREE_CLIENT_SECRET || '').trim());
+  const hasSecret = Boolean(
+    getTrimmedEnvVar(env, 'CASHFREE_WEBHOOK_SECRET') || getTrimmedEnvVar(env, 'CASHFREE_CLIENT_SECRET')
+  );
 
   if (isTestOrPing && (!signature || !hasSecret)) {
     return json({
       ok: true,
       message: 'Cashfree webhook test handshake acknowledged successfully.',
-      environment: env.CASHFREE_ENV || 'sandbox',
+      environment: getTrimmedEnvVar(env, 'CASHFREE_ENV') || 'sandbox',
       status: 'handshake_ok',
     });
   }
