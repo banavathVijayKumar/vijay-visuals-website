@@ -221,9 +221,11 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
       <div className="border-b border-[#1E1E2C] bg-[#0C0C12]/90 backdrop-blur sticky top-0 z-30 px-4 py-3">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#D4AF37] text-black font-extrabold flex items-center justify-center text-sm shadow">
-              VV
-            </div>
+            <img
+              src="/logo.png"
+              alt="VIJAY VISUALS"
+              className="w-9 h-9 rounded-lg border border-[#D4AF37]/50 object-contain bg-black shadow"
+            />
             <div>
               <span className="font-extrabold text-sm tracking-wider text-[#D4AF37]">VIJAY VISUALS</span>
               <span className="text-[10px] text-[#8E8EA2] block uppercase tracking-wider">Executive Digital Proposal</span>
@@ -553,6 +555,44 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
               <Printer className="w-4 h-4" />
               <span>Download & Print PDF Proposal (A4)</span>
             </button>
+          </div>
+        </div>
+
+        {/* OFFICIAL AGENCY CONTACT STRIP */}
+        <div className="bg-[#0D0D14] border border-[#222232] rounded-2xl p-6 text-xs text-[#9E9EB2] flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <img
+              src="/logo.png"
+              alt="VIJAY VISUALS"
+              className="w-10 h-10 rounded-lg border border-[#D4AF37]/50 object-contain bg-black shadow"
+            />
+            <div>
+              <p className="font-extrabold text-sm text-[#D4AF37] tracking-wider">VIJAY VISUALS</p>
+              <p className="text-[11px] text-[#7E7E92]">Digital Architecture & High-Performance Websites · Hyderabad, India</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-5 text-xs">
+            <a
+              href="tel:+919381362201"
+              className="inline-flex items-center gap-1.5 text-white hover:text-[#ECC86A] transition-colors"
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>Official Mobile: <strong className="text-[#ECC86A]">+91 9381362201</strong></span>
+            </a>
+            <a
+              href="https://wa.me/919381362201"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              <span>WhatsApp Chat</span>
+            </a>
+            <a
+              href="mailto:vk66278@gmail.com"
+              className="inline-flex items-center gap-1.5 text-white hover:text-[#ECC86A] transition-colors"
+            >
+              <span>Official Email: <strong className="text-[#ECC86A]">vk66278@gmail.com</strong></span>
+            </a>
           </div>
         </div>
       </div>

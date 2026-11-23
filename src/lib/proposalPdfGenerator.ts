@@ -5,6 +5,8 @@
 // and honest transparent cost explanations.
 // ============================================================================
 
+import { OFFICIAL_VV_LOGO_BASE64 } from './officialLogo';
+
 export interface ProposalRecord {
   id: number;
   proposal_number: string;
@@ -140,6 +142,14 @@ export function generateProposalHtml(p: ProposalRecord): string {
       align-items: center;
       gap: 10px;
     }
+    .header-logo-img {
+      width: 24px;
+      height: 24px;
+      object-fit: contain;
+      border-radius: 4px;
+      border: 1px solid rgba(212, 175, 55, 0.4);
+      background: #0A0A0F;
+    }
     .header-logo-text {
       font-size: 14px;
       font-weight: 800;
@@ -263,12 +273,10 @@ export function generateProposalHtml(p: ProposalRecord): string {
   <div class="page" style="background: radial-gradient(circle at 50% 20%, #1A1710 0%, #0A0A0F 80%); justify-content: space-between;">
     <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(212, 175, 55, 0.3); padding-bottom: 14px;">
       <div style="display: flex; align-items: center; gap: 12px;">
-        <div style="width: 38px; height: 38px; border-radius: 8px; border: 1.5px solid #D4AF37; background: #0A0A0F; display: flex; align-items: center; justify-content: center; font-weight: 900; color: #D4AF37; font-size: 16px;">
-          VV
-        </div>
+        <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS Official Logo" style="width: 44px; height: 44px; border-radius: 8px; border: 1.5px solid #D4AF37; background: #0A0A0F; object-fit: contain;" />
         <div>
           <div style="font-size: 16px; font-weight: 800; letter-spacing: 2px; color: #D4AF37;">VIJAY VISUALS</div>
-          <div style="font-size: 8.5px; color: #8E8EA2; letter-spacing: 1.5px; text-transform: uppercase;">Digital Agency · Web Architecture</div>
+          <div style="font-size: 8.5px; color: #8E8EA2; letter-spacing: 1px; text-transform: uppercase;">Official Mobile: +91 9381362201 · vk66278@gmail.com</div>
         </div>
       </div>
       <div style="text-align: right; font-size: 9px; color: #D4AF37; border: 1px solid rgba(212, 175, 55, 0.4); padding: 5px 12px; border-radius: 6px;">
@@ -276,23 +284,26 @@ export function generateProposalHtml(p: ProposalRecord): string {
       </div>
     </div>
 
-    <div style="text-align: center; margin: 40px 0 20px 0;">
-      <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 3px; color: #D4AF37; margin-bottom: 12px; font-weight: 600;">
+    <div style="text-align: center; margin: 24px 0 16px 0;">
+      <div style="display: inline-block; padding: 10px; background: rgba(10, 10, 15, 0.95); border: 1.5px solid rgba(212, 175, 55, 0.6); border-radius: 14px; box-shadow: 0 0 30px rgba(212, 175, 55, 0.2); margin-bottom: 12px;">
+        <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS Monogram" style="width: 130px; height: auto; display: block; margin: 0 auto; object-fit: contain;" />
+      </div>
+      <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 3px; color: #D4AF37; margin-bottom: 8px; font-weight: 600;">
         Executive Digital Architecture Proposal
       </div>
-      <h1 style="font-size: 34px; font-weight: 800; margin: 0 0 10px 0; color: #FFFFFF; letter-spacing: 1px;">
+      <h1 style="font-size: 32px; font-weight: 800; margin: 0 0 8px 0; color: #FFFFFF; letter-spacing: 1px;">
         ${p.business_name}
       </h1>
       <div style="font-size: 14px; color: #ECC86A; font-weight: 500; letter-spacing: 0.5px;">
         ${categoryName} Digital Storefront & Online Ecosystem
       </div>
 
-      <div style="max-width: 440px; margin: 30px auto 0 auto; padding: 18px 24px; background: rgba(18, 18, 26, 0.8); border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 12px;">
+      <div style="max-width: 440px; margin: 24px auto 0 auto; padding: 16px 24px; background: rgba(18, 18, 26, 0.8); border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 12px;">
         <div style="font-size: 10px; color: #8E8EA2; text-transform: uppercase; letter-spacing: 1.5px;">Selected Package Tier</div>
-        <div style="font-size: 26px; font-weight: 800; color: #FFFFFF; margin: 4px 0 8px 0;">
-          ${tier} <span style="font-size: 16px; font-weight: 400; color: #A5A5B8;">PACKAGE</span>
+        <div style="font-size: 24px; font-weight: 800; color: #FFFFFF; margin: 4px 0 6px 0;">
+          ${tier} <span style="font-size: 15px; font-weight: 400; color: #A5A5B8;">PACKAGE</span>
         </div>
-        <div style="font-size: 22px; font-weight: 800; color: #ECC86A;">
+        <div style="font-size: 20px; font-weight: 800; color: #ECC86A;">
           ₹${totalAmount.toLocaleString('en-IN')} <span style="font-size: 10px; font-weight: 400; color: #8E8EA2;">(One-Time · 18% GST Included)</span>
         </div>
       </div>
@@ -302,7 +313,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
       <div>
         <div style="font-size: 8.5px; color: #7C7C92; text-transform: uppercase;">Client / Owner</div>
         <div style="font-size: 11px; font-weight: 600; color: #FFFFFF; margin-top: 2px;">${p.customer_name}</div>
-        <div style="font-size: 9.5px; color: #9A9AB0;">${p.customer_phone || '+91 9999999999'}</div>
+        <div style="font-size: 9.5px; color: #9A9AB0;">${p.customer_phone || '+91 9381362201'}</div>
       </div>
       <div>
         <div style="font-size: 8.5px; color: #7C7C92; text-transform: uppercase;">Location / Region</div>
@@ -317,7 +328,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     </div>
 
     <div class="footer-bar">
-      <div>Vijay Visuals Digital Agency · Confidential Proposal</div>
+      <div>VIJAY VISUALS · Official Mobile: +91 9381362201 · vk66278@gmail.com · Hyderabad, Telangana</div>
       <div>Page 1 of 9</div>
     </div>
   </div>
@@ -329,6 +340,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     <div>
       <div class="header-banner">
         <div class="header-logo">
+          <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS" class="header-logo-img" />
           <div class="header-logo-text">VIJAY VISUALS</div>
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 01 · Online Business Architecture</div>
@@ -395,7 +407,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     </div>
 
     <div class="footer-bar">
-      <div>Vijay Visuals · Business Future Architecture</div>
+      <div>VIJAY VISUALS · +91 9381362201 · vk66278@gmail.com · Business Future Architecture</div>
       <div>Page 2 of 9</div>
     </div>
   </div>
@@ -407,6 +419,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     <div>
       <div class="header-banner">
         <div class="header-logo">
+          <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS" class="header-logo-img" />
           <div class="header-logo-text">VIJAY VISUALS</div>
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 02 · Feature Specifications & Real Business Value</div>
@@ -458,7 +471,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     </div>
 
     <div class="footer-bar">
-      <div>Vijay Visuals · Specifications & Real Benefits</div>
+      <div>VIJAY VISUALS · +91 9381362201 · vk66278@gmail.com · Specifications & Real Benefits</div>
       <div>Page 3 of 9</div>
     </div>
   </div>
@@ -470,6 +483,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     <div>
       <div class="header-banner">
         <div class="header-logo">
+          <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS" class="header-logo-img" />
           <div class="header-logo-text">VIJAY VISUALS</div>
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 03 · Transparent Feature-wise Pricing</div>
@@ -579,7 +593,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     </div>
 
     <div class="footer-bar">
-      <div>Vijay Visuals · Transparent Value Allocation</div>
+      <div>VIJAY VISUALS · +91 9381362201 · vk66278@gmail.com · Transparent Value Allocation</div>
       <div>Page 4 of 9</div>
     </div>
   </div>
@@ -591,6 +605,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     <div>
       <div class="header-banner">
         <div class="header-logo">
+          <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS" class="header-logo-img" />
           <div class="header-logo-text">VIJAY VISUALS</div>
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 04 · Storefront & Cashfree Payment Architecture</div>
@@ -656,7 +671,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     </div>
 
     <div class="footer-bar">
-      <div>Vijay Visuals · Payment Architecture</div>
+      <div>VIJAY VISUALS · +91 9381362201 · vk66278@gmail.com · Payment Architecture</div>
       <div>Page 5 of 9</div>
     </div>
   </div>
@@ -668,6 +683,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     <div>
       <div class="header-banner">
         <div class="header-logo">
+          <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS" class="header-logo-img" />
           <div class="header-logo-text">VIJAY VISUALS</div>
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 05 · Online Discovery & Local SEO</div>
@@ -716,7 +732,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     </div>
 
     <div class="footer-bar">
-      <div>Vijay Visuals · Discovery & Growth Ethics</div>
+      <div>VIJAY VISUALS · +91 9381362201 · vk66278@gmail.com · Discovery & Growth Ethics</div>
       <div>Page 6 of 9</div>
     </div>
   </div>
@@ -728,6 +744,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     <div>
       <div class="header-banner">
         <div class="header-logo">
+          <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS" class="header-logo-img" />
           <div class="header-logo-text">VIJAY VISUALS</div>
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 06 · Package Comparison Matrix</div>
@@ -813,7 +830,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     </div>
 
     <div class="footer-bar">
-      <div>Vijay Visuals · Package Comparison</div>
+      <div>VIJAY VISUALS · +91 9381362201 · vk66278@gmail.com · Package Comparison</div>
       <div>Page 7 of 9</div>
     </div>
   </div>
@@ -825,6 +842,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     <div>
       <div class="header-banner">
         <div class="header-logo">
+          <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS" class="header-logo-img" />
           <div class="header-logo-text">VIJAY VISUALS</div>
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 07 · Total Cost of Ownership & Terms</div>
@@ -884,7 +902,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     </div>
 
     <div class="footer-bar">
-      <div>Vijay Visuals · Transparent Costs & Terms</div>
+      <div>VIJAY VISUALS · +91 9381362201 · vk66278@gmail.com · Transparent Costs & Terms</div>
       <div>Page 8 of 9</div>
     </div>
   </div>
@@ -896,6 +914,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
     <div>
       <div class="header-banner">
         <div class="header-logo">
+          <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS" class="header-logo-img" />
           <div class="header-logo-text">VIJAY VISUALS</div>
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 08 · Project Authorization & Next Steps</div>
@@ -939,14 +958,18 @@ export function generateProposalHtml(p: ProposalRecord): string {
         </div>
       </div>
 
-      <div style="text-align: center; font-size: 10px; color: #8E8EA2;">
-        <div style="color: #ECC86A; font-weight: 600; margin-bottom: 4px;">VIJAY VISUALS DIGITAL AGENCY</div>
-        <div>Contact: +91 9999999999 · info@vijayvisuals.com · Hyderabad, Telangana</div>
+      <div style="text-align: center; font-size: 10px; color: #8E8EA2; border-top: 1px solid #1F1F2C; padding-top: 12px; margin-top: 12px;">
+        <div style="color: #ECC86A; font-weight: 700; margin-bottom: 4px; letter-spacing: 1.5px; font-size: 11px;">VIJAY VISUALS</div>
+        <div style="line-height: 1.8;">
+          Official Mobile: <a href="tel:+919381362201" style="color: #ECC86A; font-weight: 700; text-decoration: none;">+91 9381362201</a> · 
+          Official Email: <a href="mailto:vk66278@gmail.com" style="color: #ECC86A; font-weight: 700; text-decoration: none;">vk66278@gmail.com</a> · 
+          Hyderabad, Telangana, India
+        </div>
       </div>
     </div>
 
     <div class="footer-bar">
-      <div>Vijay Visuals · Authorization & Handover</div>
+      <div>VIJAY VISUALS · Official Mobile: +91 9381362201 · vk66278@gmail.com</div>
       <div>Page 9 of 9</div>
     </div>
   </div>

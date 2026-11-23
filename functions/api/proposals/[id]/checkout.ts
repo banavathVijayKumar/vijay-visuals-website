@@ -47,7 +47,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
         customerId: `prop_cust_${proposal.id}_${proposal.customer_phone.replace(/[^0-9]/g, '') || 'client'}`,
         customerName: proposal.customer_name,
         customerEmail: proposal.customer_email || 'client@vijayvisuals.com',
-        customerPhone: proposal.customer_phone || '9999999999',
+        customerPhone: proposal.customer_phone || '9381362201',
       },
       orderMeta: {
         returnUrl,

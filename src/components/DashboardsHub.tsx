@@ -151,6 +151,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     | 'customers'
     | 'reviews'
     | 'store_settings'
+    | 'owner_profile'
     | 'inventory_po'
     | 'orders'
     | 'team'
@@ -277,6 +278,11 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   const [customerAppointments, setCustomerAppointments] = useState<AppointmentRecord[]>([]);
   const [profileName, setProfileName] = useState('');
   const [profilePhone, setProfilePhone] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
+  const [ownerEditName, setOwnerEditName] = useState('');
+  const [ownerEditPhone, setOwnerEditPhone] = useState('');
+  const [ownerEditEmail, setOwnerEditEmail] = useState('');
+  const [savingOwnerProfile, setSavingOwnerProfile] = useState(false);
   const [newAddress, setNewAddress] = useState('');
   const [savedAddresses, setSavedAddresses] = useState<string[]>([]);
   const [ticketSubject, setTicketSubject] = useState('');
@@ -354,8 +360,12 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   useEffect(() => {
     if (profile) {
       setProfileName(profile.name);
-      setProfilePhone(profile.phone);
-      setJoinPhone((prev) => prev || profile.phone);
+      setProfilePhone(profile.phone || '+91 9381362201');
+      setProfileEmail(profile.email || 'vk66278@gmail.com');
+      setOwnerEditName(profile.name || 'VIJAY VISUALS');
+      setOwnerEditPhone(profile.phone || '+91 9381362201');
+      setOwnerEditEmail(profile.email || 'vk66278@gmail.com');
+      setJoinPhone((prev) => prev || profile.phone || '+91 9381362201');
       try {
         const arr = JSON.parse(profile.savedAddressesJson || '[]');
         setSavedAddresses(Array.isArray(arr) ? arr : []);
@@ -1076,6 +1086,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
         body: JSON.stringify({
           name: profileName.trim(),
           phone: profilePhone.trim(),
+          email: profileEmail.trim(),
           savedAddressesJson: JSON.stringify(addressesOverride ?? savedAddresses),
         }),
       });
@@ -1083,6 +1094,27 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       onNotify('Customer profile & addresses saved.');
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Save failed.');
+    }
+  };
+
+  const handleSaveOwnerProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingOwnerProfile(true);
+    try {
+      await apiFetch('/api/me', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: ownerEditName.trim(),
+          phone: ownerEditPhone.trim(),
+          email: ownerEditEmail.trim(),
+        }),
+      });
+      await refreshProfile();
+      onNotify('Official Owner Profile & brand contact details updated successfully.');
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Failed to update owner profile.');
+    } finally {
+      setSavingOwnerProfile(false);
     }
   };
 
@@ -1333,6 +1365,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       { id: 'gallery', label: 'Business Gallery' },
                       { id: 'customers', label: 'Customers' },
                       { id: 'store_settings', label: 'Store & Payment Settings' },
+                      { id: 'owner_profile', label: 'Owner Profile & Contact' },
                       { id: 'inventory_po', label: 'Inventory & POs' },
                       { id: 'domains_dns', label: 'Domains & DNS' },
                       { id: 'locations', label: 'Branches & Maps' },
@@ -2506,6 +2539,111 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                     </form>
                   )}
 
+                  {/* OWNER PROFILE & BRAND CONTACT DETAILS */}
+                  {ownerSection === 'owner_profile' && (
+                    <div className="rounded-xl border border-[#20202D] bg-[#0D0D13] p-6 space-y-6 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1E1E2B] pb-4">
+                        <div>
+                          <h3 className="text-base font-bold text-white flex items-center gap-2">
+                            <Shield className="w-4 h-4 text-[#D4AF37]" />
+                            <span>Owner & Official Brand Profile</span>
+                          </h3>
+                          <p className="text-[11px] text-[#8E8EA2] mt-0.5">
+                            Manage official Vijay Visuals contact details, phone dialers, and notification emails.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <img
+                            src="/logo.png"
+                            alt="VIJAY VISUALS"
+                            className="w-8 h-8 rounded border border-[#D4AF37]/50 object-contain bg-black"
+                          />
+                          <span className="font-extrabold text-sm text-[#D4AF37] tracking-wider">VIJAY VISUALS</span>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleSaveOwnerProfile} className="space-y-4 max-w-xl">
+                        <div>
+                          <label className="block text-[#9D9DB0] mb-1 font-semibold">Official Business / Owner Name</label>
+                          <input
+                            type="text"
+                            required
+                            value={ownerEditName}
+                            onChange={(e) => setOwnerEditName(e.target.value)}
+                            placeholder="VIJAY VISUALS"
+                            className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[#9D9DB0] mb-1 font-semibold">Official Mobile (Voice & WhatsApp)</label>
+                            <input
+                              type="tel"
+                              required
+                              value={ownerEditPhone}
+                              onChange={(e) => setOwnerEditPhone(e.target.value)}
+                              placeholder="+91 9381362201"
+                              className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white font-mono-tabular"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[#9D9DB0] mb-1 font-semibold">Official Email</label>
+                            <input
+                              type="email"
+                              required
+                              value={ownerEditEmail}
+                              onChange={(e) => setOwnerEditEmail(e.target.value)}
+                              placeholder="vk66278@gmail.com"
+                              className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-2 flex items-center gap-3">
+                          <button
+                            type="submit"
+                            disabled={savingOwnerProfile}
+                            className="px-5 py-2.5 rounded-lg bg-gold-gradient text-[#08080A] font-bold text-xs hover:opacity-95 transition-opacity"
+                          >
+                            {savingOwnerProfile ? 'Saving...' : 'Save Owner Profile'}
+                          </button>
+                        </div>
+                      </form>
+
+                      {/* Clickable Verification Strip */}
+                      <div className="rounded-lg border border-[#242436] bg-[#09090E] p-4 space-y-2">
+                        <p className="text-[11px] font-bold text-white uppercase tracking-wider">Clickable Verification Links:</p>
+                        <div className="flex flex-wrap items-center gap-4 text-xs">
+                          <a
+                            href={`tel:${ownerEditPhone.replace(/\s+/g, '') || '+919381362201'}`}
+                            className="inline-flex items-center gap-1.5 text-emerald-400 hover:underline"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>Call: {ownerEditPhone || '+91 9381362201'}</span>
+                          </a>
+                          <a
+                            href={`https://wa.me/${(ownerEditPhone || '919381362201').replace(/[^0-9]/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 text-emerald-400 hover:underline"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            <span>WhatsApp Message</span>
+                          </a>
+                          <a
+                            href={`mailto:${ownerEditEmail || 'vk66278@gmail.com'}`}
+                            className="inline-flex items-center gap-1.5 text-[#ECC86A] hover:underline"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                            <span>Email: {ownerEditEmail || 'vk66278@gmail.com'}</span>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* DELIVERY FLEET & STAFF */}
                   {ownerSection === 'team' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -3191,7 +3329,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="rounded-xl border border-[#20202D] bg-[#0D0D13] p-5 space-y-3">
                   <h2 className="text-sm font-semibold text-white">Profile & Saved Addresses</h2>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <input
                       type="text"
                       value={profileName}
@@ -3204,6 +3342,13 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       value={profilePhone}
                       onChange={(e) => setProfilePhone(e.target.value)}
                       placeholder="Mobile Number"
+                      className="rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs text-white font-mono-tabular"
+                    />
+                    <input
+                      type="email"
+                      value={profileEmail}
+                      onChange={(e) => setProfileEmail(e.target.value)}
+                      placeholder="Email Address"
                       className="rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs text-white"
                     />
                   </div>

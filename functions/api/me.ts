@@ -215,6 +215,7 @@ export async function onRequestPatch(context: PagesContext): Promise<Response> {
   const body = await parseJsonBody<{
     name?: string;
     phone?: string;
+    email?: string;
     preferredLang?: string;
     savedAddressesJson?: string;
   }>(request);
@@ -224,6 +225,7 @@ export async function onRequestPatch(context: PagesContext): Promise<Response> {
 
   const nextName = sanitizeText(body.name, 120) || auth.user.fullName;
   const nextPhone = sanitizeText(body.phone, 30);
+  const nextEmail = body.email && body.email.includes('@') ? sanitizeText(body.email, 120) : auth.user.email;
   const nextLang = ['en', 'te', 'hi'].includes(String(body.preferredLang || ''))
     ? String(body.preferredLang)
     : 'en';
@@ -246,9 +248,9 @@ export async function onRequestPatch(context: PagesContext): Promise<Response> {
   if (env.DB) {
     try {
       await env.DB.prepare(
-        `UPDATE vv_users SET full_name = ?, updated_at = datetime('now') WHERE id = ? OR auth_subject = ?`
+        `UPDATE vv_users SET full_name = ?, email = COALESCE(?, email), updated_at = datetime('now') WHERE id = ? OR auth_subject = ?`
       )
-        .bind(nextName, auth.user.id, auth.user.authSubject)
+        .bind(nextName, nextEmail || null, auth.user.id, auth.user.authSubject)
         .run();
     } catch {
       // Non-fatal if vv_users schema differs
@@ -297,7 +299,7 @@ export async function onRequestPatch(context: PagesContext): Promise<Response> {
     user: {
       id: 1,
       uid: auth.user.id,
-      email: auth.user.email,
+      email: nextEmail || auth.user.email,
       name: nextName,
       phone: nextPhone,
       role: mapRoleToUi(auth.user.supabaseRole, hasOwnedTenants),

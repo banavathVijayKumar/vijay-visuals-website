@@ -308,8 +308,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         customerDetails: {
           customerId: customerUserId || `cust_${Date.now().toString(36)}`,
           customerName: isSandboxTestOrder ? `[SANDBOX TEST] ${customerName}` : customerName,
-          customerEmail: customerEmail || 'test.customer@vijayvisuals.com',
-          customerPhone: customerPhone || '9999999999',
+          customerEmail: customerEmail || 'vk66278@gmail.com',
+          customerPhone: customerPhone || '9381362201',
         },
         orderMeta: { returnUrl },
         orderNote: isSandboxTestOrder

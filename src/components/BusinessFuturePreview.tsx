@@ -241,7 +241,7 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
                 )}
               </button>
               <a
-                href={`https://wa.me/${(data.whatsapp || data.phone || '9999999999').replace(/[^0-9]/g, '')}?text=Hello%20${encodeURIComponent(data.businessName)}`}
+                href={`https://wa.me/${(data.whatsapp || data.phone || '919381362201').replace(/[^0-9]/g, '')}?text=Hello%20${encodeURIComponent(data.businessName)}`}
                 target="_blank"
                 rel="noreferrer"
                 className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-semibold hover:bg-emerald-500/30"
@@ -586,7 +586,24 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
                       <Phone className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                       <div>
                         <strong className="text-white block">Phone & WhatsApp:</strong>
-                        <span className="text-[#9A9AB4]">{data.phone || '+91 9999999999'}</span>
+                        <a
+                          href={`tel:${(data.phone || '+91 9381362201').replace(/\s+/g, '')}`}
+                          className="text-[#ECC86A] hover:underline"
+                        >
+                          {data.phone || '+91 9381362201'}
+                        </a>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                      <Mail className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-white block">Official Email:</strong>
+                        <a
+                          href={`mailto:${data.email || 'vk66278@gmail.com'}`}
+                          className="text-[#ECC86A] hover:underline"
+                        >
+                          {data.email || 'vk66278@gmail.com'}
+                        </a>
                       </div>
                     </div>
                   </div>

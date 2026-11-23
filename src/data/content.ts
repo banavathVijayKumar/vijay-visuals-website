@@ -104,8 +104,10 @@ export const PLUGIN_CATALOG = [
 ] as const;
 
 export const CONTACT_INFO = {
-  name: 'Vijay Visuals',
+  name: 'VIJAY VISUALS',
   tagline: 'Made in India. Built for the World. Empowering Every Business to Go Digital.',
+  phone: '+91 9381362201',
+  mobile: '+91 9381362201',
   whatsappNumber: '919381362201',
   whatsappDisplay: '+91 93813 62201',
   email: 'vk66278@gmail.com',

@@ -154,12 +154,12 @@ export async function createEdgeCashfreeOrder(
   }
 
   // Cashfree phone validation: must be 10 digits without leading 0 or +91 for Indian numbers
-  let phone = (input.customerDetails.customerPhone || '9999999999').replace(/\D/g, '');
+  let phone = (input.customerDetails.customerPhone || '9381362201').replace(/\D/g, '');
   if (phone.length > 10) {
     phone = phone.slice(-10);
   }
   if (phone.length < 10) {
-    phone = '9999999999';
+    phone = '9381362201';
   }
 
   // Cashfree email fallback

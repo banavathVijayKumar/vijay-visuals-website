@@ -138,8 +138,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       customerDetails: {
         customerId: auth.user.id,
         customerName: sanitizeText(body.customerName || auth.user.fullName || auth.user.email || 'Customer', 100),
-        customerEmail: auth.user.email || 'customer@vijayvisuals.com',
-        customerPhone: sanitizeText(body.customerPhone || '9999999999', 20),
+        customerEmail: auth.user.email || 'vk66278@gmail.com',
+        customerPhone: sanitizeText(body.customerPhone || '9381362201', 20),
       },
       orderMeta: {
         returnUrl: customReturnUrl,

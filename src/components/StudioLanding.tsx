@@ -10,6 +10,7 @@ import {
   Loader2,
   Mail,
   MessageCircle,
+  Phone,
   Play,
   Search,
   Send,
@@ -1188,16 +1189,20 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer" className="hover:text-[#ECC86A]">
                 Sitemap
               </a>
+              <a href="tel:+919381362201" className="inline-flex items-center gap-1.5 hover:text-[#ECC86A]">
+                <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                <span>+91 9381362201</span>
+              </a>
               <a href={CONTACT_INFO.whatsappUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-[#ECC86A]">
-                <MessageCircle className="w-3.5 h-3.5" />
-                <span>{CONTACT_INFO.whatsappDisplay}</span>
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+                <span>WhatsApp</span>
               </a>
               <a href={CONTACT_INFO.instagramUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-[#ECC86A]">
                 <Instagram className="w-3.5 h-3.5" />
                 <span>@{CONTACT_INFO.instagram}</span>
               </a>
               <a href={`mailto:${CONTACT_INFO.email}`} className="inline-flex items-center gap-1.5 hover:text-[#ECC86A]">
-                <Mail className="w-3.5 h-3.5" />
+                <Mail className="w-3.5 h-3.5 text-[#D4AF37]" />
                 <span>{CONTACT_INFO.email}</span>
               </a>
             </div>

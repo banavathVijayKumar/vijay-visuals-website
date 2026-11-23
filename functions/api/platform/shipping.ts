@@ -157,8 +157,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           billing_pincode: deliveryPincode || '500001',
           billing_state: sanitizeText(body.state || 'Telangana', 60),
           billing_country: 'India',
-          billing_email: order.customer_email || 'customer@example.com',
-          billing_phone: order.customer_phone || '9999999999',
+          billing_email: order.customer_email || 'vk66278@gmail.com',
+          billing_phone: order.customer_phone || '9381362201',
           shipping_is_billing: true,
           order_items: [
             {
