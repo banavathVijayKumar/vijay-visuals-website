@@ -149,6 +149,19 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     };
   }
 
+  // 4. Verify D1 AI usage ledger table existence
+  let d1LedgerReady = false;
+  if (env.DB) {
+    try {
+      const checkRes = await env.DB.prepare(
+        "SELECT count(name) AS tbl_count FROM sqlite_master WHERE type='table' AND name='tenant_ai_usage'"
+      ).first<any>();
+      d1LedgerReady = Number(checkRes?.tbl_count || 0) > 0;
+    } catch {
+      d1LedgerReady = false;
+    }
+  }
+
   return jsonResponse({
     status: overallGenerationTest.success ? 'healthy' : 'degraded',
     provider: env.AI_PROVIDER || 'gemini',
@@ -159,6 +172,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     workingModelFound,
     overallGenerationTest,
     candidateProbeResults: probeResults,
+    d1LedgerReady,
     supportedModelsSummary: {
       totalSupportedModelsCount: supportedModels.length,
       sampleSupportedModels: supportedModels.slice(0, 10),
