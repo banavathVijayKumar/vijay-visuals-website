@@ -26,6 +26,7 @@ import {
   Smartphone,
   Sparkles,
   Star,
+  Store,
   Tag,
   Truck,
   X,
@@ -111,6 +112,7 @@ interface StorefrontViewProps {
   wishlistIds: number[];
   onToggleWishlist: (productId: number) => void;
   onBack: () => void;
+  onGoDashboards?: () => void;
   onOpenInvoice: (order: OrderRecord, tenantName: string) => void;
   onNotify: (msg: string) => void;
 }
@@ -121,6 +123,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
   wishlistIds,
   onToggleWishlist,
   onBack,
+  onGoDashboards,
   onOpenInvoice,
   onNotify,
 }) => {
@@ -725,15 +728,62 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
   if (error || !tenant) {
     return (
-      <div className="max-w-3xl mx-auto px-6 py-20 text-center">
-        <p className="text-rose-300 text-sm mb-4">{error || 'Storefront not found.'}</p>
-        <button
-          type="button"
-          onClick={onBack}
-          className="px-4 py-2 rounded-md border border-[#2C2C3C] text-xs text-white"
-        >
-          Back to Marketplace
-        </button>
+      <div className="min-h-[75vh] flex items-center justify-center px-4 py-16">
+        <div className="max-w-xl w-full rounded-2xl border border-[#2B2B3C] bg-[#0E0E14] p-8 text-center shadow-2xl relative overflow-hidden">
+          {/* Subtle Ambient Glow */}
+          <div className="absolute -top-24 -left-24 w-48 h-48 bg-[#D4AF37]/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-[#1E3A8A]/20 rounded-full blur-3xl pointer-events-none" />
+
+          {/* Offline / Maintenance Icon */}
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-[#1C180E] border border-[#D4AF37]/30 flex items-center justify-center text-[#ECC86A] mb-5 shadow-inner">
+            <Store className="w-8 h-8 stroke-[1.75]" />
+          </div>
+
+          {/* Status Badge */}
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-medium mb-3">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span>Storefront Offline / Under Maintenance</span>
+          </div>
+
+          <h2 className="font-luxury text-2xl font-bold text-white mb-2">
+            Website Currently Unavailable
+          </h2>
+
+          <p className="text-xs text-[#A0A0B2] leading-relaxed mb-6">
+            The storefront for <span className="font-mono text-[#ECC86A] bg-[#161622] px-1.5 py-0.5 rounded border border-[#262638]">/site/{slug}</span> has been unpublished or taken offline by its business owner for scheduled catalog updates, branding adjustments, or private maintenance.
+          </p>
+
+          {/* Business Owner Guidance Box */}
+          <div className="rounded-xl border border-[#232332] bg-[#0A0A0F] p-4 text-left mb-6 space-y-1.5">
+            <p className="text-xs font-semibold text-white flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#ECC86A]" />
+              <span>Are you the owner of this business?</span>
+            </p>
+            <p className="text-[11px] text-[#8E8EA2] leading-relaxed">
+              Log in with your verified merchant account to edit website content, upload products, manage live orders, or toggle your site status back to <strong>Published</strong> at any time.
+            </p>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            {onGoDashboards && (
+              <button
+                type="button"
+                onClick={onGoDashboards}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-gold-gradient text-[#08080A] text-xs font-bold hover:opacity-95 transition-opacity shadow-md"
+              >
+                Go to Business Owner Dashboard
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onBack}
+              className="w-full sm:w-auto px-5 py-2.5 rounded-lg border border-[#2E2E40] text-[#D4D4E8] text-xs font-medium hover:border-[#D4AF37] hover:text-white transition-colors"
+            >
+              Back to Marketplace
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

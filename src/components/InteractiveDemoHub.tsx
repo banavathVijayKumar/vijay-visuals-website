@@ -709,7 +709,7 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
               onClick={() => onNavigatePlan('website_only_onetime')}
               className="px-6 py-3 rounded-lg bg-gold-gradient text-[#08080A] font-bold text-xs hover:opacity-95 transition-opacity shadow-lg"
             >
-              Get Website Only (₹9,439)
+              Get Business Website (₹9,439)
             </button>
             <button
               type="button"

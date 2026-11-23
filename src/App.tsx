@@ -80,6 +80,7 @@ function PlatformShell() {
   const [invoiceState, setInvoiceState] = useState<{ order: OrderRecord; tenantName: string } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [mapsQuotaExceeded, setMapsQuotaExceeded] = useState(false);
+  const [builderTenantId, setBuilderTenantId] = useState<number | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -356,13 +357,17 @@ function PlatformShell() {
               // triggers plan purchase modal
               showToast(`Selected package: ${planCode}. Opening checkout...`);
             }}
-            onGoBuilder={() => navigateTo('builder')}
+            onGoBuilder={(tId?: number) => {
+              setBuilderTenantId(tId ?? null);
+              navigateTo('builder');
+            }}
             onNotify={showToast}
           />
         )}
 
         {activeView === 'builder' && (
           <WebsiteBuilder
+            initialTenantId={builderTenantId}
             onPublished={() => {
               loadPublicData();
             }}
@@ -378,6 +383,7 @@ function PlatformShell() {
             wishlistIds={wishlistIds}
             onToggleWishlist={toggleWishlist}
             onBack={() => navigateTo('marketplace')}
+            onGoDashboards={() => navigateTo('dashboards')}
             onOpenInvoice={(order, tenantName) => setInvoiceState({ order, tenantName })}
             onNotify={showToast}
           />
@@ -392,7 +398,10 @@ function PlatformShell() {
             onRefreshTenants={loadPublicData}
             onOpenStorefront={(slug) => navigateTo('storefront', slug)}
             onOpenInvoice={(order, tenantName) => setInvoiceState({ order, tenantName })}
-            onGoBuilder={() => navigateTo('builder')}
+            onGoBuilder={(tId?: number) => {
+              setBuilderTenantId(tId ?? null);
+              navigateTo('builder');
+            }}
             onGoAiCenter={() => navigateTo('ai')}
             onNotify={showToast}
           />

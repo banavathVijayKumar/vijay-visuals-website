@@ -78,7 +78,7 @@ interface BusinessCommandCenterProps {
   tenant: TenantRecord;
   mode: 'command_center' | 'onboarding';
   onJumpTab: (tab: string) => void;
-  onGoBuilder: () => void;
+  onGoBuilder: (tenantId?: number) => void;
   onOpenStorefront: (slug: string) => void;
   onNotify: (msg: string) => void;
 }
@@ -269,7 +269,7 @@ export const BusinessCommandCenter: React.FC<BusinessCommandCenterProps> = ({
   };
 
   const handleStepAction = (action: string) => {
-    if (action === 'builder') return onGoBuilder();
+    if (action === 'builder') return onGoBuilder(tenant.id);
     if (action === 'storefront') return onOpenStorefront(tenant.slug);
     if (action === 'profile') return onJumpTab('help_center');
     onJumpTab(action);

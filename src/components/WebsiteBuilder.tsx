@@ -42,10 +42,95 @@ import groceryBanner from '../assets/images/store_grocery_organic_1795055803860.
 import studioBanner from '../assets/images/hero_vijay_studio_1795055804014.jpg';
 
 interface WebsiteBuilderProps {
+  initialTenantId?: number | null;
   onPublished: (tenant: TenantRecord) => void;
   onOpenStorefront: (slug: string) => void;
   onNotify: (msg: string) => void;
 }
+
+export type BuilderPlanTier =
+  | 'starter_website'
+  | 'website_only'
+  | 'ecommerce_website'
+  | 'website_pwa'
+  | 'enterprise_ai';
+
+export const PLAN_TIER_CONFIG: Record<
+  BuilderPlanTier,
+  {
+    code: string;
+    name: string;
+    base: number;
+    gst: number;
+    total: number;
+    baseStr: string;
+    gstStr: string;
+    totalStr: string;
+    highlight: string;
+    desc: string;
+  }
+> = {
+  starter_website: {
+    code: 'starter-website',
+    name: 'Starter Website Package',
+    base: 2999,
+    gst: 540,
+    total: 3539,
+    baseStr: '₹2,999',
+    gstStr: '₹540',
+    totalStr: '₹3,539',
+    highlight: 'Essential',
+    desc: 'Mobile-responsive business website across 36 industry templates, SEO & lead forms.',
+  },
+  website_only: {
+    code: 'business-website',
+    name: 'Business Website Package',
+    base: 7999,
+    gst: 1440,
+    total: 9439,
+    baseStr: '₹7,999',
+    gstStr: '₹1,440',
+    totalStr: '₹9,439',
+    highlight: 'Most Popular',
+    desc: 'Full website design, products, orders, gallery, publishing & custom domain connection.',
+  },
+  ecommerce_website: {
+    code: 'ecommerce-website',
+    name: 'E-Commerce Website Package',
+    base: 14999,
+    gst: 2700,
+    total: 17699,
+    baseStr: '₹14,999',
+    gstStr: '₹2,700',
+    totalStr: '₹17,699',
+    highlight: 'Storefront',
+    desc: 'Full e-commerce store with catalog, variants, stock alerts, coupons & GST invoices.',
+  },
+  website_pwa: {
+    code: 'website-plus-pwa',
+    name: 'Website + Branded PWA',
+    base: 22999,
+    gst: 4140,
+    total: 27139,
+    baseStr: '₹22,999',
+    gstStr: '₹4,140',
+    totalStr: '₹27,139',
+    highlight: 'Optional PWA',
+    desc: 'Everything in Business Website + installable mobile home-screen web app (PWA).',
+  },
+  enterprise_ai: {
+    code: 'custom-dev-enterprise',
+    name: 'Custom Dev & Enterprise AI',
+    base: 49999,
+    gst: 9000,
+    total: 58999,
+    baseStr: '₹49,999',
+    gstStr: '₹9,000',
+    totalStr: '₹58,999',
+    highlight: 'Enterprise',
+    desc: 'Custom workflows, dedicated AI engines, ERP sync & high-volume multi-branch routing.',
+  },
+};
 
 const BANNER_PRESETS = [
   { label: 'Luxury Fashion', url: fashionBanner },
@@ -128,6 +213,7 @@ function defaultModulesForCategory(cat: string): TenantModules {
 }
 
 export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
+  initialTenantId,
   onPublished,
   onOpenStorefront,
   onNotify,
@@ -135,6 +221,15 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   const { profile, ownedTenants, openAuthModal, signInWithGoogle, refreshProfile } = useAuth();
   const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [editingTenantId, setEditingTenantId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (initialTenantId && ownedTenants.length > 0) {
+      const found = ownedTenants.find((t) => t.id === initialTenantId);
+      if (found) {
+        loadExistingTenant(found);
+      }
+    }
+  }, [initialTenantId, ownedTenants]);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [purchaseModalTenantId, setPurchaseModalTenantId] = useState<number | null>(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
@@ -188,7 +283,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   const [galleryUploading, setGalleryUploading] = useState(false);
 
   // Plan, PWA & Checkout config
-  const [planTier, setPlanTier] = useState<'website_only' | 'website_pwa' | 'enterprise_ai'>('website_pwa');
+  const [planTier, setPlanTier] = useState<BuilderPlanTier>('website_only');
   const [pwaEnabled, setPwaEnabled] = useState(true);
   const [pwaAppName, setPwaAppName] = useState('Sri Lakshmi Silks');
   const [pwaShortName, setPwaShortName] = useState('LakshmiSilk');
@@ -371,9 +466,10 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     }
     setCheckoutBusy(true);
     try {
+      const selectedTier = PLAN_TIER_CONFIG[planTier] || PLAN_TIER_CONFIG.website_only;
       await initiatePlatformCheckout({
-        planCode: 'business-website',
-        planName: 'Business Website Package (₹7,999)',
+        planCode: selectedTier.code,
+        planName: `${selectedTier.name} (${selectedTier.totalStr})`,
         websiteId: purchaseModalTenantId
           ? String(purchaseModalTenantId)
           : editingTenantId
@@ -390,7 +486,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
           setSitePublished(true);
           await refreshProfile();
           setPublishedSlug(slug);
-          onNotify(`Payment verified! "${name}" is now live with the Business Website Package.`);
+          onNotify(`Payment verified! "${name}" is now live with the ${selectedTier.name}.`);
           if (verifyRes.verified) {
             const targetId = purchaseModalTenantId || editingTenantId;
             const existing = ownedTenants.find((t) => t.id === targetId);
@@ -1415,59 +1511,37 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
               <span className="text-[11px] text-[#8E8EA2]">Draft is free · Package activates upon live publishing</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-3">
-              {[
-                {
-                  id: 'website_only',
-                  name: 'Business Website Package',
-                  price: '₹7,999',
-                  gst: '+ 18% GST (Total ₹9,439)',
-                  highlight: 'Recommended',
-                  desc: 'Full website design, products, orders, gallery, publishing & custom domain connection.',
-                },
-                {
-                  id: 'website_pwa',
-                  name: 'Website + Branded PWA',
-                  price: '₹22,999',
-                  gst: '+ 18% GST (Total ₹27,139)',
-                  highlight: 'Optional PWA',
-                  desc: 'Everything in Business Website + installable mobile home-screen web app (PWA).',
-                },
-                {
-                  id: 'enterprise_ai',
-                  name: 'Custom Dev & Enterprise AI',
-                  price: '₹49,999',
-                  gst: '+ 18% GST (Total ₹58,999)',
-                  highlight: 'Enterprise',
-                  desc: 'Custom workflows, dedicated AI engines, ERP sync & high-volume multi-branch routing.',
-                },
-              ].map((tier) => (
-                <button
-                  key={tier.id}
-                  type="button"
-                  onClick={() => {
-                    setPlanTier(tier.id as typeof planTier);
-                    setPwaEnabled(tier.id !== 'website_only');
-                  }}
-                  className={`p-3 rounded-lg text-left border transition-all ${
-                    planTier === tier.id
-                      ? 'border-[#D4AF37] bg-[#16130C] text-white shadow-sm ring-1 ring-[#D4AF37]/50'
-                      : 'border-[#222232] bg-[#0A0A0F] text-[#9E9EB2] hover:border-[#333348]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-white">{tier.name}</span>
-                    <span className="text-[10px] font-semibold text-[#D4AF37] px-1.5 py-0.5 rounded bg-[#D4AF37]/15">
-                      {tier.highlight}
-                    </span>
-                  </div>
-                  <div className="flex items-baseline gap-1.5 mb-1.5 font-mono-tabular">
-                    <span className="text-sm font-bold text-[#ECC86A]">{tier.price}</span>
-                    <span className="text-[10px] text-[#7A7A8E]">{tier.gst}</span>
-                  </div>
-                  <p className="text-[10px] text-[#8E8EA2] line-clamp-2 leading-relaxed">{tier.desc}</p>
-                </button>
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 mb-3">
+              {(Object.keys(PLAN_TIER_CONFIG) as BuilderPlanTier[]).map((tierKey) => {
+                const tier = PLAN_TIER_CONFIG[tierKey];
+                return (
+                  <button
+                    key={tierKey}
+                    type="button"
+                    onClick={() => {
+                      setPlanTier(tierKey);
+                      setPwaEnabled(tierKey === 'website_pwa' || tierKey === 'enterprise_ai');
+                    }}
+                    className={`p-3 rounded-lg text-left border transition-all ${
+                      planTier === tierKey
+                        ? 'border-[#D4AF37] bg-[#16130C] text-white shadow-sm ring-1 ring-[#D4AF37]/50'
+                        : 'border-[#222232] bg-[#0A0A0F] text-[#9E9EB2] hover:border-[#333348]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-white">{tier.name}</span>
+                      <span className="text-[10px] font-semibold text-[#D4AF37] px-1.5 py-0.5 rounded bg-[#D4AF37]/15">
+                        {tier.highlight}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5 mb-1.5 font-mono-tabular">
+                      <span className="text-sm font-bold text-[#ECC86A]">{tier.baseStr}</span>
+                      <span className="text-[10px] text-[#7A7A8E]">+ 18% GST (Total {tier.totalStr})</span>
+                    </div>
+                    <p className="text-[10px] text-[#8E8EA2] line-clamp-2 leading-relaxed">{tier.desc}</p>
+                  </button>
+                );
+              })}
             </div>
 
             {planTier !== 'website_only' && (
@@ -2054,67 +2128,42 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
             </p>
 
             {/* Selected Package Details */}
-            <div className="rounded-lg border border-[#232332] bg-[#12121B] p-4 mb-4 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-[#D4AF37]/20 text-[#ECC86A] mb-1">
-                    ACTIVE SELECTION
-                  </span>
-                  <h3 className="font-luxury text-base font-bold text-white">
-                    {planTier === 'enterprise_ai'
-                      ? 'Custom Dev & Enterprise AI'
-                      : planTier === 'website_pwa'
-                        ? 'Website + Branded PWA'
-                        : 'Business Website Package'}
-                  </h3>
-                  <p className="text-[11px] text-[#A2A2B6]">Publishing target: /site/{slug}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono-tabular text-xl font-bold text-[#ECC86A]">
-                    {planTier === 'enterprise_ai'
-                      ? '₹49,999'
-                      : planTier === 'website_pwa'
-                        ? '₹22,999'
-                        : '₹7,999'}
-                  </p>
-                  <p className="text-[10px] text-[#7A7A8E]">+ 18% GST</p>
-                </div>
-              </div>
+            {(() => {
+              const cur = PLAN_TIER_CONFIG[planTier] || PLAN_TIER_CONFIG.website_only;
+              return (
+                <div className="rounded-lg border border-[#232332] bg-[#12121B] p-4 mb-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-[#D4AF37]/20 text-[#ECC86A] mb-1">
+                        ACTIVE SELECTION
+                      </span>
+                      <h3 className="font-luxury text-base font-bold text-white">{cur.name}</h3>
+                      <p className="text-[11px] text-[#A2A2B6]">Publishing target: /site/{slug}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono-tabular text-xl font-bold text-[#ECC86A]">{cur.baseStr}</p>
+                      <p className="text-[10px] text-[#7A7A8E]">+ 18% GST</p>
+                    </div>
+                  </div>
 
-              {/* Price Calculation Breakdown */}
-              <div className="border-t border-[#1E1E2C] pt-2.5 space-y-1.5 font-mono-tabular text-[11px]">
-                <div className="flex justify-between text-[#A0A0B4]">
-                  <span>Package Base Price:</span>
-                  <span>
-                    {planTier === 'enterprise_ai'
-                      ? '₹49,999'
-                      : planTier === 'website_pwa'
-                        ? '₹22,999'
-                        : '₹7,999'}
-                  </span>
+                  {/* Price Calculation Breakdown */}
+                  <div className="border-t border-[#1E1E2C] pt-2.5 space-y-1.5 font-mono-tabular text-[11px]">
+                    <div className="flex justify-between text-[#A0A0B4]">
+                      <span>Package Base Price:</span>
+                      <span>{cur.baseStr}</span>
+                    </div>
+                    <div className="flex justify-between text-[#A0A0B4]">
+                      <span>GST (18% Goods &amp; Services Tax):</span>
+                      <span>{cur.gstStr}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-[#1E1E2C]">
+                      <span>Total Amount Payable:</span>
+                      <span className="text-[#ECC86A]">{cur.totalStr}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between text-[#A0A0B4]">
-                  <span>GST (18% Goods &amp; Services Tax):</span>
-                  <span>
-                    {planTier === 'enterprise_ai'
-                      ? '₹9,000'
-                      : planTier === 'website_pwa'
-                        ? '₹4,140'
-                        : '₹1,440'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-[#1E1E2C]">
-                  <span>Total Amount Payable:</span>
-                  <span className="text-[#ECC86A]">
-                    {planTier === 'enterprise_ai'
-                      ? '₹58,999'
-                      : planTier === 'website_pwa'
-                        ? '₹27,139'
-                        : '₹9,439'}
-                  </span>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Package Boundaries & Ownership Disclosures */}
             <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 p-3 mb-4 text-[10px] text-[#C4B79A] leading-relaxed space-y-1">
@@ -2143,11 +2192,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                     <CreditCard className="w-4 h-4" />
                     <span>
                       Pay via Razorpay &amp; Publish (
-                      {planTier === 'enterprise_ai'
-                        ? '₹58,999'
-                        : planTier === 'website_pwa'
-                          ? '₹27,139'
-                          : '₹9,439'}
+                      {(PLAN_TIER_CONFIG[planTier] || PLAN_TIER_CONFIG.website_only).totalStr}
                       )
                     </span>
                   </>

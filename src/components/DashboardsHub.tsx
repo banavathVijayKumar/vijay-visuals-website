@@ -66,6 +66,7 @@ import { InventoryAndHrOps } from './InventoryAndHrOps';
 import { HelpAndSuccessCenter } from './HelpAndSuccessCenter';
 import { CustomerSupportCenter } from './CustomerSupportCenter';
 import { CustomerLogoCustomizer } from './CustomerLogoCustomizer';
+import { CustomerWebsiteEditor } from './CustomerWebsiteEditor';
 import { BusinessLocationsManager } from './BusinessLocationsManager';
 import { DeliveryGpsSharer } from './DeliveryGpsSharer';
 import { DomainManagementCenter } from './DomainManagementCenter';
@@ -84,7 +85,7 @@ interface DashboardsHubProps {
   onRefreshTenants: () => void;
   onOpenStorefront: (slug: string) => void;
   onOpenInvoice: (order: OrderRecord, tenantName: string) => void;
-  onGoBuilder: () => void;
+  onGoBuilder: (tenantId?: number) => void;
   onGoAiCenter: () => void;
   onNotify: (msg: string) => void;
 }
@@ -142,6 +143,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   const [selectedTenantId, setSelectedTenantId] = useState<number | null>(null);
   const [ownerSection, setOwnerSection] = useState<
     | 'command_center'
+    | 'website_editor'
     | 'onboarding'
     | 'overview'
     | 'products'
@@ -1183,7 +1185,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
           <div className="pt-3 border-t border-[#1D1D28] space-y-2">
             <button
               type="button"
-              onClick={onGoBuilder}
+              onClick={() => onGoBuilder()}
               className="w-full py-2 px-3 rounded-md border border-[#282838] text-xs text-[#D5D5E2] hover:border-[#D4AF37]"
             >
               + New Business Website
@@ -1222,13 +1224,23 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       ))}
                     </select>
                     {ownerData && (
-                      <button
-                        type="button"
-                        onClick={() => onOpenStorefront(ownerData.tenant.slug)}
-                        className="px-3 py-2 rounded-md border border-[#D4AF37]/40 text-xs text-[#ECC86A]"
-                      >
-                        View Store
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setOwnerSection('website_editor')}
+                          className="px-3 py-2 rounded-md bg-gold-gradient text-[#08080A] text-xs font-bold hover:opacity-95 transition-opacity flex items-center gap-1.5 shadow"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Edit Website</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onOpenStorefront(ownerData.tenant.slug)}
+                          className="px-3 py-2 rounded-md border border-[#D4AF37]/40 text-xs text-[#ECC86A] hover:bg-[#16140D] transition-colors"
+                        >
+                          View Store
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}
@@ -1241,7 +1253,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   </p>
                   <button
                     type="button"
-                    onClick={onGoBuilder}
+                    onClick={() => onGoBuilder()}
                     className="px-5 py-2.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold"
                   >
                     Launch Website Builder
@@ -1307,6 +1319,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   <div className="flex flex-wrap gap-2 border-b border-[#1E1E2B] pb-3">
                     {[
                       { id: 'command_center', label: 'Daily Command Center' },
+                      { id: 'website_editor', label: 'Edit Website & Content' },
                       { id: 'onboarding', label: '12-Step Setup' },
                       { id: 'overview', label: 'Orders & Dispatch' },
                       { id: 'products', label: 'Products & Catalog' },
@@ -1354,6 +1367,19 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       onJumpTab={(tab) => setOwnerSection(tab as typeof ownerSection)}
                       onGoBuilder={onGoBuilder}
                       onOpenStorefront={onOpenStorefront}
+                      onNotify={onNotify}
+                    />
+                  )}
+
+                  {ownerSection === 'website_editor' && (
+                    <CustomerWebsiteEditor
+                      tenant={ownerData.tenant}
+                      onRefreshTenant={() => {
+                        if (selectedTenantId) loadOwnerOverview(selectedTenantId);
+                        onRefreshTenants();
+                      }}
+                      onOpenStorefront={onOpenStorefront}
+                      onGoBuilder={onGoBuilder}
                       onNotify={onNotify}
                     />
                   )}
@@ -2903,7 +2929,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={onGoBuilder}
+                    onClick={() => onGoBuilder()}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold hover:opacity-95 shadow-sm"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -2918,7 +2944,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                     </p>
                     <button
                       type="button"
-                      onClick={onGoBuilder}
+                      onClick={() => onGoBuilder()}
                       className="px-4 py-2 rounded-md border border-[#D4AF37]/50 text-[#ECC86A] text-xs font-medium hover:bg-[#D4AF37] hover:text-[#08080A] transition-colors"
                     >
                       Start Free Draft in Website Builder
@@ -2965,7 +2991,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                             <div className="grid grid-cols-2 gap-1.5">
                               <button
                                 type="button"
-                                onClick={onGoBuilder}
+                                onClick={() => onGoBuilder(t.id)}
                                 className="py-1 px-2 rounded border border-[#262638] text-[11px] text-[#A5A5B8] hover:text-white hover:border-[#D4AF37]/40 text-center"
                               >
                                 Edit Builder
@@ -3475,7 +3501,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                     </div>
                     <button
                       type="button"
-                      onClick={onGoBuilder}
+                      onClick={() => onGoBuilder()}
                       className="px-4 py-2.5 rounded-md bg-gold-gradient text-[#08080A] font-semibold shrink-0"
                     >
                       Launch Website Builder
