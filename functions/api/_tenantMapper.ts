@@ -5,6 +5,8 @@
 // NEVER invents fake product records, tenant IDs, payment settings, or data.
 // ============================================================================
 
+import { getPackageMonthlyAiCredits } from './_aiCredits';
+
 export interface PublicationRow {
   rowid?: number | null;
   website_id: string;
@@ -281,6 +283,7 @@ export function mapPublicationToTenant(
     payout?: SellerPayoutEnrichment | null;
     globalSettings?: TenantGlobalEnrichment | null;
     razorpayOnlineReady?: boolean;
+    aiCredits?: { limit: number; used: number } | null;
   }
 ): MappedTenantRecord {
   const profile = enrichment?.profile || null;
@@ -490,8 +493,9 @@ export function mapPublicationToTenant(
     pwaShortName: cleanString(parsed.pwaShortName, 24) || name.slice(0, 12),
     pwaThemeColor: cleanColor(parsed.pwaThemeColor, primaryColor),
     pwaLicenseKey: '',
-    aiCreditsLimit: 0,
-    aiCreditsUsed: 0,
+    aiCreditsLimit:
+      enrichment?.aiCredits?.limit ?? getPackageMonthlyAiCredits(planTier),
+    aiCreditsUsed: enrichment?.aiCredits?.used ?? 0,
     deliveryFee: cleanNonNegativeNumber(parsed.deliveryFee),
     deliveryCommissionPct: cleanNonNegativeNumber(parsed.deliveryCommissionPct),
     codEnabled,

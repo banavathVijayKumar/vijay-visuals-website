@@ -1,6 +1,7 @@
 // ============================================================================
 // POST /api/owner/tenants/:tenantId/ai-assistant — Live Grounded Q&A Assistant
 // Answers business queries grounded strictly in the tenant's real D1 data.
+// Enforces server-side credit limits and records to tenant_ai_usage ledger.
 // ============================================================================
 
 import { requireUser } from '../../../_auth';
@@ -8,12 +9,14 @@ import {
   PagesContext,
   callGeminiEdge,
   checkRateLimit,
+  formatAiError,
   handleOptions,
   jsonResponse,
   parseJsonBody,
   sanitizeText,
 } from '../../../_shared';
 import { requireTenantOwnerAccess } from '../../../_tenantAccess';
+import { executeWithAiCreditDeduction } from '../../../_aiCredits';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -33,7 +36,7 @@ export async function onRequestPost(
   ]);
   if (!access.ok) return access.response;
 
-  const rl = await checkRateLimit(env, `ai_asst:${auth.user.id}`, 25, 3600);
+  const rl = await checkRateLimit(env, `ai_asst:${auth.user.id}`, 30, 3600);
   if (!rl.allowed) {
     return jsonResponse(
       { error: 'Hourly AI Assistant request limit reached. Please try again later.' },
@@ -41,7 +44,7 @@ export async function onRequestPost(
     );
   }
 
-  const body = await parseJsonBody<{ question?: string; language?: string }>(request);
+  const body = await parseJsonBody<{ question?: string; language?: string; requestId?: string }>(request);
   const question = sanitizeText(body?.question, 1000);
   const language = sanitizeText(body?.language || 'en', 20);
 
@@ -143,18 +146,49 @@ Owner Question: "${question}"
 Provide a direct, practical, and helpful answer for the business owner:`;
 
   try {
-    const text = await callGeminiEdge(prompt, env, { systemInstruction });
-    return jsonResponse({ answer: text, creditsUsed: 1 });
-  } catch (err) {
-    // Grounded rule-based fallback when Gemini API key is unset
-    let fallback = `Based on your live store data for ${row.business_name || row.public_slug}:\n`;
-    fallback += `• Total Revenue: ₹${totalRevenue.toLocaleString('en-IN')} across ${orderCount} orders (${pendingOrders} pending fulfillment).\n`;
-    fallback += `• Catalog Health: ${productCount} products listed. Low stock items: ${lowStockSummary}.\n`;
-    if (appointmentsCount > 0) {
-      fallback += `• Bookings: ${appointmentsCount} confirmed appointments scheduled.\n`;
-    }
-    fallback += `\nYour store is operating normally on Cloudflare D1. For deep neural summaries, ensure GEMINI_API_KEY is configured.`;
+    const result = await executeWithAiCreditDeduction(env, {
+      websiteId,
+      tenantRowId: row.rowid ? Number(row.rowid) : undefined,
+      userId: auth.user.id,
+      serviceSlug: 'owner-ai-assistant',
+      requestId: body?.requestId,
+      creditsNeeded: 1,
+      fallbackPlanTier: parsed.planTier,
+      promptSnippet: `Assistant: ${question.slice(0, 80)}`,
+      executeAiCall: async () => {
+        const hasKey = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY);
+        if (!hasKey) {
+          let fallback = `Based on your live store data for ${row.business_name || row.public_slug}:\n`;
+          fallback += `• Total Revenue: ₹${totalRevenue.toLocaleString('en-IN')} across ${orderCount} orders (${pendingOrders} pending fulfillment).\n`;
+          fallback += `• Catalog Health: ${productCount} products listed. Low stock items: ${lowStockSummary}.\n`;
+          if (appointmentsCount > 0) {
+            fallback += `• Bookings: ${appointmentsCount} confirmed appointments scheduled.\n`;
+          }
+          return fallback;
+        }
+        return callGeminiEdge(prompt, env, { systemInstruction });
+      },
+    });
 
-    return jsonResponse({ answer: fallback, creditsUsed: 1 });
+    return jsonResponse({
+      answer: result.output,
+      text: result.output,
+      creditsUsed: result.creditsUsed,
+      creditsRemaining: result.creditsRemaining,
+      isDuplicate: result.isDuplicate,
+      quota: result.quota,
+    });
+  } catch (err: any) {
+    if (err?.status === 403 || err?.code === 'AI_QUOTA_EXHAUSTED') {
+      return jsonResponse(
+        {
+          error: err.message,
+          code: 'AI_QUOTA_EXHAUSTED',
+          quota: err.quota,
+        },
+        403
+      );
+    }
+    return jsonResponse({ error: formatAiError(err) }, 502);
   }
 }

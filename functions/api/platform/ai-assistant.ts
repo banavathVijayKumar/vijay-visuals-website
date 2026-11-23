@@ -5,23 +5,25 @@
 // - Tool Modes: assistant, website_content, product_description,
 //   seo_suggestions, business_names, promo_copy, social_media,
 //   customer_support, business_insights
-// - Uses @google/genai with model 'gemini-4-hydrogen'
+// - Uses unified server-side Gemini Edge integration with stable model fallback
 // - Grounded ONLY in the authenticated tenant's real D1 database counts
-// - Enforces monthly plan AI credit limits via vv_ai_usage
+// - Enforces monthly plan AI credit limits via tenant_ai_usage
 // - Requires explicit user confirmation before financial/bulk/publish actions
 // ============================================================================
 
-import { GoogleGenAI } from '@google/genai';
 import { requireUser, requireWebsiteAccess } from '../_auth';
 import {
   PagesContext,
+  callGeminiEdge,
   checkRateLimit,
   errorJson,
+  formatAiError,
   json,
   parseJsonBody,
   randomHex,
   sanitizeText,
 } from '../_shared';
+import { executeWithAiCreditDeduction } from '../_aiCredits';
 
 const SENSITIVE_ACTION_PATTERN = /\b(delete|refund|charge|payout|send bulk|blast|publish all|cancel all)\b/i;
 
@@ -69,6 +71,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     language?: string;
     tool?: string;
     confirmedAction?: boolean;
+    requestId?: string;
   }>(request);
 
   if (!body || !body.websiteId || !body.prompt) {
@@ -101,35 +104,6 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     });
   }
 
-  // Enforce monthly plan AI credit limit
-  const [planLimitRow, usageRow] = await Promise.all([
-    env.DB.prepare(
-      `SELECT sp.monthly_ai_credits
-       FROM tenant_subscriptions ts
-       INNER JOIN subscription_plans sp ON sp.code = ts.plan_code
-       WHERE ts.website_id = ? AND ts.status IN ('trial', 'active')
-       ORDER BY ts.id DESC LIMIT 1`
-    )
-      .bind(websiteId)
-      .first<{ monthly_ai_credits: number }>(),
-    env.DB.prepare(
-      `SELECT COUNT(*) AS used_count FROM vv_ai_usage
-       WHERE user_id = ? AND created_at >= datetime('now', '-30 days')`
-    )
-      .bind(auth.user.id)
-      .first<{ used_count: number }>()
-      .catch(() => ({ used_count: 0 })),
-  ]);
-
-  const monthlyCredits = planLimitRow?.monthly_ai_credits ?? 50;
-  const usedCredits = Number(usageRow?.used_count || 0);
-  if (!auth.user.isSuperAdmin && usedCredits >= monthlyCredits) {
-    return errorJson(
-      `Monthly AI assistant credit limit reached (${usedCredits}/${monthlyCredits}). Upgrade your plan for additional AI credits.`,
-      429
-    );
-  }
-
   // Strictly gather ONLY this tenant's verified real numbers from D1 (zero cross-tenant leakage)
   const [prodCount, orderStats, leadCount, domainCount] = await Promise.all([
     env.DB.prepare('SELECT COUNT(*) AS cnt FROM store_products WHERE website_id = ?')
@@ -159,8 +133,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     liveCustomDomains: Number(domainCount?.cnt || 0),
   };
 
-  const apiKey = env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
-  if (!apiKey) {
+  const hasApiKey = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY);
+  if (!hasApiKey) {
     return json(
       {
         status: 'setup_required',
@@ -178,63 +152,44 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const languageMeta = AI_SUPPORTED_LANGUAGES[language];
   const toolInstruction = AI_TOOL_MODES[tool];
 
+  const systemInstruction = [
+    'You are the Vijay Visuals Business Assistant (Made in India. Built for the World.) for a single business tenant.',
+    `ACTIVE TOOL MODE (${tool}): ${toolInstruction}`,
+    `LANGUAGE (${languageMeta.name}): ${languageMeta.instruction}`,
+    'STRICT FACTUALITY RULE: Use ONLY the verified tenant metrics below. Never invent revenue numbers, customer counts, Google reviews, government certifications, or #1 SEO rankings, and never claim external actions were executed.',
+    `VERIFIED TENANT METRICS JSON: ${JSON.stringify(tenantContext)}`,
+  ].join('\n');
+
   try {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
+    const result = await executeWithAiCreditDeduction(env, {
+      websiteId,
+      userId: auth.user.id,
+      serviceSlug: `platform-assistant:${tool}`,
+      requestId: body?.requestId,
+      creditsNeeded: 1,
+      promptSnippet: `${tool}: ${prompt.slice(0, 80)}`,
+      executeAiCall: async () => {
+        return callGeminiEdge(prompt, env, { systemInstruction });
       },
     });
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
-      contents: prompt,
-      config: {
-        systemInstruction: [
-          'You are the Vijay Visuals Business Assistant (Made in India. Built for the World.) for a single business tenant.',
-          `ACTIVE TOOL MODE (${tool}): ${toolInstruction}`,
-          `LANGUAGE (${languageMeta.name}): ${languageMeta.instruction}`,
-          'STRICT FACTUALITY RULE: Use ONLY the verified tenant metrics below. Never invent revenue numbers, customer counts, Google reviews, government certifications, or #1 SEO rankings, and never claim external actions were executed.',
-          `VERIFIED TENANT METRICS JSON: ${JSON.stringify(tenantContext)}`,
-        ].join('\n'),
-      },
-    });
-
-    const replyText = (response.text || '').trim();
-
-    // Meter usage in existing vv_ai_usage table
-    try {
-      await env.DB.prepare(
-        `INSERT INTO vv_ai_usage (id, user_id, service_slug, prompt_tokens, completion_tokens, status, created_at)
-         VALUES (?, ?, ?, ?, ?, 'success', datetime('now'))`
-      )
-        .bind(
-          `ai_${randomHex(10)}`,
-          auth.user.id,
-          `ai_${tool}`,
-          Math.ceil(prompt.length / 4),
-          Math.ceil(replyText.length / 4)
-        )
-        .run();
-    } catch {
-      // Non-fatal if legacy vv_ai_usage columns differ
-    }
 
     return json({
-      reply: replyText,
-      model: 'gemini-4-hydrogen',
+      reply: result.output,
+      model: env.GEMINI_MODEL || 'gemini-1.5-flash',
       language,
       tool,
-      creditsUsed: usedCredits + 1,
-      creditsLimit: monthlyCredits,
+      creditsUsed: result.creditsUsed,
+      creditsLimit: result.quota.allowance,
+      creditsRemaining: result.creditsRemaining,
       tenantContext,
     });
-  } catch (err) {
-    return errorJson(
-      `Gemini AI request failed: ${err instanceof Error ? err.message : 'Unknown upstream error'}`,
-      502
-    );
+  } catch (err: any) {
+    if (err?.status === 403 || err?.code === 'AI_QUOTA_EXHAUSTED') {
+      return errorJson(
+        err.message || 'Monthly AI credit limit reached for your plan.',
+        403
+      );
+    }
+    return errorJson(formatAiError(err), 502);
   }
 }

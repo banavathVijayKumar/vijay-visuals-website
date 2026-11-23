@@ -415,17 +415,29 @@ export function safeParseJson(text: string): any {
   }
 }
 
+import {
+  callGeminiWithFallback,
+  redactSecretsAndPii,
+  inspectGeminiModelAvailability,
+} from './_gemini';
+
+export { redactSecretsAndPii, inspectGeminiModelAvailability };
+
 export function formatAiError(error: any): string {
-  const msg = typeof error === 'string' ? error : error?.message || '';
+  const rawMsg = typeof error === 'string' ? error : error?.message || '';
+  const msg = redactSecretsAndPii(rawMsg);
   if (!msg) return 'AI service temporarily unavailable. Please try again.';
   if (/503|UNAVAILABLE|high demand|overloaded/i.test(msg)) {
-    return 'AI service is temporarily busy. Please try again shortly.';
+    return `AI service is temporarily busy. (Upstream: ${msg})`;
   }
   if (/429|quota|RESOURCE_EXHAUSTED|rate.?limit/i.test(msg)) {
-    return 'AI free-tier request limit reached. Please wait and try again.';
+    return `AI generation quota/rate limit reached. (Upstream: ${msg})`;
+  }
+  if (/API key.*not configured/i.test(msg)) {
+    return 'Integration Required: GEMINI_API_KEY secret is not configured in Cloudflare Pages.';
   }
   if (/API key|authentication|unauthorized|401|403/i.test(msg)) {
-    return 'AI provider authentication failed. Please check the server-side API secret.';
+    return `AI provider authentication failed. (Upstream: ${msg})`;
   }
   return msg;
 }
@@ -456,42 +468,8 @@ async function callGeminiDirect(
   env: CloudflareEnv,
   config?: { responseMimeType?: string; systemInstruction?: string }
 ): Promise<string> {
-  const apiKey = env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY (or GOOGLE_API_KEY) secret is not configured in Cloudflare Pages.');
-  const model = env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
-  const normalized = normalizeGeminiContents(prompt);
-  if (!normalized.contents.length) throw new Error('No valid user content was provided to Gemini.');
-  const systemText = [config?.systemInstruction, normalized.systemText].filter(Boolean).join('\n\n');
-  const payload: any = { contents: normalized.contents };
-  if (systemText) payload.systemInstruction = { parts: [{ text: systemText }] };
-  if (config?.responseMimeType) payload.generationConfig = { responseMimeType: config.responseMimeType };
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      }
-    );
-    const result: any = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message = result?.error?.message || `Request failed (${response.status})`;
-      throw new Error(`Gemini API ${response.status}: ${message}`);
-    }
-    const parts = result?.candidates?.[0]?.content?.parts || [];
-    const text = parts.map((part: any) => part?.text || '').join('\n').trim();
-    if (!text) throw new Error('Gemini returned an empty response.');
-    return text;
-  } finally {
-    clearTimeout(timeout);
-  }
+  const result = await callGeminiWithFallback(prompt, env, config);
+  return result.text;
 }
 
 export async function callClaudeEdge(

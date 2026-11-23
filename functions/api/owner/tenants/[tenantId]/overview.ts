@@ -12,6 +12,7 @@ import {
   requireTenantOwnerAccess,
 } from '../../../_tenantAccess';
 import { mapPublicationToTenant } from '../../../_tenantMapper';
+import { getTenantAiQuota } from '../../../_aiCredits';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -32,7 +33,15 @@ export async function onRequestGet(
   if (!access.ok) return access.response;
 
   const { row, parsed } = access;
-  const tenant = mapPublicationToTenant(row, parsed);
+  const aiQuota = await getTenantAiQuota(
+    env,
+    row.website_id,
+    row.rowid ? Number(row.rowid) : undefined,
+    parsed.planTier
+  );
+  const tenant = mapPublicationToTenant(row, parsed, {
+    aiCredits: { limit: aiQuota.allowance, used: aiQuota.used },
+  });
   const tenantRowId = tenant.id;
 
   const products: Array<Record<string, unknown>> = [];
@@ -306,5 +315,11 @@ export async function onRequestGet(
     staff,
     workflows,
     logs,
+    aiCredits: {
+      limit: aiQuota.allowance,
+      used: aiQuota.used,
+      remaining: aiQuota.remaining,
+      billingPeriod: aiQuota.billingPeriod,
+    },
   });
 }

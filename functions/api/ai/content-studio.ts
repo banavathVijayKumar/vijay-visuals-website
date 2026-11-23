@@ -1,6 +1,7 @@
 // ============================================================================
 // POST /api/ai/content-studio — Gemini AI Multi-Mode Business Content Studio
 // Generates SEO metadata, blog articles, ad campaigns, and marketing poster briefs.
+// Enforces server-side credit limits and records to tenant_ai_usage ledger.
 // ============================================================================
 
 import { requireUser } from '../_auth';
@@ -14,6 +15,7 @@ import {
   parseJsonBody,
   sanitizeText,
 } from '../_shared';
+import { executeWithAiCreditDeduction } from '../_aiCredits';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -37,6 +39,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     mode?: string;
     topic?: string;
     language?: string;
+    requestId?: string;
   }>(request);
 
   const mode = sanitizeText(body?.mode || 'seo_metadata', 40);
@@ -49,25 +52,35 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   // Load tenant metadata if tenantId is provided
   let businessContext = '';
+  let websiteId = '';
+  let tenantRowId: number | undefined;
+  let fallbackPlanTier = 'business-website';
+
   if (env.DB && body?.tenantId) {
     try {
       const isNum = typeof body.tenantId === 'number' || /^\d+$/.test(String(body.tenantId));
       let row: Record<string, any> | null = null;
       if (isNum) {
         row = await env.DB.prepare(
-          `SELECT business_name, public_slug, website_json FROM customer_website_publications WHERE rowid = ? OR website_id = ? LIMIT 1`
+          `SELECT rowid, website_id, business_name, public_slug, website_json FROM customer_website_publications WHERE rowid = ? OR website_id = ? LIMIT 1`
         )
           .bind(Number(body.tenantId), String(body.tenantId))
           .first();
       } else {
         row = await env.DB.prepare(
-          `SELECT business_name, public_slug, website_json FROM customer_website_publications WHERE public_slug = ? OR website_id = ? LIMIT 1`
+          `SELECT rowid, website_id, business_name, public_slug, website_json FROM customer_website_publications WHERE public_slug = ? OR website_id = ? LIMIT 1`
         )
           .bind(String(body.tenantId), String(body.tenantId))
           .first();
       }
       if (row) {
+        websiteId = String(row.website_id || '');
+        tenantRowId = row.rowid ? Number(row.rowid) : undefined;
         businessContext = `Business: "${row.business_name || row.public_slug}".`;
+        try {
+          const parsed = JSON.parse(row.website_json || '{}');
+          if (parsed.planTier) fallbackPlanTier = parsed.planTier;
+        } catch {}
       }
     } catch {}
   }
@@ -147,33 +160,43 @@ Generate a detailed Visual Poster & Banner Design Brief:
   }
 
   try {
-    const text = await callGeminiEdge(prompt, env, { systemInstruction });
-    return jsonResponse({
-      output: text,
-      text,
-      creditsUsed: 1,
+    const result = await executeWithAiCreditDeduction(env, {
+      websiteId: websiteId || `user_${auth.user.id}`,
+      tenantRowId,
+      userId: auth.user.id,
+      serviceSlug: `content-studio:${mode}`,
+      requestId: body?.requestId,
+      creditsNeeded: 1,
+      fallbackPlanTier,
+      promptSnippet: `${mode}: ${topic.slice(0, 80)}`,
+      executeAiCall: async () => {
+        const hasKey = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY);
+        if (!hasKey) {
+          return `=== VIJAY VISUALS AI CONTENT STUDIO ===\nMode: ${mode.toUpperCase()}\nTopic: ${topic}\nLanguage: ${language.toUpperCase()}\n\n1. Content Overview:\nProfessional marketing copy generated for "${topic}".\n- Primary Headline: ${topic} — Exclusive Collection & Premium Services\n- Value Proposition: Crafted with precision, verified quality, and seamless direct delivery.\n- Call To Action: Visit our official storefront or connect on WhatsApp for instant orders.`;
+        }
+        return callGeminiEdge(prompt, env, { systemInstruction });
+      },
     });
-  } catch (err) {
-    // If external Gemini API is temporarily unavailable, generate structured high quality fallback
-    const fallbackText = `=== VIJAY VISUALS AI CONTENT STUDIO ===
-Mode: ${mode.toUpperCase()}
-Topic: ${topic}
-Language: ${language.toUpperCase()}
-
-1. Overview:
-Comprehensive marketing copy and structured content generated for "${topic}".
-
-2. Recommended Content:
-- Headline: ${topic} — Exclusive Collection & Premium Services
-- Key Highlight: Crafted with precision, verified quality, and seamless direct delivery.
-- Call To Action: Visit our official storefront or connect on WhatsApp for instant inquiries.
-
-(AI generation served via platform edge template fallback. Connect GEMINI_API_KEY for dynamic real-time neural expansion.)`;
 
     return jsonResponse({
-      output: fallbackText,
-      text: fallbackText,
-      creditsUsed: 1,
+      output: result.output,
+      text: result.output,
+      creditsUsed: result.creditsUsed,
+      creditsRemaining: result.creditsRemaining,
+      isDuplicate: result.isDuplicate,
+      quota: result.quota,
     });
+  } catch (err: any) {
+    if (err?.status === 403 || err?.code === 'AI_QUOTA_EXHAUSTED') {
+      return jsonResponse(
+        {
+          error: err.message,
+          code: 'AI_QUOTA_EXHAUSTED',
+          quota: err.quota,
+        },
+        403
+      );
+    }
+    return jsonResponse({ error: formatAiError(err) }, 502);
   }
 }
