@@ -1,25 +1,17 @@
 // ============================================================================
-// GET /api/payments/config — Non-Secret Razorpay Readiness Status
-// Never exposes RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, or raw keys.
+// GET /api/payments/config — Cashfree Payment Architecture & Readiness Status
+// Cashfree Payments is the sole payment gateway across Vijay Visuals.
+// Never exposes CASHFREE_CLIENT_SECRET, CASHFREE_WEBHOOK_SECRET, or raw keys.
 // ============================================================================
 
 import { PagesContext, json } from '../_shared';
-import { getEdgeRazorpayStatus } from './_razorpay';
 import { getEdgeCashfreeStatus } from './_cashfree';
 
 export async function onRequestGet(context: PagesContext): Promise<Response> {
-  const rzpStatus = getEdgeRazorpayStatus(context.env);
   const cfStatus = getEdgeCashfreeStatus(context.env);
 
   return json({
-    razorpay: {
-      configured: rzpStatus.configured,
-      mode: rzpStatus.mode,
-      webhookConfigured: rzpStatus.webhookConfigured,
-      liveApproved: rzpStatus.liveApproved,
-      routeEnabled: rzpStatus.routeEnabled,
-      message: rzpStatus.message,
-    },
+    gateway: 'Cashfree Payments',
     cashfree: {
       configured: cfStatus.configured,
       mode: cfStatus.mode,
@@ -28,10 +20,10 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       webhookUrl: 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree',
       message: cfStatus.message,
     },
-    moneyFlowPolicy: {
+    settlementPolicy: {
       platformPaymentsRecipient: 'Vijay Visuals Official Accounts',
       sellerCustomerPaymentsPolicy:
-        'Shop owner customer payments are strictly separated and never settle into Vijay Visuals personal account without verified Route / Merchant routing.',
+        'Customer store payments are strictly segregated. Seller split settlement is pending merchant Cashfree Easy Split activation.',
     },
   });
 }

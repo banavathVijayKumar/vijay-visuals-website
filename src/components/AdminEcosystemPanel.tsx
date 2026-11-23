@@ -74,19 +74,19 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
   if (loading) {
     return (
       <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-8 text-center text-xs text-[#9E9EB2]">
-        Loading Razorpay payments, Seller Route KYC queue & platform announcements...
+        Loading Cashfree payments, Seller Settlement queue & platform announcements...
       </div>
     );
   }
 
   return (
     <div className="space-y-6 text-xs">
-      {/* Razorpay & Webhook Health */}
+      {/* Cashfree & Webhook Health */}
       <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-5 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="font-semibold text-[#ECC86A] flex items-center gap-2">
             <ShieldCheck className="w-4 h-4" />
-            <span>Razorpay Merchant & Webhook Security Status</span>
+            <span>Cashfree Payments &amp; Webhook Security Status</span>
           </p>
           <p className="text-[#A3A3B5] mt-1">{razorpay?.message}</p>
         </div>
@@ -191,7 +191,7 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
           </h3>
           {payments.length === 0 ? (
             <p className="text-[#8E8EA2]">
-              No Razorpay platform payments recorded yet. Configure Razorpay Test Mode keys in Secrets to accept verified platform purchases.
+              No Cashfree platform payments recorded yet. Configure Cashfree Sandbox credentials in Secrets to accept verified platform purchases.
             </p>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -230,14 +230,14 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
         </div>
       </div>
 
-      {/* Seller Razorpay Route KYC Verification & Platform Commission Control */}
+      {/* Seller Cashfree Easy Split & Platform Commission Control */}
       <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-5 space-y-4">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
           <Wallet className="w-4 h-4 text-[#D4AF37]" />
-          <span>Seller Razorpay Route KYC & Commission Control ({sellers.length})</span>
+          <span>Seller Payouts &amp; Easy Split Commission Control ({sellers.length})</span>
         </h3>
         {sellers.length === 0 ? (
-          <p className="text-[#8E8EA2]">No business owners have submitted Razorpay Route KYC onboarding yet.</p>
+          <p className="text-[#8E8EA2]">No business owners have submitted payout details yet.</p>
         ) : (
           <div className="space-y-3">
             {sellers.map((s) => (
@@ -259,7 +259,7 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
                     type="text"
                     value={routeIdDrafts[s.id] ?? ''}
                     onChange={(e) => setRouteIdDrafts((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                    placeholder="acc_RazorpayLinkedId"
+                    placeholder="CF Easy Split Account ID"
                     className="rounded border border-[#2A2A38] bg-[#101018] px-2.5 py-1.5 text-white font-mono-tabular w-44"
                   />
                   <input

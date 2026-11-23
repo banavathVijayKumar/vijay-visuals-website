@@ -277,6 +277,48 @@ export async function fetchEdgeCashfreeOrderPayments(
   return Array.isArray(list) ? list : [];
 }
 
+export async function createEdgeCashfreeRefund(
+  env: CloudflareEnv,
+  input: {
+    orderId: string;
+    amountInr?: number;
+    refundId?: string;
+    reason?: string;
+  }
+): Promise<{ id: string; status: string; amount: number }> {
+  const status = getEdgeCashfreeStatus(env);
+  if (!status.configured) {
+    throw new Error(status.message);
+  }
+
+  const baseUrl = getCashfreeBaseUrl(env);
+  const refundId = input.refundId || `ref_${Date.now()}`;
+  const payload: Record<string, any> = {
+    refund_id: refundId,
+    refund_note: input.reason || 'Admin initiated refund',
+  };
+  if (input.amountInr !== undefined) {
+    payload.refund_amount = input.amountInr;
+  }
+
+  const res = await fetch(`${baseUrl}/orders/${encodeURIComponent(input.orderId)}/refunds`, {
+    method: 'POST',
+    headers: getCashfreeHeaders(env),
+    body: JSON.stringify(payload),
+  });
+
+  const data = (await res.json().catch(() => ({}))) as Record<string, any>;
+  if (!res.ok) {
+    throw new Error(data?.message || `Cashfree Refund returned HTTP ${res.status}`);
+  }
+
+  return {
+    id: String(data.cf_refund_id || data.refund_id || refundId),
+    status: String(data.refund_status || 'SUCCESS'),
+    amount: Number(data.refund_amount || input.amountInr || 0),
+  };
+}
+
 export async function verifyEdgeCashfreeWebhookSignature(
   env: CloudflareEnv,
   rawBody: string,

@@ -26,8 +26,10 @@ interface AdminDeliveryItem {
   baseAmountInr: number;
   gstAmountInr: number;
   totalAmountInr: number;
-  razorpayOrderId: string;
-  razorpayPaymentId: string | null;
+  paymentOrderId?: string;
+  paymentId?: string | null;
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string | null;
   signatureVerified: boolean;
   status: string;
   orderState: string;
@@ -109,8 +111,8 @@ export const AdminDeliveriesPanel: React.FC<AdminDeliveriesPanelProps> = ({ onNo
       item.buyerName.toLowerCase().includes(q) ||
       (item.websiteSlug || '').toLowerCase().includes(q) ||
       item.planName.toLowerCase().includes(q) ||
-      item.razorpayOrderId.toLowerCase().includes(q) ||
-      (item.razorpayPaymentId || '').toLowerCase().includes(q) ||
+      (item.paymentOrderId || item.razorpayOrderId || '').toLowerCase().includes(q) ||
+      (item.paymentId || item.razorpayPaymentId || '').toLowerCase().includes(q) ||
       String(item.id).includes(q);
 
     if (!matchesSearch) return false;
@@ -301,9 +303,9 @@ export const AdminDeliveriesPanel: React.FC<AdminDeliveriesPanelProps> = ({ onNo
                             <span>Pending Signature</span>
                           </span>
                         )}
-                        {item.razorpayPaymentId && (
+                        {(item.paymentId || item.razorpayPaymentId) && (
                           <p className="font-mono-tabular text-[10px] text-[#7E7E92]">
-                            {item.razorpayPaymentId}
+                            {item.paymentId || item.razorpayPaymentId}
                           </p>
                         )}
                         <p className="text-[10px] text-[#606070]">

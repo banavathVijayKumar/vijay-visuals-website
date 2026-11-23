@@ -37,7 +37,6 @@ import {
   X,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
-import { initiatePlatformCheckout } from '../lib/razorpayClient';
 import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
 import { readAndOptimizeImageFile } from '../lib/imageUpload';
 import { useAuth } from '../hooks/useAuth';
@@ -123,7 +122,7 @@ const getPaymentDate = (p: any): string | null =>
   p?.paid_at || p?.paidAt || p?.created_at || p?.createdAt || null;
 
 const getPaymentId = (p: any): string | null =>
-  p?.razorpay_payment_id || p?.razorpayPaymentId || null;
+  p?.cf_payment_id || p?.cfPaymentId || p?.razorpay_payment_id || p?.razorpayPaymentId || null;
 
 export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   allTenants,
@@ -1057,11 +1056,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
         },
       };
 
-      try {
-        await initiateCashfreePlatformCheckout(opts);
-      } catch {
-        await initiatePlatformCheckout(opts);
-      }
+      await initiateCashfreePlatformCheckout(opts);
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Unable to initialize payment checkout.');
     } finally {
@@ -1341,7 +1336,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       { id: 'team', label: 'Delivery Fleet & Staff' },
                       { id: 'hr_tasks', label: 'Staff Tasks & Backup' },
                       { id: 'marketing', label: 'Coupons & License' },
-                      { id: 'payments', label: 'Razorpay & Route' },
+                      { id: 'payments', label: 'Cashfree & Settlements' },
                       { id: 'crm_bookings', label: 'CRM & Bookings' },
                       { id: 'finance', label: 'Finance & GST' },
                       { id: 'proposals_quotes', label: 'Proposals & Subscribers' },
@@ -3039,7 +3034,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#D4AF37]/60 text-[#ECC86A] text-xs font-semibold hover:bg-[#D4AF37] hover:text-[#08080A] transition-colors disabled:opacity-50"
                   >
                     <CreditCard className="w-3.5 h-3.5" />
-                    <span>{buyingPackage ? 'Opening Razorpay...' : 'Renew / Upgrade Package'}</span>
+                    <span>{buyingPackage ? 'Opening Cashfree...' : 'Renew / Upgrade Package'}</span>
                   </button>
                 </div>
 
@@ -3080,7 +3075,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       Package Boundaries
                     </span>
                     <p>• <strong>Custom Domain:</strong> Customer provides own domain (registrar fees paid directly).</p>
-                    <p>• <strong>Seller Payments:</strong> Store checkout payments go directly to your own Razorpay account.</p>
+                    <p>• <strong>Seller Payments:</strong> Store checkout payments are processed through Cashfree PG.</p>
                     <p>• <strong>Platform Hosting:</strong> Cloudflare edge hosting included under platform arrangement.</p>
                   </div>
                 </div>
@@ -3556,7 +3551,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   { id: 'deliveries', label: 'Website Deliveries & Provisioning' },
                   { id: 'domains', label: `Domain Management (${adminData.stats.domainsCount ?? 0})` },
                   { id: 'proposals', label: `Proposals & Quotations (${adminData.proposals?.length ?? 0})` },
-                  { id: 'ecosystem', label: 'Razorpay, Route KYC & Announcements' },
+                  { id: 'ecosystem', label: 'Cashfree, Settlements & Announcements' },
                   { id: 'plans', label: 'Pricing & Packages' },
                   { id: 'users', label: 'Users & Roles' },
                   { id: 'tickets', label: 'Support Desk' },
@@ -3983,9 +3978,9 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
             {/* Verification Metadata */}
             <div className="rounded-lg border border-[#1C1C28] bg-[#09090E] p-2.5 mb-4 text-[10px] text-[#7E7E92] font-mono-tabular space-y-0.5">
-              <p>Payment Gateway: Razorpay PG (Server-Side Verified HMAC-SHA256)</p>
+              <p>Payment Gateway: Cashfree Payments (Server-Side Verified HMAC-SHA256)</p>
               {getPaymentId(selectedReceipt) && (
-                <p>Razorpay Payment ID: {getPaymentId(selectedReceipt)}</p>
+                <p>Payment ID: {getPaymentId(selectedReceipt)}</p>
               )}
               <p>Status: {selectedReceipt.status ? String(selectedReceipt.status).toUpperCase() : 'COMPLETED'} &amp; Entitlement Granted</p>
             </div>

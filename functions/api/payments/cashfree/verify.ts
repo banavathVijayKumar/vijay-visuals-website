@@ -228,6 +228,69 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     .bind(cfPaymentId, JSON.stringify(notes), `cf_${orderId}`)
     .run();
 
+  // If this was a storefront customer order, update store_orders and settlements ledger
+  if (existing.entity_type === 'storefront_order') {
+    const storeOrder = await env.DB.prepare(
+      'SELECT id, website_id, owner_id, order_number, total_inr, payment_status FROM store_orders WHERE gateway_order_id = ? LIMIT 1'
+    )
+      .bind(orderId)
+      .first<{
+        id: number;
+        website_id: string;
+        owner_id: string;
+        order_number: string;
+        total_inr: number;
+        payment_status: string;
+      }>();
+
+    if (storeOrder) {
+      await env.DB.prepare(
+        `UPDATE store_orders
+         SET payment_status = 'paid',
+             payment_method = 'cashfree_online',
+             gateway_payment_id = ?,
+             order_status = CASE WHEN order_status = 'placed' THEN 'confirmed' ELSE order_status END,
+             updated_at = datetime('now')
+         WHERE id = ?`
+      )
+        .bind(cfPaymentId, storeOrder.id)
+        .run();
+
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO cashfree_seller_settlements (
+          website_id, owner_id, store_order_id, order_number,
+          gross_amount_inr, platform_fee_inr, seller_payable_inr, currency,
+          settlement_status, settlement_mode, notes_json, created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, ?,
+          ?, 0, ?, 'INR',
+          'pending_activation', 'cashfree_split_pending', ?, datetime('now'), datetime('now')
+        )`
+      )
+        .bind(
+          storeOrder.website_id,
+          storeOrder.owner_id,
+          storeOrder.id,
+          storeOrder.order_number,
+          storeOrder.total_inr,
+          storeOrder.total_inr,
+          JSON.stringify({ cfPaymentId, notice: 'Pending Cashfree Split Settlement activation.' })
+        )
+        .run();
+    }
+
+    return json({
+      verified: true,
+      idempotentReplay: false,
+      status: 'PAID',
+      orderId,
+      cfPaymentId,
+      storeOrderId: storeOrder?.id,
+      orderNumber: storeOrder?.order_number,
+      entityType: 'storefront_order',
+    });
+  }
+
   // 5. Automatic Website Delivery & Tenant Provisioning Engine
   let targetWebsiteId = existing.website_id;
   let targetSlug = '';

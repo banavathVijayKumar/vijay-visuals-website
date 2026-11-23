@@ -684,7 +684,7 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
               <div className="space-y-2 text-xs">
                 {[
                   { key: 'ecommerce', label: 'E-Commerce Storefront & Instant Cart', desc: 'Allow visitors to browse catalog and add items to a slide-over cart drawer' },
-                  { key: 'cartCheckout', label: 'Online Checkout & Payment Gateways', desc: 'Accept direct UPI, Razorpay cards/netbanking, and Cash on Delivery' },
+                  { key: 'cartCheckout', label: 'Online Checkout & Payment Gateways', desc: 'Accept direct UPI, Cashfree cards/netbanking, and Cash on Delivery' },
                   { key: 'whatsappOrder', label: 'WhatsApp One-Click Direct Ordering', desc: 'Send order items and customer delivery location straight to merchant WhatsApp' },
                   { key: 'bookings', label: 'Table Reservations & Service Bookings', desc: 'Allow visitors to schedule consultation, table, or appointment time slots' },
                   { key: 'gallery', label: 'Photo & Portfolio Showcase Gallery', desc: 'Display categorized images, dishes, interior ambiance, or client work' },
@@ -912,7 +912,7 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
                   )}
                   {modules.cartCheckout && (
                     <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                      UPI / Razorpay
+                      UPI / Cashfree
                     </span>
                   )}
                   {modules.whatsappOrder && (

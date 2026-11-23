@@ -1,17 +1,19 @@
 // ============================================================================
 // POST /api/webhooks/cashfree — Production Cashfree Webhook Handler (Cloudflare Edge)
 // - Verifies x-webhook-signature Base64 HMAC-SHA256 on exact raw body + timestamp
+// - Supports OPTIONS preflight and GET health checks for dashboard verification
 // - Enforces strict idempotency via payment_webhook_events(event_id PK)
 // - Handles Cashfree PG events: PAYMENT_SUCCESS_WEBHOOK, ORDER_PAID_WEBHOOK,
 //   PAYMENT_FAILED_WEBHOOK, PAYMENT_USER_DROPPED_WEBHOOK
-// - Dual-ledger atomic reconciliation across cashfree_payments and platform_payments
+// - Dual-ledger atomic reconciliation across cashfree_payments and store_orders
 // ============================================================================
 
-import { PagesContext, errorJson, json, sanitizeText, writeAuditLog } from '../_shared';
+import { PagesContext, errorJson, handleOptions, json, sanitizeText, writeAuditLog } from '../_shared';
 import { verifyEdgeCashfreeWebhookSignature } from '../payments/_cashfree';
 
 interface CashfreeWebhookPayload {
   type?: string;
+  event?: string;
   event_time?: string;
   data?: {
     order?: {
@@ -40,21 +42,64 @@ interface CashfreeWebhookPayload {
   };
 }
 
+export async function onRequestOptions(): Promise<Response> {
+  return handleOptions();
+}
+
+export async function onRequestGet(context: PagesContext): Promise<Response> {
+  return json({
+    ok: true,
+    status: 'active',
+    gateway: 'Cashfree Payment Gateway',
+    apiVersion: '2023-08-01',
+    endpoint: 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree',
+    message: 'Cashfree webhook endpoint is ready and accepting requests.',
+  });
+}
+
 export async function onRequestPost(context: PagesContext): Promise<Response> {
   const { request, env } = context;
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
   const signature = (request.headers.get('x-webhook-signature') || '').trim();
   const timestamp = (request.headers.get('x-webhook-timestamp') || '').trim();
+  const rawBody = await request.text();
 
+  // 1. Handle Cashfree Dashboard Ping / Test Handshake
+  // When merchant clicks "Test Webhook" in Cashfree dashboard before completing credentials
+  const isTestOrPing =
+    rawBody.includes('"TEST"') ||
+    rawBody.includes('"test"') ||
+    rawBody.includes('LOW_BALANCE_ALERT') ||
+    rawBody.length === 0;
+
+  const hasSecret = Boolean((env.CASHFREE_WEBHOOK_SECRET || env.CASHFREE_CLIENT_SECRET || '').trim());
+
+  if (isTestOrPing && (!signature || !hasSecret)) {
+    return json({
+      ok: true,
+      message: 'Cashfree webhook test handshake acknowledged successfully.',
+      environment: env.CASHFREE_ENV || 'sandbox',
+      status: 'handshake_ok',
+    });
+  }
+
+  // 2. Cryptographic signature check for live/sandbox payment events
   if (!signature || !timestamp) {
     return errorJson('Missing x-webhook-signature or x-webhook-timestamp header.', 401);
   }
 
-  // SECURITY: Read exact raw request body text before JSON parsing
-  const rawBody = await request.text();
   const sigValid = await verifyEdgeCashfreeWebhookSignature(env, rawBody, signature, timestamp);
   if (!sigValid) {
+    if (!hasSecret) {
+      return json(
+        {
+          ok: false,
+          error: 'CASHFREE_CLIENT_SECRET is not configured in Cloudflare Pages environment variables.',
+        },
+        401
+      );
+    }
     return errorJson('Invalid Cashfree webhook HMAC-SHA256 Base64 signature.', 401);
   }
 
@@ -65,7 +110,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson('Invalid webhook JSON payload.', 400);
   }
 
-  const eventType = sanitizeText(body.type || 'UNKNOWN', 80);
+  const eventType = sanitizeText(body.type || body.event || 'UNKNOWN', 80);
   const orderData = body.data?.order;
   const paymentData = body.data?.payment;
 
@@ -89,9 +134,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return json({ ok: true, idempotentDuplicate: true, eventId, eventType });
   }
 
-  // Process event
+  // Process payment events
   if (eventType === 'PAYMENT_SUCCESS_WEBHOOK' || eventType === 'ORDER_PAID_WEBHOOK') {
-    // 1. Check cashfree_payments ledger
+    // 1. Platform package purchase ledger
     const existingPayment = await env.DB.prepare(
       'SELECT * FROM cashfree_payments WHERE order_id = ? LIMIT 1'
     )
@@ -126,7 +171,6 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         notes.paidViaWebhook = true;
         notes.deliveredAt = new Date().toISOString();
 
-        // Update cashfree_payments
         await env.DB.prepare(
           `UPDATE cashfree_payments
            SET status = 'PAID',
@@ -190,12 +234,19 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }
     }
 
-    // 2. Also check if it belongs to store_orders (storefront e-commerce checkout)
+    // 2. Storefront e-commerce order checkout ledger
     const storeOrder = await env.DB.prepare(
-      'SELECT id, payment_status FROM store_orders WHERE gateway_order_id = ? LIMIT 1'
+      'SELECT id, website_id, owner_id, order_number, total_inr, payment_status FROM store_orders WHERE gateway_order_id = ? LIMIT 1'
     )
       .bind(orderId)
-      .first<{ id: number; payment_status: string }>();
+      .first<{
+        id: number;
+        website_id: string;
+        owner_id: string;
+        order_number: string;
+        total_inr: number;
+        payment_status: string;
+      }>();
 
     if (storeOrder && storeOrder.payment_status !== 'paid') {
       await env.DB.prepare(
@@ -208,6 +259,37 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
          WHERE id = ?`
       )
         .bind(cfPaymentId, storeOrder.id)
+        .run();
+
+      // Record in cashfree_seller_settlements ledger
+      const commissionPercent = 0; // Standard 0% platform commission on store transactions
+      const platformFee = Math.round((storeOrder.total_inr * commissionPercent) / 100);
+      const sellerPayable = storeOrder.total_inr - platformFee;
+
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO cashfree_seller_settlements (
+          website_id, owner_id, store_order_id, order_number,
+          gross_amount_inr, platform_fee_inr, seller_payable_inr, currency,
+          settlement_status, settlement_mode, notes_json, created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, ?,
+          ?, ?, ?, 'INR',
+          'pending_activation', 'cashfree_split_pending', ?, datetime('now'), datetime('now')
+        )`
+      )
+        .bind(
+          storeOrder.website_id,
+          storeOrder.owner_id,
+          storeOrder.id,
+          storeOrder.order_number,
+          storeOrder.total_inr,
+          platformFee,
+          sellerPayable,
+          JSON.stringify({
+            cfPaymentId,
+            statusNotice: 'Pending Cashfree Split Settlement activation. Net amount recorded for merchant reconciliation.',
+          })
+        )
         .run();
     }
   } else if (eventType === 'PAYMENT_FAILED_WEBHOOK' || eventType === 'PAYMENT_USER_DROPPED_WEBHOOK') {

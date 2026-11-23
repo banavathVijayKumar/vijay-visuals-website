@@ -89,6 +89,7 @@ export interface TenantRecord {
   deliveryCommissionPct: number;
   codEnabled: boolean;
   upiId: string;
+  cashfreeOnlineReady?: boolean;
   razorpayOnlineReady?: boolean;
   googleReviewUrl?: string;
   googlePlaceId?: string;
@@ -316,6 +317,42 @@ export interface AuditLogRecord {
   tenantId: number | null;
   action: string;
   details: string;
+  createdAt: string;
+}
+
+export interface CashfreePaymentRecord {
+  id: number;
+  userId: number | null;
+  tenantId: number | null;
+  planCode: string;
+  planName: string;
+  amountInr: number;
+  currency: string;
+  mode: string;
+  cfOrderId: string;
+  cfPaymentId?: string;
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  signatureVerified: boolean;
+  status: string;
+  licenseActivated: boolean;
+  receiptNumber: string;
+  refundId: string;
+  notes: string;
+  createdAt: string;
+}
+
+export interface CashfreeSellerSettlementRecord {
+  id: number;
+  websiteId: string;
+  orderId: number | null;
+  cfOrderId: string;
+  cfPaymentId: string;
+  settlementId?: string;
+  grossAmountInr: number;
+  platformFeeInr: number;
+  sellerNetAmountInr: number;
+  settlementStatus: string;
   createdAt: string;
 }
 

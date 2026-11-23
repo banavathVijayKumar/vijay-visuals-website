@@ -33,6 +33,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
+import { initiateCashfreeStorefrontCheckout } from '../lib/cashfreeClient';
 import { requestSingleGpsPosition, reverseGeocodeViaProxy } from '../lib/mapsClient';
 import { useAuth } from '../hooks/useAuth';
 import { Lang } from '../data/content';
@@ -174,7 +175,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
   const [deliveryInstructions, setDeliveryInstructions] = useState('');
   const [checkoutGpsConsent, setCheckoutGpsConsent] = useState(false);
   const [locatingCheckoutGps, setLocatingCheckoutGps] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi_reference' | 'razorpay_online'>('cod');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'upi_reference' | 'cashfree_online'>('cod');
   const [paymentReference, setPaymentReference] = useState('');
   const [placingOrder, setPlacingOrder] = useState(false);
   const [confirmedOrder, setConfirmedOrder] = useState<OrderRecord | null>(null);
@@ -272,8 +273,8 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           setPaymentMethod('cod');
         } else if (storeData.tenant.upiId) {
           setPaymentMethod('upi_reference');
-        } else if (storeData.tenant.razorpayOnlineReady) {
-          setPaymentMethod('razorpay_online');
+        } else if (storeData.tenant.cashfreeOnlineReady || storeData.tenant.razorpayOnlineReady) {
+          setPaymentMethod('cashfree_online');
         }
 
         // Hydrate saved cart from localStorage against live server product prices & stock
@@ -603,7 +604,9 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     if (!tenant || cart.length === 0) return;
 
     const hasConfiguredMethod =
-      Boolean(tenant.codEnabled) || Boolean(tenant.upiId) || Boolean(tenant.razorpayOnlineReady);
+      Boolean(tenant.codEnabled) ||
+      Boolean(tenant.upiId) ||
+      Boolean(tenant.cashfreeOnlineReady || tenant.razorpayOnlineReady);
     if (!hasConfiguredMethod) {
       onNotify('Online checkout payment methods are not configured for this store yet. Please use WhatsApp Order.');
       return;
@@ -615,7 +618,12 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     }
     setPlacingOrder(true);
     try {
-      const res = await apiFetch<{ order: OrderRecord }>('/api/orders', {
+      const res = await apiFetch<{
+        order: OrderRecord;
+        paymentSessionId?: string | null;
+        cfOrderId?: string | null;
+        cashfreeEnvironment?: 'sandbox' | 'production';
+      }>('/api/orders', {
         method: 'POST',
         body: JSON.stringify({
           tenantId: tenant.id,
@@ -638,6 +646,47 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           })),
         }),
       });
+
+      if (paymentMethod === 'cashfree_online' && res.paymentSessionId && res.cfOrderId) {
+        setPlacingOrder(false);
+        await initiateCashfreeStorefrontCheckout({
+          paymentSessionId: res.paymentSessionId,
+          orderId: res.cfOrderId,
+          environment: res.cashfreeEnvironment || 'sandbox',
+          onSuccess: async () => {
+            try {
+              await apiFetch('/api/payments/cashfree/verify', {
+                method: 'POST',
+                body: JSON.stringify({
+                  orderId: res.cfOrderId,
+                  storefrontOrderId: res.order?.id,
+                }),
+              });
+            } catch {}
+            setConfirmedOrder(res.order ? { ...res.order, paymentStatus: 'paid', status: 'confirmed' } : null);
+            setCart([]);
+            setAppliedCoupon(null);
+            setPaymentReference('');
+            setDeliveryInstructions('');
+            try {
+              window.localStorage.removeItem(`vv_cart_${slug}`);
+            } catch {}
+            const refreshed = await apiFetch<{ products: ProductRecord[] }>(`/api/tenants/${encodeURIComponent(slug)}`).catch(() => null);
+            if (refreshed?.products) setProducts(refreshed.products);
+            onNotify(`Payment verified! Order #${res.order?.orderNumber || ''} confirmed.`);
+          },
+          onError: (err) => {
+            setConfirmedOrder(res.order);
+            onNotify(`Payment unsuccessful: ${err.message}. Order #${res.order?.orderNumber || ''} is saved as pending.`);
+          },
+          onDismiss: () => {
+            setConfirmedOrder(res.order);
+            onNotify(`Payment popup closed. Order #${res.order?.orderNumber || ''} is recorded as pending payment.`);
+          },
+        });
+        return;
+      }
+
       setConfirmedOrder(res.order);
       setCart([]);
       setAppliedCoupon(null);
@@ -2106,15 +2155,17 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                     <div className="space-y-2 pt-1">
                       <p className="text-xs text-[#9D9DB0]">Available Payment Methods</p>
                       {(() => {
-                        const availableMethods: Array<{ id: 'cod' | 'upi_reference' | 'razorpay_online'; label: string }> = [];
+                        const availableMethods: Array<{ id: 'cod' | 'upi_reference' | 'cashfree_online'; label: string }> = [];
                         if (tenant.codEnabled) availableMethods.push({ id: 'cod', label: 'Cash on Delivery' });
                         if (tenant.upiId) availableMethods.push({ id: 'upi_reference', label: 'Direct UPI Transfer' });
-                        if (tenant.razorpayOnlineReady) availableMethods.push({ id: 'razorpay_online', label: 'Razorpay Online' });
+                        if (tenant.cashfreeOnlineReady || tenant.razorpayOnlineReady) {
+                          availableMethods.push({ id: 'cashfree_online', label: 'Cashfree PG (Instant UPI, Cards & NetBanking)' });
+                        }
 
                         if (availableMethods.length === 0) {
                           return (
                             <div className="rounded-md border border-amber-500/35 bg-amber-950/20 p-3 text-[11px] text-amber-200">
-                              Online payment methods (COD / UPI / Razorpay) are not enabled by this business yet. Please place your order via WhatsApp below.
+                              Online payment methods (COD / UPI / Cashfree PG) are not enabled by this business yet. Please place your order via WhatsApp below.
                             </div>
                           );
                         }
@@ -2161,7 +2212,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                       })()}
                     </div>
 
-                    {(tenant.codEnabled || tenant.upiId || tenant.razorpayOnlineReady) && (
+                    {(tenant.codEnabled || tenant.upiId || tenant.cashfreeOnlineReady || tenant.razorpayOnlineReady) && (
                       <button
                         type="submit"
                         disabled={placingOrder}

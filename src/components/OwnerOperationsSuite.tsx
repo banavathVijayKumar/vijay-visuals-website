@@ -13,6 +13,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
+import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
 import { PLUGIN_CATALOG } from '../data/content';
 import {
   AppointmentRecord,
@@ -40,25 +41,7 @@ interface OwnerOperationsSuiteProps {
   onNotify: (msg: string) => void;
 }
 
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => {
-      open: () => void;
-      on?: (event: string, handler: (response: any) => void) => void;
-    };
-  }
-}
 
-function loadRazorpayCheckoutScript(): Promise<boolean> {
-  return new Promise((resolve) => {
-    if (window.Razorpay) return resolve(true);
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
-}
 
 export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
   tenant,
@@ -69,8 +52,8 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
 }) => {
   const [loading, setLoading] = useState(false);
 
-  // Payments & Route State (Module 3)
-  const [rzpStatus, setRzpStatus] = useState<{
+  // Payments & Settlements State
+  const [cfStatus, setCfStatus] = useState<{
     configured: boolean;
     mode: string;
     message: string;
@@ -146,7 +129,8 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
             account: SellerPayoutAccountRecord | null;
             transfers: SellerTransferRecord[];
             codSummary: { codCollectedInr: number; codPendingInr: number };
-            razorpay: { configured: boolean; mode: string; message: string; webhookConfigured: boolean };
+            cashfree?: { configured: boolean; mode: string; message: string; webhookConfigured: boolean };
+            razorpay?: { configured: boolean; mode: string; message: string; webhookConfigured: boolean };
           }>(`/api/owner/tenants/${tenant.id}/payout-account`),
           apiFetch<{ payments: PlatformPaymentRecord[] }>('/api/payments/platform/history'),
           apiFetch<{ plans: PlatformPlanRecord[] }>('/api/plans'),
@@ -154,7 +138,7 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
         setSellerAccount(payoutRes.account);
         setTransfers(payoutRes.transfers);
         setCodSummary(payoutRes.codSummary);
-        setRzpStatus(payoutRes.razorpay);
+        setCfStatus(payoutRes.cashfree || payoutRes.razorpay || null);
         setPlatformPayments(histRes.payments);
         setPlans(plansRes.plans);
         if (payoutRes.account) {
@@ -205,53 +189,28 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
     loadSectionData();
   }, [loadSectionData]);
 
-  // System A: Real Razorpay Checkout for Vijay Visuals Platform Packages
+  // Cashfree Checkout for Vijay Visuals Platform Packages
   const handleBuyPlatformPlan = async (plan: PlatformPlanRecord) => {
     try {
-      const orderRes = await apiFetch<{
-        keyId: string;
-        mode: string;
-        razorpayOrder: { id: string; amount: number; currency: string };
-      }>('/api/payments/platform/create-order', {
-        method: 'POST',
-        body: JSON.stringify({ planCode: plan.code, tenantId: tenant.id }),
-      });
-
-      const loaded = await loadRazorpayCheckoutScript();
-      if (!loaded || !window.Razorpay) {
-        onNotify('Unable to load Razorpay Checkout script. Please check network settings.');
-        return;
-      }
-
-      const rzp = new window.Razorpay({
-        key: orderRes.keyId,
-        amount: orderRes.razorpayOrder.amount,
-        currency: orderRes.razorpayOrder.currency,
-        name: 'Vijay Visuals Platform',
-        description: `${plan.name} (${orderRes.mode.toUpperCase()})`,
-        order_id: orderRes.razorpayOrder.id,
-        handler: async (response: {
-          razorpay_order_id: string;
-          razorpay_payment_id: string;
-          razorpay_signature: string;
-        }) => {
-          try {
-            await apiFetch('/api/payments/platform/verify', {
-              method: 'POST',
-              body: JSON.stringify(response),
-            });
-            onNotify(`Payment verified! ${plan.name} license activated.`);
-            onRefreshTenant();
-            loadSectionData();
-          } catch (verifyErr) {
-            onNotify(verifyErr instanceof Error ? verifyErr.message : 'Payment signature verification failed.');
-          }
+      await initiateCashfreePlatformCheckout({
+        planCode: plan.code,
+        planName: `${plan.name} (₹${plan.priceInr.toLocaleString('en-IN')})`,
+        websiteId: String(tenant.id),
+        publishWebsite: true,
+        onSuccess: async () => {
+          onNotify(`Payment verified! ${plan.name} license activated.`);
+          onRefreshTenant();
+          loadSectionData();
         },
-        theme: { color: '#D4AF37' },
+        onError: (err) => {
+          onNotify(err.message || 'Payment verification failed.');
+        },
+        onDismiss: () => {
+          onNotify('Payment checkout was closed.');
+        },
       });
-      rzp.open();
     } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Unable to initialize Razorpay checkout.');
+      onNotify(err instanceof Error ? err.message : 'Unable to initialize Cashfree checkout.');
     }
   };
 
@@ -269,7 +228,7 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
           ifscCode: kycIfsc,
         }),
       });
-      onNotify('Seller KYC submitted for Razorpay Route Linked Account verification.');
+      onNotify('Seller bank details submitted for Cashfree Easy Split verification.');
       loadSectionData();
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Unable to save KYC details.');
@@ -308,7 +267,7 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
     );
   }
 
-  // ==================== 1. PAYMENTS & RAZORPAY ROUTE ====================
+  // ==================== 1. PAYMENTS & CASHFREE SETTLEMENTS ====================
   if (activeSection === 'payments') {
     return (
       <div className="space-y-6">
@@ -317,24 +276,24 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
           <div>
             <p className="text-xs font-semibold text-[#ECC86A] flex items-center gap-2">
               <ShieldCheck className="w-4 h-4" />
-              <span>Dual Razorpay Security Architecture (System A Platform + System B Seller Route)</span>
+              <span>Cashfree Payment Architecture &amp; Settlement Management</span>
             </p>
             <p className="text-xs text-[#A3A3B5] mt-1">
-              {rzpStatus?.message || 'Checking server-side Razorpay configuration...'}
+              {cfStatus?.message || 'Checking server-side Cashfree configuration...'}
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span
               className={`px-3 py-1 rounded border font-mono-tabular ${
-                rzpStatus?.configured
+                cfStatus?.configured
                   ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300'
                   : 'border-amber-500/40 bg-amber-950/20 text-amber-300'
               }`}
             >
-              Mode: {(rzpStatus?.mode || 'unconfigured').toUpperCase()}
+              Mode: {(cfStatus?.mode || 'sandbox').toUpperCase()}
             </span>
             <span className="px-3 py-1 rounded border border-[#2A2A38] text-[#B8B8C8]">
-              Webhook: {rzpStatus?.webhookConfigured ? 'Verified Secret Set' : 'Secret Pending'}
+              Webhook: {cfStatus?.webhookConfigured ? 'Verified Secret Set' : 'Secret Pending'}
             </span>
           </div>
         </div>
@@ -348,7 +307,7 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
                 <span>System A · Vijay Visuals Platform Upgrades</span>
               </h3>
               <p className="text-[11px] text-[#8E8EA2] mt-1">
-                Settled to Vijay Visuals merchant account. Licenses, PWA add-ons & AI credits activate strictly after server-side HMAC signature verification.
+                Settled to Vijay Visuals merchant account via Cashfree PG. Licenses, PWA add-ons &amp; AI credits activate strictly after server-side HMAC signature verification.
               </p>
             </div>
             <div className="space-y-2.5">
@@ -369,7 +328,7 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
                     onClick={() => handleBuyPlatformPlan(p)}
                     className="px-3 py-1.5 rounded bg-gold-gradient text-[#08080A] font-semibold shrink-0"
                   >
-                    Pay via Razorpay
+                    Pay via Cashfree
                   </button>
                 </div>
               ))}
@@ -392,23 +351,23 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
             )}
           </div>
 
-          {/* System B & C: Seller Razorpay Route KYC + COD Reconciliation */}
+          {/* System B: Seller Payouts & Cashfree Easy Split */}
           <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-6 space-y-5">
             <div>
               <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                 <Wallet className="w-4 h-4 text-[#D4AF37]" />
-                <span>System B · Seller Store Payouts (Razorpay Route)</span>
+                <span>System B · Seller Payouts &amp; Cashfree Easy Split</span>
               </h3>
               <p className="text-[11px] text-[#8E8EA2] mt-1">
-                Customer store payments route directly to your verified Razorpay Linked Account minus platform commission—never mixed into Vijay Visuals platform revenue.
+                Storefront customer payments are processed via Cashfree PG. Automated vendor payouts are tracked in the database ledger. Live splits activate upon Cashfree Easy Split addendum execution.
               </p>
             </div>
 
             <div className="grid grid-cols-3 gap-2.5 text-xs">
               <div className="rounded-lg border border-[#1F1F2D] bg-[#09090D] p-3">
-                <p className="text-[11px] text-[#8E8EA2]">Route KYC</p>
-                <p className="font-semibold text-[#ECC86A] capitalize mt-0.5">
-                  {(sellerAccount?.kycStatus || 'not_submitted').replace('_', ' ')}
+                <p className="text-[11px] text-[#8E8EA2]">Split Status</p>
+                <p className="font-semibold text-amber-300 capitalize mt-0.5">
+                  Pending Activation
                 </p>
               </div>
               <div className="rounded-lg border border-[#1F1F2D] bg-[#09090D] p-3">
@@ -439,7 +398,7 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
                   type="text"
                   value={kycPan}
                   onChange={(e) => setKycPan(e.target.value)}
-                  placeholder="Business PAN (Optional)"
+                  placeholder="Business PAN (Required for Split)"
                   className="rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white uppercase"
                 />
                 <input
@@ -479,18 +438,13 @@ export const OwnerOperationsSuite: React.FC<OwnerOperationsSuiteProps> = ({
                 type="submit"
                 className="w-full py-2.5 rounded-md bg-gold-gradient text-[#08080A] font-semibold"
               >
-                Submit Seller KYC for Razorpay Route Onboarding
+                Submit Bank Details for Cashfree Easy Split Settlement
               </button>
-              {sellerAccount?.razorpayAccountId && (
-                <p className="text-[11px] text-emerald-300 font-mono-tabular">
-                  Linked Account: {sellerAccount.razorpayAccountId} · Platform Commission: {sellerAccount.platformCommissionPct}%
-                </p>
-              )}
             </form>
 
             {transfers.length > 0 && (
               <div className="pt-3 border-t border-[#1E1E2B] space-y-1.5 text-[11px]">
-                <p className="font-semibold text-white">Seller Route Transfer Ledger</p>
+                <p className="font-semibold text-white">Cashfree Settlement Ledger</p>
                 {transfers.slice(0, 5).map((tr) => (
                   <div key={tr.id} className="flex justify-between text-[#B8B8C8]">
                     <span>

@@ -58,7 +58,7 @@ export const WEBSITE_PACKAGES: WebsitePackageSpec[] = [
     ],
     excluded: [
       'Domain registration/renewal (customer owns and pays registrar directly)',
-      'Payment gateway MDR fees (charged directly by Razorpay)',
+      'Payment gateway MDR fees (charged directly by Cashfree)',
       'Third-party SMS/WhatsApp API charges',
     ],
   },
@@ -73,11 +73,11 @@ export const WEBSITE_PACKAGES: WebsitePackageSpec[] = [
       'Full online store with categories, variants, inventory & coupons',
       'Verified customer reviews & ratings with shop owner moderation',
       'Shop Owner Admin Dashboard, CRM leads & GST sales summaries',
-      'Cash on Delivery + Seller direct/Razorpay Route readiness',
+      'Cash on Delivery + Seller direct/Cashfree Easy Split readiness',
       'Includes all Business Website SEO, custom domain DNS & CRM capabilities',
     ],
     excluded: [
-      'Payment gateway MDR fees (charged directly by Razorpay)',
+      'Payment gateway MDR fees (charged directly by Cashfree)',
       'Courier shipping charges (paid directly to carrier)',
       'Domain registration renewal fees',
     ],
@@ -207,7 +207,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return json({
       accepted: true,
       proposal: updated,
-      message: `Quotation ${row.proposal_number} confirmed and price-locked. Proceed to Razorpay checkout only when ready to pay.`,
+      message: `Quotation ${row.proposal_number} confirmed and price-locked. Proceed to Cashfree checkout only when ready to pay.`,
     });
   }
 
@@ -275,7 +275,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   return json(
     {
       proposal: saved,
-      noAutoChargeNotice: 'Quotation generated only. No payment is taken until explicit customer confirmation and verified Razorpay checkout.',
+      noAutoChargeNotice: 'Quotation generated only. No payment is taken until explicit customer confirmation and verified Cashfree checkout.',
     },
     201
   );

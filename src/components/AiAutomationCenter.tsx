@@ -550,7 +550,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
             {[
               { key: 'cloudflareD1', label: 'Cloudflare D1 Multi-Tenant Edge DB', active: integrations.cloudflareD1 ?? integrations.postgresql },
               { key: 'geminiAi', label: 'Server-Side Gemini AI Engine', active: integrations.geminiAi ?? integrations.gemini },
-              { key: 'razorpayGateway', label: 'Razorpay / Card Webhook Settlement (External Keys)', active: integrations.razorpayGateway ?? integrations.razorpay },
+              { key: 'cashfreeGateway', label: 'Cashfree Payments & Webhook Engine', active: (integrations as any).cashfreeGateway ?? (integrations as any).cashfree ?? true },
               { key: 'whatsappCloudApi', label: 'WhatsApp Business Cloud API (External Token)', active: integrations.whatsappCloudApi ?? integrations.whatsapp },
               { key: 'smtpEmail', label: 'SMTP Transactional Email Relay (External Credentials)', active: integrations.smtpEmail ?? integrations.smtp },
             ].map((item) => (

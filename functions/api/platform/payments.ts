@@ -37,25 +37,27 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     .bind(websiteId)
     .first();
 
-  const razorpayConfigured = Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
-  const isLiveKey = Boolean(env.RAZORPAY_KEY_ID?.startsWith('rzp_live_'));
-  const liveApproved = env.RAZORPAY_LIVE_APPROVED === 'true';
+  const cashfreeConfigured = Boolean(env.CASHFREE_CLIENT_ID && env.CASHFREE_CLIENT_SECRET);
+  const isProduction = env.CASHFREE_ENV === 'production';
 
   return json({
     flow1PlatformBilling: {
+      provider: 'cashfree',
       recipient: 'Vijay Visuals',
-      gatewayConfigured: razorpayConfigured,
-      mode: !razorpayConfigured ? 'setup_required' : isLiveKey && liveApproved ? 'live' : 'test',
-      liveApprovalRequired: isLiveKey && !liveApproved,
+      gatewayConfigured: cashfreeConfigured,
+      mode: !cashfreeConfigured ? 'setup_required' : isProduction ? 'production' : 'sandbox',
     },
     flow2SellerStorePayouts: {
+      provider: 'cashfree_split',
       recipient: access.website.business_name,
-      routeEnabled: env.RAZORPAY_ROUTE_ENABLED === 'true',
+      routeEnabled: false,
+      settlementStatus: 'pending_activation',
       payoutAccount: payout || {
         website_id: websiteId,
-        kyc_status: 'not_configured',
-        settlement_mode: 'cod_only',
-        notes: 'Configure seller payout details and complete Razorpay Route KYC to enable automated online store settlements.',
+        provider: 'cashfree_split',
+        kyc_status: 'not_submitted',
+        settlement_mode: 'cashfree_split',
+        notes: 'Seller payout ledger active. Live splits activate upon Cashfree Easy Split addendum execution.',
       },
     },
   });
@@ -184,149 +186,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return json({ payoutAccount: saved });
   }
 
-  // -------------------------------------------------------------------------
-  // 3. Create Razorpay Order (Blocks unconfigured, unapproved live keys, AND
-  //    strictly blocks unrouted seller_order payments into Vijay Visuals account!)
-  // -------------------------------------------------------------------------
-  if (action === 'create_razorpay_order') {
-    const keyId = (env.RAZORPAY_KEY_ID || '').trim();
-    const keySecret = (env.RAZORPAY_KEY_SECRET || '').trim();
-    if (!keyId || !keySecret) {
-      return json(
-        {
-          status: 'setup_required',
-          error:
-            'Integration Required: Configure RAZORPAY_KEY_ID (start with rzp_test_*) and RAZORPAY_KEY_SECRET in Cloudflare Pages Secrets.',
-        },
-        503
-      );
-    }
-    if (keyId.startsWith('rzp_live_') && env.RAZORPAY_LIVE_APPROVED !== 'true') {
-      return errorJson(
-        'Live Razorpay keys are locked until owner testing is completed and RAZORPAY_LIVE_APPROVED="true" is explicitly approved.',
-        403
-      );
-    }
-
-    const flowType = sanitizeText(body.flowType || 'platform_subscription', 40);
-    if (flowType === 'seller_order') {
-      return errorJson(
-        'Shop owner customer orders must use POST /api/payments/seller/create-order with a verified Razorpay Route Linked Account so customer funds never settle into Vijay Visuals’ personal account.',
-        403
-      );
-    }
-
-    const amountInr = Math.round(Number(body.amountInr || 0));
-    if (!Number.isFinite(amountInr) || amountInr <= 0) {
-      return errorJson('amountInr must be a positive integer.', 400);
-    }
-
-    const receipt = sanitizeText(body.receipt || `vv_${Date.now()}`, 40);
-    const basicAuth = btoa(`${keyId}:${keySecret}`);
-
-    const rzRes = await fetch('https://api.razorpay.com/v1/orders', {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${basicAuth}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        amount: amountInr * 100,
-        currency: 'INR',
-        receipt,
-        notes: {
-          website_id: websiteId,
-          flow_type: flowType,
-        },
-      }),
-    });
-
-    if (!rzRes.ok) {
-      const errText = await rzRes.text();
-      return errorJson(`Razorpay order creation failed (${rzRes.status}): ${errText.slice(0, 200)}`, 502);
-    }
-
-    const orderData = (await rzRes.json()) as Record<string, unknown>;
-    return json({
-      mode: keyId.startsWith('rzp_live_') ? 'live' : 'test',
-      keyId, // Public Razorpay Key ID only (never expose secret)
-      order: orderData,
-    });
-  }
-
-  // -------------------------------------------------------------------------
-  // 4. Server-Side Razorpay Payment Signature Verification (HMAC-SHA256)
-  // -------------------------------------------------------------------------
-  if (action === 'verify_razorpay_payment') {
-    const keySecret = (env.RAZORPAY_KEY_SECRET || '').trim();
-    if (!keySecret) {
-      return errorJson('Integration Required: RAZORPAY_KEY_SECRET is not configured.', 503);
-    }
-
-    const razorpayOrderId = sanitizeText(body.razorpayOrderId || '', 120);
-    const razorpayPaymentId = sanitizeText(body.razorpayPaymentId || '', 120);
-    const razorpaySignature = sanitizeText(body.razorpaySignature || '', 128);
-    const flowType =
-      body.flowType === 'platform_subscription' || body.flowType === 'domain_service'
-        ? body.flowType
-        : 'seller_order';
-    const referenceId = sanitizeText(body.referenceId || '', 120);
-
-    if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
-      return errorJson('razorpayOrderId, razorpayPaymentId, and razorpaySignature are all required.', 400);
-    }
-
-    const expectedSig = await hmacSha256Hex(keySecret, `${razorpayOrderId}|${razorpayPaymentId}`);
-    if (!safeEqual(razorpaySignature, expectedSig)) {
-      return errorJson('Payment verification failed: invalid cryptographic HMAC-SHA256 signature.', 400);
-    }
-
-    const eventId = `verify:${razorpayPaymentId}`;
-    const existing = await env.DB.prepare('SELECT event_id FROM payment_webhook_events WHERE event_id = ? LIMIT 1')
-      .bind(eventId)
-      .first();
-
-    if (!existing) {
-      await env.DB.prepare(
-        `INSERT INTO payment_webhook_events (event_id, provider, event_type, flow_type, reference_id, signature_verified, payload_json, processed_at)
-         VALUES (?, 'razorpay', 'payment.verified', ?, ?, 1, ?, datetime('now'))`
-      )
-        .bind(
-          eventId,
-          flowType,
-          referenceId,
-          JSON.stringify({ razorpayOrderId, razorpayPaymentId, websiteId })
-        )
-        .run();
-
-      if (flowType === 'seller_order' && referenceId) {
-        await env.DB.prepare(
-          `UPDATE store_orders
-           SET payment_status = 'paid', order_status = 'confirmed',
-               gateway_order_id = ?, gateway_payment_id = ?, updated_at = datetime('now')
-           WHERE website_id = ? AND (order_number = ? OR id = ?)`
-        )
-          .bind(razorpayOrderId, razorpayPaymentId, websiteId, referenceId, Number(referenceId) || -1)
-          .run();
-      } else if (flowType === 'platform_subscription' && referenceId) {
-        await env.DB.prepare(
-          `UPDATE tenant_subscriptions
-           SET status = 'active', gateway_subscription_id = ?, updated_at = datetime('now')
-           WHERE website_id = ? AND id = ?`
-        )
-          .bind(razorpayPaymentId, websiteId, Number(referenceId) || -1)
-          .run();
-      }
-    }
-
-    return json({
-      verified: true,
-      idempotentReplay: Boolean(existing),
-      paymentId: razorpayPaymentId,
-      flowType,
-      referenceId,
-    });
-  }
-
-  return errorJson('Unsupported payment action.', 400);
+  // Legacy actions create_razorpay_order and verify_razorpay_payment have been decommissioned.
+  return errorJson(
+    'Legacy Razorpay payment actions are decommissioned. Please use POST /api/payments/cashfree/create-order and POST /api/payments/cashfree/verify.',
+    410
+  );
 }

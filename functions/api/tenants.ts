@@ -302,7 +302,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
             (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
              total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
              current_period_start, current_period_end, created_at, updated_at)
-           VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
+           VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, ?, 'cashfree', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
         )
           .bind(
             websiteId,
@@ -322,7 +322,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
             (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
              total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
              current_period_start, current_period_end, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+           VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'cashfree', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
         )
           .bind(
             websiteId,

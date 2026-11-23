@@ -125,6 +125,7 @@ export interface MappedTenantRecord {
   deliveryCommissionPct: number;
   codEnabled: boolean;
   upiId: string;
+  cashfreeOnlineReady?: boolean;
   razorpayOnlineReady?: boolean;
   googleReviewUrl?: string;
   googlePlaceId?: string;
@@ -282,6 +283,7 @@ export function mapPublicationToTenant(
     profile?: BusinessProfileEnrichment | null;
     payout?: SellerPayoutEnrichment | null;
     globalSettings?: TenantGlobalEnrichment | null;
+    cashfreeOnlineReady?: boolean;
     razorpayOnlineReady?: boolean;
     aiCredits?: { limit: number; used: number } | null;
   }
@@ -500,7 +502,8 @@ export function mapPublicationToTenant(
     deliveryCommissionPct: cleanNonNegativeNumber(parsed.deliveryCommissionPct),
     codEnabled,
     upiId,
-    razorpayOnlineReady: Boolean(enrichment?.razorpayOnlineReady),
+    cashfreeOnlineReady: Boolean(enrichment?.cashfreeOnlineReady ?? enrichment?.razorpayOnlineReady),
+    razorpayOnlineReady: Boolean(enrichment?.cashfreeOnlineReady ?? enrichment?.razorpayOnlineReady),
     googleReviewUrl: cleanString(parsed.googleReviewUrl || parsed.googleMapsUrl || enrichment?.globalSettings?.gbp_profile_url, 400),
     googlePlaceId: cleanString(parsed.googlePlaceId || enrichment?.globalSettings?.gbp_place_id, 100),
     createdAt:

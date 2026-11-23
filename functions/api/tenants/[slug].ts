@@ -33,7 +33,7 @@ import {
   cleanString,
   mapPublicationToTenant,
 } from '../_tenantMapper';
-import { getEdgeRazorpayStatus } from '../payments/_razorpay';
+import { getEdgeCashfreeStatus } from '../payments/_cashfree';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{3,8}$/;
@@ -188,19 +188,15 @@ export async function onRequestGet(
     // Optional table
   }
 
-  const rzpStatus = getEdgeRazorpayStatus(env);
-  const razorpayOnlineReady = Boolean(
-    rzpStatus.configured &&
-      rzpStatus.routeEnabled &&
-      payout?.kyc_status === 'verified' &&
-      /^acc_[A-Za-z0-9]+$/.test(String(payout?.linked_account_id || '').trim())
-  );
+  const cfStatus = getEdgeCashfreeStatus(env);
+  const cashfreeOnlineReady = Boolean(cfStatus.configured);
 
   const tenant = mapPublicationToTenant(row, parsedWebsite, {
     profile,
     payout,
     globalSettings,
-    razorpayOnlineReady,
+    cashfreeOnlineReady,
+    razorpayOnlineReady: cashfreeOnlineReady,
   });
 
   // Load real reviews with photos & verified purchase badges

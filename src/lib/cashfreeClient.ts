@@ -154,3 +154,60 @@ export async function initiateCashfreePlatformCheckout(
     throw e;
   }
 }
+
+export interface CashfreeStorefrontCheckoutOptions {
+  paymentSessionId: string;
+  orderId: string;
+  environment?: 'sandbox' | 'production';
+  redirectTarget?: '_modal' | '_self';
+  onSuccess?: (result: { verified: boolean; orderId: string; storeOrderId?: number; cfPaymentId?: string }) => void;
+  onError?: (error: Error) => void;
+  onDismiss?: () => void;
+}
+
+export async function initiateCashfreeStorefrontCheckout(
+  options: CashfreeStorefrontCheckoutOptions
+): Promise<void> {
+  const loaded = await loadCashfreeScript();
+  if (!loaded || !window.loadCashfree) {
+    throw new Error('Unable to load official Cashfree SDK. Please check your internet connection.');
+  }
+
+  const cashfree = await window.loadCashfree({
+    mode: options.environment === 'production' ? 'production' : 'sandbox',
+  });
+
+  const checkoutResult = await cashfree.checkout({
+    paymentSessionId: options.paymentSessionId,
+    redirectTarget: options.redirectTarget || '_modal',
+  });
+
+  if (checkoutResult?.error) {
+    options.onDismiss?.();
+    return;
+  }
+
+  // Verify storefront order on server
+  try {
+    const verifyRes = await apiFetch<{
+      verified: boolean;
+      status: string;
+      orderId: string;
+      cfPaymentId?: string;
+      storeOrderId?: number;
+    }>('/api/payments/cashfree/verify', {
+      method: 'POST',
+      body: JSON.stringify({ orderId: options.orderId }),
+    });
+
+    if (verifyRes.verified) {
+      options.onSuccess?.(verifyRes);
+    } else {
+      throw new Error(`Storefront payment status: ${verifyRes.status}`);
+    }
+  } catch (err) {
+    const e = err instanceof Error ? err : new Error('Verification failed.');
+    options.onError?.(e);
+    throw e;
+  }
+}

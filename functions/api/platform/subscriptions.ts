@@ -132,7 +132,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     `INSERT INTO tenant_subscriptions
       (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
        total_amount_inr, setup_fee_inr, payment_gateway, current_period_start, current_period_end, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'razorpay', datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'cashfree', datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
   )
     .bind(
       websiteId,
@@ -164,7 +164,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       paymentRequiredForLiveRenewal: !auth.user.isSuperAdmin,
       message: auth.user.isSuperAdmin
         ? `Super Admin activated ${plan.name} (${billingCycle}) plan.`
-        : `Started ${plan.name} (${billingCycle}) in trial mode. Complete verified Razorpay checkout to activate paid billing.`,
+        : `Started ${plan.name} (${billingCycle}) in trial mode. Complete verified Cashfree checkout to activate paid billing.`,
     },
     201
   );

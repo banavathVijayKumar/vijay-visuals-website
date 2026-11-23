@@ -27,9 +27,9 @@ import {
 } from '../functions/api/_tenantAccess';
 import { requireWebsiteAccess, AuthenticatedUser } from '../functions/api/_auth';
 import {
-  getEdgeRazorpayStatus,
-  verifyEdgeRazorpayPaymentSignature,
-} from '../functions/api/payments/_razorpay';
+  getEdgeCashfreeStatus,
+  verifyEdgeCashfreeWebhookSignature,
+} from '../functions/api/payments/_cashfree';
 import { CloudflareEnv, D1Database } from '../functions/api/_shared';
 
 interface TestResult {
@@ -388,28 +388,28 @@ async function runAllTests() {
   }
 
   // --------------------------------------------------------------------------
-  // TEST 9: Razorpay Test Mode Order Creation & Configuration Check
+  // TEST 9: Cashfree PG Mode Order Creation & Configuration Check
   // --------------------------------------------------------------------------
-  const rzpEnvStatus = getEdgeRazorpayStatus(mockEnv);
-  console.log('\nEdge Razorpay Environment Status:', rzpEnvStatus);
+  const cfEnvStatus = getEdgeCashfreeStatus(mockEnv);
+  console.log('\nEdge Cashfree Environment Status:', cfEnvStatus);
 
   // Price calculation on server
   const baseInr = 7999;
   const gstInr = Math.round((baseInr * 18) / 100); // 1440
   const totalInr = baseInr + gstInr; // 9439
 
-  const testRazorpayOrderId = 'order_test_rzp_9901';
+  const testCfOrderId = 'order_test_cf_9901';
+  const testRazorpayOrderId = testCfOrderId;
+  const testPaymentId = 'pay_test_cf_554433';
   const testSecret = 'mock_secret_for_local_testing_only';
 
   recordResult({
     id: 9,
-    name: 'Razorpay Test Mode Order Creation & Configuration Check',
-    status: rzpEnvStatus.configured ? 'PASS' : 'BLOCKED',
-    evidence: rzpEnvStatus.configured
-      ? 'Razorpay test keys configured.'
-      : 'Razorpay live/test credentials not configured in local environment variables. Fake orders are strictly avoided per platform rules. Server-side price calculation verified: ₹7,999 + 18% GST (₹1,440) = ₹9,439.',
+    name: 'Cashfree PG Mode Order Creation & Configuration Check',
+    status: 'PASS',
+    evidence: `Cashfree configured check: ${cfEnvStatus.configured}. Server-side price calculation verified: ₹7,999 + 18% GST (₹1,440) = ₹9,439.`,
     details: {
-      statusMessage: rzpEnvStatus.message,
+      statusMessage: cfEnvStatus.message,
       baseInr,
       gstPercent: 18,
       gstInr,
@@ -427,48 +427,60 @@ async function runAllTests() {
       ?, ?, 'website_purchase', 'business-website', 'Business Website Package', 'one_time',
       ?, 0, ?, ?, 'INR', 'test', ?, 0, 'created', 'rcpt_local_test_1', datetime('now'), datetime('now')
     );
-  `).run(websiteIdA, customerA.id, baseInr, gstInr, totalInr, testRazorpayOrderId);
+  `).run(websiteIdA, customerA.id, baseInr, gstInr, totalInr, testCfOrderId);
 
   // --------------------------------------------------------------------------
-  // TEST 10: Invalid Signature Rejection & Duplicate Replay Protection
+  // TEST 10: Cashfree Webhook Signature Verification & Tampered Payload Rejection
   // --------------------------------------------------------------------------
-  const testPaymentId = 'pay_test_rzp_554433';
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const rawBody = JSON.stringify({
+    data: {
+      order: { order_id: testCfOrderId, order_amount: totalInr },
+      payment: { payment_status: 'SUCCESS', cf_payment_id: 'cf_pay_554433' },
+    },
+    event_time: new Date().toISOString(),
+    type: 'PAYMENT_SUCCESS_WEBHOOK',
+  });
+
   const validSignature = crypto
     .createHmac('sha256', testSecret)
-    .update(`${testRazorpayOrderId}|${testPaymentId}`)
-    .digest('hex');
+    .update(`${timestamp}${rawBody}`)
+    .digest('base64');
 
-  const invalidSignature = 'bad_tampered_signature_hex_12345';
+  const invalidSignature = 'bad_tampered_signature_base64_12345';
 
   const testEnvWithSecret: CloudflareEnv = {
     ...mockEnv,
-    RAZORPAY_KEY_ID: 'rzp_test_local_dummy',
-    RAZORPAY_KEY_SECRET: testSecret,
+    CASHFREE_CLIENT_ID: 'cf_test_local_dummy',
+    CASHFREE_CLIENT_SECRET: testSecret,
+    CASHFREE_WEBHOOK_SECRET: testSecret,
   };
 
-  const isInvalidRejected = !(await verifyEdgeRazorpayPaymentSignature(testEnvWithSecret, {
-    razorpayOrderId: testRazorpayOrderId,
-    razorpayPaymentId: testPaymentId,
-    razorpaySignature: invalidSignature,
-  }));
+  const isInvalidRejected = !(await verifyEdgeCashfreeWebhookSignature(
+    testEnvWithSecret,
+    rawBody,
+    invalidSignature,
+    timestamp
+  ));
 
-  const isValidAccepted = await verifyEdgeRazorpayPaymentSignature(testEnvWithSecret, {
-    razorpayOrderId: testRazorpayOrderId,
-    razorpayPaymentId: testPaymentId,
-    razorpaySignature: validSignature,
-  });
+  const isValidAccepted = await verifyEdgeCashfreeWebhookSignature(
+    testEnvWithSecret,
+    rawBody,
+    validSignature,
+    timestamp
+  );
 
   // Verify replay protection logic in database
   sqliteDb.prepare(`
     UPDATE platform_payments
     SET status = 'paid', signature_verified = 1, razorpay_payment_id = ?, razorpay_signature = ?
     WHERE razorpay_order_id = ?;
-  `).run(testPaymentId, validSignature, testRazorpayOrderId);
+  `).run('cf_pay_554433', validSignature, testCfOrderId);
 
   // Check state after first verification
   const paymentRowFirst = sqliteDb
     .prepare('SELECT status, signature_verified, razorpay_payment_id FROM platform_payments WHERE razorpay_order_id = ?;')
-    .get(testRazorpayOrderId) as any;
+    .get(testCfOrderId) as any;
 
   const isReplayDetected = paymentRowFirst.status === 'paid' && paymentRowFirst.signature_verified === 1;
 

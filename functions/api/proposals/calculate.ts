@@ -207,6 +207,6 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     gstInr,
     grandTotalInr,
     thirdPartyNote:
-      'Excludes third-party pass-through charges: custom domain registration/renewal, Razorpay transaction MDR, Meta WhatsApp Business API conversation fees, external SMS/SMTP, and cloud hosting/storage overages.',
+      'Excludes third-party pass-through charges: custom domain registration/renewal, Cashfree transaction MDR, Meta WhatsApp Business API conversation fees, external SMS/SMTP, and cloud hosting/storage overages.',
   });
 }

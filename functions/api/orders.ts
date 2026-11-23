@@ -24,7 +24,7 @@ import {
   mapOrderRowToUi,
   parseProductMeta,
 } from './_tenantAccess';
-import { getEdgeRazorpayStatus } from './payments/_razorpay';
+import { createEdgeCashfreeOrder, getEdgeCashfreeStatus } from './payments/_cashfree';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -108,11 +108,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   } catch {}
 
   const rawMethod = String(body.paymentMethod || 'cod').toLowerCase();
-  const dbPaymentMethod: 'cod' | 'upi_manual' | 'razorpay_online' =
+  const dbPaymentMethod: 'cod' | 'upi_manual' | 'cashfree_online' =
     rawMethod === 'upi_reference' || rawMethod === 'upi_manual'
       ? 'upi_manual'
-      : rawMethod === 'razorpay_online'
-        ? 'razorpay_online'
+      : rawMethod === 'cashfree_online' || rawMethod === 'online' || rawMethod === 'cashfree' || rawMethod === 'razorpay_online'
+        ? 'cashfree_online'
         : 'cod';
 
   if (dbPaymentMethod === 'cod' && parsedWebsite.codEnabled === false) {
@@ -121,11 +121,14 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       400
     );
   }
-  if (dbPaymentMethod === 'razorpay_online' && !getEdgeRazorpayStatus(env).configured) {
-    return jsonResponse(
-      { error: 'Online Razorpay payment gateway is not configured on the server.' },
-      503
-    );
+  if (dbPaymentMethod === 'cashfree_online') {
+    const cfStatus = getEdgeCashfreeStatus(env);
+    if (!cfStatus.configured) {
+      return jsonResponse(
+        { error: 'Online Cashfree payment gateway is not configured on the server. Please select Cash on Delivery or UPI.' },
+        503
+      );
+    }
   }
 
   const paymentReference = sanitizeText(body.paymentReference, 100);
@@ -259,13 +262,46 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }
     }
 
-    // 4. Insert order with honest payment_status = 'pending' (never fake paid)
+    // 4. Create Cashfree Order if online payment selected
+    let cfSessionId: string | null = null;
+    let cfOrderId: string = '';
+    let cfMode: 'sandbox' | 'production' = 'sandbox';
+
+    if (dbPaymentMethod === 'cashfree_online') {
+      cfOrderId = `vv_store_${orderNumber}_${randomHex(2)}`;
+      const returnUrl = `https://master.vijay-visuals-site.pages.dev/site/${pub.public_slug}?order_id=${encodeURIComponent(
+        cfOrderId
+      )}`;
+
+      const cfRes = await createEdgeCashfreeOrder(env, {
+        orderId: cfOrderId,
+        amountInr: total,
+        currency: 'INR',
+        customerDetails: {
+          customerId: customerUserId || `cust_${Date.now().toString(36)}`,
+          customerName,
+          customerEmail: customerEmail || 'store.customer@vijayvisuals.com',
+          customerPhone: customerPhone || '9999999999',
+        },
+        orderMeta: { returnUrl },
+        orderNote: `Store Order #${orderNumber} (${pub.public_slug || 'Store'})`,
+        orderTags: {
+          website_id: pub.website_id,
+          order_number: orderNumber,
+        },
+      });
+
+      cfSessionId = cfRes.paymentSessionId;
+      cfMode = cfRes.mode;
+    }
+
+    // 5. Insert order with honest payment_status = 'pending' (never fake paid)
     const insertRes = await env.DB.prepare(
       `INSERT INTO store_orders
        (order_number, website_id, owner_id, customer_user_id, customer_name, customer_phone, customer_email,
         shipping_address, items_json, subtotal_inr, discount_inr, gst_inr, shipping_inr, total_inr,
-        coupon_code, payment_method, payment_status, gateway_payment_id, order_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'pending', ?, 'placed')`
+        coupon_code, payment_method, payment_status, gateway_order_id, gateway_payment_id, order_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'pending', ?, ?, 'placed')`
     )
       .bind(
         orderNumber,
@@ -283,11 +319,44 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         total,
         appliedCode,
         dbPaymentMethod,
+        cfOrderId,
         paymentReference
       )
       .run();
 
     const orderId = Number(insertRes?.meta?.last_row_id || 0);
+
+    // Record in cashfree_payments ledger if online Cashfree order
+    if (dbPaymentMethod === 'cashfree_online' && cfOrderId && cfSessionId) {
+      await env.DB.prepare(
+        `INSERT INTO cashfree_payments (
+          order_id, cf_order_id, payment_session_id, entity_type, reference_id,
+          website_id, user_id, user_email, user_phone, base_amount_inr,
+          gst_amount_inr, amount_inr, currency, environment, status,
+          notes_json, raw_response_json, created_at, updated_at
+        ) VALUES (
+          ?, NULL, ?, 'storefront_order', ?,
+          ?, ?, ?, ?, ?,
+          0, ?, 'INR', ?, 'CREATED',
+          ?, '{}', datetime('now'), datetime('now')
+        )`
+      )
+        .bind(
+          cfOrderId,
+          cfSessionId,
+          orderNumber,
+          pub.website_id,
+          customerUserId || 'guest',
+          customerEmail,
+          customerPhone,
+          total,
+          total,
+          cfMode,
+          JSON.stringify({ orderNumber, websiteId: pub.website_id, deliveryFee, subtotal, discount })
+        )
+        .run();
+    }
+
     const createdRow = orderId
       ? await env.DB.prepare('SELECT * FROM store_orders WHERE id = ? LIMIT 1')
           .bind(orderId)
@@ -301,6 +370,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         order: createdRow
           ? mapOrderRowToUi(createdRow, Number(pub.rowid || 0))
           : null,
+        paymentSessionId: cfSessionId,
+        cfOrderId: cfOrderId || null,
+        cashfreeEnvironment: cfMode,
       },
       201
     );

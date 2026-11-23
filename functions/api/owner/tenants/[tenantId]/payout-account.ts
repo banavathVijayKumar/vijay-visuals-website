@@ -21,7 +21,7 @@ import {
 } from '../../../_shared';
 import { requireTenantOwnerAccess } from '../../../_tenantAccess';
 import { cleanString, mapPublicationToTenant } from '../../../_tenantMapper';
-import { getEdgeRazorpayStatus } from '../../../payments/_razorpay';
+import { getEdgeCashfreeStatus } from '../../../payments/_cashfree';
 
 export interface SellerPayoutAccountRecord {
   id: number;
@@ -177,6 +177,36 @@ export async function onRequestGet(
     // Missing table fallback
   }
 
+  // 2b. Cashfree Seller Settlements ledger
+  try {
+    const cfSettlements = await env.DB.prepare(
+      `SELECT * FROM cashfree_seller_settlements
+       WHERE website_id = ?
+       ORDER BY created_at DESC LIMIT 50`
+    )
+      .bind(websiteId)
+      .all<Record<string, any>>();
+
+    for (const s of cfSettlements.results || []) {
+      transfers.push({
+        id: Number(s.id || 0),
+        tenantId: tenantRowId,
+        orderId: s.order_id ? Number(s.order_id) : null,
+        razorpayOrderId: cleanString(s.cf_order_id || '', 100),
+        razorpayPaymentId: cleanString(s.cf_payment_id || '', 100),
+        razorpayTransferId: cleanString(s.settlement_id || '', 100),
+        grossAmountInr: Number(s.gross_amount_inr || 0),
+        platformCommissionInr: Number(s.platform_fee_inr || 0),
+        sellerNetAmountInr: Number(s.seller_net_amount_inr || 0),
+        status: cleanString(s.settlement_status || 'settled', 30),
+        reversalId: '',
+        createdAt: cleanString(s.created_at || '', 40),
+      });
+    }
+  } catch {
+    // Missing table fallback
+  }
+
   // 3. COD summary from store_orders
   let codCollectedInr = 0;
   let codPendingInr = 0;
@@ -199,14 +229,15 @@ export async function onRequestGet(
     // Missing table fallback
   }
 
-  // 4. Edge Razorpay status
-  const razorpay = getEdgeRazorpayStatus(env);
+  // 4. Edge Cashfree status
+  const cashfree = getEdgeCashfreeStatus(env);
 
   return jsonResponse({
     account: mappedAccount,
     transfers,
     codSummary: { codCollectedInr, codPendingInr },
-    razorpay,
+    cashfree,
+    razorpay: cashfree,
   });
 }
 
@@ -328,7 +359,7 @@ async function handleSavePayoutAccount(
          bank_ifsc, bank_account_last4, upi_id, kyc_status, settlement_mode,
          platform_commission_percent, notes, created_at, updated_at
        ) VALUES (
-         ?, ?, 'razorpay_route', '', ?,
+         ?, ?, 'cashfree_split', '', ?,
          ?, ?, '', 'under_review', 'direct_seller_account',
          0, ?, datetime('now'), datetime('now')
        )`
@@ -362,6 +393,6 @@ async function handleSavePayoutAccount(
   return jsonResponse({
     success: true,
     account: updatedAccount,
-    message: 'Seller KYC submitted for Razorpay Route Linked Account verification.',
+    message: 'Seller KYC submitted for Cashfree Easy Split verification.',
   });
 }

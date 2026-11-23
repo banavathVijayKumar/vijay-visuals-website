@@ -1,11 +1,23 @@
 // ============================================================================
-// POST /api/payments/cashfree/webhook — Alias Endpoint for Cashfree Webhooks
+// POST, GET, OPTIONS /api/payments/cashfree/webhook — Alias Endpoint for Cashfree Webhooks
 // Forwards directly to official webhook processor at functions/api/webhooks/cashfree
 // ============================================================================
 
 import { PagesContext } from '../../_shared';
-import { onRequestPost as processWebhook } from '../../webhooks/cashfree';
+import {
+  onRequestGet as processGet,
+  onRequestOptions as processOptions,
+  onRequestPost as processPost,
+} from '../../webhooks/cashfree';
+
+export async function onRequestOptions(): Promise<Response> {
+  return processOptions();
+}
+
+export async function onRequestGet(context: PagesContext): Promise<Response> {
+  return processGet(context);
+}
 
 export async function onRequestPost(context: PagesContext): Promise<Response> {
-  return processWebhook(context);
+  return processPost(context);
 }

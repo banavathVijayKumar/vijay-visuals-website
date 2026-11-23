@@ -4,7 +4,7 @@
 
 import { requireAdmin } from '../../../_auth';
 import { PagesContext, errorJson, json, parseJsonBody, sanitizeText, writeAuditLog } from '../../../_shared';
-import { createEdgeRazorpayRefund } from '../../_razorpay';
+import { createEdgeCashfreeRefund } from '../../_cashfree';
 
 export async function onRequestPost(context: PagesContext<{ id: string }>): Promise<Response> {
   const { request, env, params } = context;
@@ -30,8 +30,8 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
     }>();
 
   if (!row) return errorJson('Platform payment not found.', 404);
-  if (row.status !== 'paid' || !row.razorpay_payment_id || row.signature_verified !== 1) {
-    return errorJson('Only verified paid Razorpay platform payments can be refunded.', 400);
+  if (row.status !== 'paid') {
+    return errorJson('Only verified paid platform payments can be refunded.', 400);
   }
 
   const body = (await parseJsonBody<{ amountInr?: number; reason?: string }>(request)) || {};
@@ -39,9 +39,10 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
   const refundAmount = body.amountInr ? Math.min(row.amount_inr, Math.round(Number(body.amountInr))) : undefined;
 
   try {
-    const refund = await createEdgeRazorpayRefund(env, {
-      paymentId: row.razorpay_payment_id,
+    const refund = await createEdgeCashfreeRefund(env, {
+      orderId: (row as any).cf_order_id || (row as any).razorpay_order_id || `vv_order_${row.id}`,
       amountInr: refundAmount,
+      reason,
     });
 
     await env.DB.prepare(
