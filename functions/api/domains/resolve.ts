@@ -1,5 +1,7 @@
 // ============================================================================
 // GET /api/domains/resolve — Multi-Tenant Hostname Resolver (Cloudflare D1)
+// Resolves custom domains (e.g. www.customerbrand.com) AND default delivery subdomains
+// (e.g. customername.vijayvisuals.in / customername.vijay-visuals-site.pages.dev)
 // ============================================================================
 
 import { PagesContext, errorJson, isPlatformHostname, json } from '../_shared';
@@ -31,14 +33,11 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   // Allow ?host= diagnostic resolution ONLY when called on a trusted platform host.
   const lookupHost = isPlatformHostname(actualHost, env) && queryHost ? queryHost : actualHost;
 
-  if (!lookupHost || isPlatformHostname(lookupHost, env)) {
-    return json({
-      matched: false,
-      isPlatformHost: true,
-      hostname: lookupHost,
-    });
+  if (!lookupHost) {
+    return json({ matched: false, hostname: lookupHost, reason: 'missing_host' });
   }
 
+  // 1. Check custom domains registered in tenant_domains
   const isWww = lookupHost.startsWith('www.');
   const rootCandidate = isWww ? lookupHost.slice(4) : lookupHost;
 
@@ -62,42 +61,93 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     .bind(lookupHost, rootCandidate)
     .first<ResolveRow>();
 
-  if (!row) {
-    return json({ matched: false, hostname: lookupHost, reason: 'not_found' });
-  }
+  if (row) {
+    if (
+      row.dns_verification_status !== 'verified' ||
+      (row.status !== 'live' && row.status !== 'expiring_soon') ||
+      row.website_status !== 'published'
+    ) {
+      return json({
+        matched: false,
+        hostname: lookupHost,
+        reason: 'inactive_or_unverified',
+        domainStatus: row.status,
+        websiteStatus: row.website_status,
+      });
+    }
 
-  if (
-    row.dns_verification_status !== 'verified' ||
-    (row.status !== 'live' && row.status !== 'expiring_soon') ||
-    row.website_status !== 'published'
-  ) {
+    const rootDomain = row.domain_name.replace(/^www\./, '');
+    let redirectUrl: string | null = null;
+    if (row.www_mode === 'redirect_to_root' && isWww) {
+      redirectUrl = `https://${rootDomain}`;
+    } else if (row.www_mode === 'redirect_to_www' && !isWww) {
+      redirectUrl = `https://www.${rootDomain}`;
+    }
+
     return json({
-      matched: false,
+      matched: true,
       hostname: lookupHost,
-      reason: 'inactive_or_unverified',
-      domainStatus: row.status,
-      websiteStatus: row.website_status,
+      websiteId: row.website_id,
+      tenantSlug: row.public_slug,
+      businessName: row.business_name,
+      domainName: row.domain_name,
+      status: row.status,
+      sslStatus: row.ssl_status,
+      wwwMode: row.www_mode,
+      redirectUrl,
+      isDefaultDeliverySubdomain: false,
+      deliveryUrl: `https://${row.domain_name}`,
+      customDomainConnected: true,
     });
   }
 
-  const rootDomain = row.domain_name.replace(/^www\./, '');
-  let redirectUrl: string | null = null;
-  if (row.www_mode === 'redirect_to_root' && isWww) {
-    redirectUrl = `https://${rootDomain}`;
-  } else if (row.www_mode === 'redirect_to_www' && !isWww) {
-    redirectUrl = `https://www.${rootDomain}`;
+  // 2. Fallback: Automatic Default Customer Delivery Subdomains
+  // Matches: <slug>.vijayvisuals.in or <slug>.vijay-visuals-site.pages.dev
+  const deliverySubdomainMatch = lookupHost.match(/^([a-z0-9-]+)\.(?:vijayvisuals\.in|vijay-visuals-site\.pages\.dev)$/);
+
+  if (deliverySubdomainMatch) {
+    const candidateSlug = deliverySubdomainMatch[1];
+    // Exclude core reserved platform prefixes
+    const platformPrefixes = new Set(['www', 'master', 'api', 'app', 'admin', 'preview']);
+
+    if (!platformPrefixes.has(candidateSlug)) {
+      const pub = await env.DB.prepare(
+        `SELECT website_id, owner_id, public_slug, business_name, status
+         FROM customer_website_publications
+         WHERE (public_slug = ? OR website_id = ?) AND status = 'published'
+         LIMIT 1`
+      )
+        .bind(candidateSlug, candidateSlug)
+        .first<{ website_id: string; owner_id: string; public_slug: string; business_name: string; status: string }>();
+
+      if (pub) {
+        return json({
+          matched: true,
+          hostname: lookupHost,
+          websiteId: pub.website_id,
+          tenantSlug: pub.public_slug,
+          businessName: pub.business_name,
+          domainName: lookupHost,
+          status: 'live',
+          sslStatus: 'active',
+          wwwMode: 'both',
+          redirectUrl: null,
+          isDefaultDeliverySubdomain: true,
+          deliveryUrl: `https://${pub.public_slug}.vijayvisuals.in`,
+          previewDeliveryUrl: `https://${pub.public_slug}.vijay-visuals-site.pages.dev`,
+          customDomainConnected: false,
+        });
+      }
+    }
   }
 
-  return json({
-    matched: true,
-    hostname: lookupHost,
-    websiteId: row.website_id,
-    tenantSlug: row.public_slug,
-    businessName: row.business_name,
-    domainName: row.domain_name,
-    status: row.status,
-    sslStatus: row.ssl_status,
-    wwwMode: row.www_mode,
-    redirectUrl,
-  });
+  if (isPlatformHostname(lookupHost, env)) {
+    return json({
+      matched: false,
+      isPlatformHost: true,
+      hostname: lookupHost,
+    });
+  }
+
+  return json({ matched: false, hostname: lookupHost, reason: 'not_found' });
 }

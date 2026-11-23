@@ -64,6 +64,7 @@ import { AdminEcosystemPanel } from './AdminEcosystemPanel';
 import { BusinessCommandCenter } from './BusinessCommandCenter';
 import { InventoryAndHrOps } from './InventoryAndHrOps';
 import { HelpAndSuccessCenter } from './HelpAndSuccessCenter';
+import { CustomerSupportCenter } from './CustomerSupportCenter';
 import { BusinessLocationsManager } from './BusinessLocationsManager';
 import { DeliveryGpsSharer } from './DeliveryGpsSharer';
 import { DomainManagementCenter } from './DomainManagementCenter';
@@ -153,6 +154,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     | 'locations'
     | 'marketing'
     | 'help_center'
+    | 'support_center'
     | OperationsTab
     | GrowthTab
   >('command_center');
@@ -1322,6 +1324,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       { id: 'supply_hr', label: 'Warehouses & HR' },
                       { id: 'plugins_dns', label: 'Plugins & Webhooks' },
                       { id: 'subscription_policy', label: 'Renewal & Export' },
+                      { id: 'support_center', label: 'Support & Changes' },
                       { id: 'help_center', label: 'Help & Status' },
                     ].map((tab) => (
                       <button
@@ -1364,6 +1367,15 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
                   {ownerSection === 'help_center' && (
                     <HelpAndSuccessCenter tenantId={ownerData.tenant.id} onNotify={onNotify} />
+                  )}
+
+                  {ownerSection === 'support_center' && (
+                    <CustomerSupportCenter
+                      tenantId={ownerData.tenant.id}
+                      websiteId={ownerData.tenant.slug}
+                      userRole={profile?.role}
+                      onNotify={onNotify}
+                    />
                   )}
 
                   {ownerSection === 'locations' && (

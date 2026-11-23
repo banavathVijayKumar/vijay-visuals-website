@@ -64,7 +64,15 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
         VALUES (?, ?, ?, ?, ?, 'published', ?, ?, ?)`)
         .bind(websiteId, user.id, slug, businessName, serialized, now, now, now).run();
     }
-    return jsonResponse({ success: true, slug, url: `/site/${slug}`, publishedAt: now });
+    return jsonResponse({
+      success: true,
+      slug,
+      url: `/site/${slug}`,
+      deliverySubdomain: `${slug}.vijayvisuals.in`,
+      deliveryUrl: `https://${slug}.vijayvisuals.in`,
+      previewDeliveryUrl: `https://${slug}.vijay-visuals-site.pages.dev`,
+      publishedAt: now,
+    });
   } catch (error) {
     console.error('Website publication failed:', error);
     return jsonResponse({ error: 'Website publishing database is not ready. Apply the customer website publication migration, then retry.' }, 503);
