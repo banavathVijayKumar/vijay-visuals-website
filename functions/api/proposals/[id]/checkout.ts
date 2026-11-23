@@ -31,9 +31,10 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
     return errorJson('Cashfree Payment Gateway is not configured in environment variables.', 503);
   }
 
-  const amountInr = Math.max(1, Number(proposal.grand_total_inr) || 9439);
   const baseAmountInr = Number(proposal.development_fee_inr) || 7999;
-  const gstAmountInr = Number(proposal.gst_inr) || Math.round((baseAmountInr * 18) / 100);
+  const hasConfirmedGst = Boolean(Number(proposal.gst_percent) > 0 && Number(proposal.gst_inr) > 0);
+  const gstAmountInr = hasConfirmedGst ? Number(proposal.gst_inr) : 0;
+  const amountInr = Math.max(1, hasConfirmedGst ? (Number(proposal.grand_total_inr) || (baseAmountInr + gstAmountInr)) : (Number(proposal.grand_total_inr) || baseAmountInr));
 
   const cfOrderId = `vv_prop_${proposal.proposal_number.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}_${Date.now().toString().slice(-4)}`;
   const returnUrl = `https://master.vijay-visuals-site.pages.dev/proposal/${proposal.secure_token}?order_id=${encodeURIComponent(cfOrderId)}&status=return`;

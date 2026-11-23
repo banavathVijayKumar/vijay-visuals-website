@@ -194,7 +194,27 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
   const isDeclined = proposal.status === 'declined' || proposal.delivery_status === 'rejected';
   const isPaid = proposal.status === 'paid';
 
-  const amountFormatted = `₹${(proposal.grand_total_inr || proposal.development_fee_inr || 7999).toLocaleString('en-IN')}`;
+  const hasConfirmedGst = Boolean(
+    proposal.gst_percent &&
+    proposal.gst_percent > 0 &&
+    proposal.gst_inr &&
+    proposal.gst_inr > 0
+  );
+  const devFee = proposal.development_fee_inr || 7999;
+  const gstAmount = hasConfirmedGst ? (proposal.gst_inr || 0) : 0;
+  const totalPayable = hasConfirmedGst
+    ? (proposal.grand_total_inr || (devFee + gstAmount))
+    : (proposal.grand_total_inr || devFee);
+
+  const amountFormatted = `₹${totalPayable.toLocaleString('en-IN')}`;
+
+  let packagesCmp: any = {};
+  try {
+    packagesCmp = proposal.packages_comparison_json ? JSON.parse(proposal.packages_comparison_json) : {};
+  } catch {}
+  const showGoldAndPremium = Boolean(packagesCmp?.gold?.approved === true && packagesCmp?.premium?.approved === true);
+  const goldPrice = packagesCmp.gold?.priceInr || 14999;
+  const premiumPrice = packagesCmp.premium?.priceInr || 24999;
 
   const previewData = {
     customerName: proposal.customer_name,
@@ -291,7 +311,9 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
             <div className="text-right bg-[#14141E] border border-amber-500/30 p-4 rounded-xl">
               <div className="text-[10px] text-[#8E8EA2] uppercase tracking-wider font-semibold">Selected Tier & Price</div>
               <div className="text-2xl font-extrabold text-[#ECC86A] mt-0.5">{amountFormatted}</div>
-              <div className="text-[10px] text-[#10B981] font-medium">18% GST Included · Zero Hidden Costs</div>
+              <div className="text-[10px] text-[#10B981] font-medium">
+                {hasConfirmedGst ? `${proposal.gst_percent}% GST Included · Zero Hidden Costs` : 'Base Package Price · Exclusive of GST (Taxes As Applicable)'}
+              </div>
             </div>
           </div>
 
@@ -340,6 +362,16 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
             </div>
           </div>
 
+          {/* Illustrative Demo Notice */}
+          <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-3">
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-400 text-black shrink-0">
+              Illustrative Demo Data
+            </span>
+            <span className="text-[#C8C8DC] text-[11px] leading-relaxed">
+              Menu items, prices, customer reviews, and photos shown in this interactive preview are sample demonstration data. Your verified official products, menus, and branding will be configured upon onboarding.
+            </span>
+          </div>
+
           <BusinessFuturePreview data={previewData} />
         </section>
 
@@ -351,7 +383,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
               <span>Feature-Wise Pricing Breakdown</span>
             </h2>
             <p className="text-xs text-[#8E8EA2]">
-              Transparent breakdown of our <strong>₹7,999 Starter Business Package</strong>. Understand what each feature does and how it benefits your business.
+              Transparent breakdown of our <strong>₹{devFee.toLocaleString('en-IN')} Starter Business Package</strong>. Understand what each feature does and how it benefits your business.
             </p>
           </div>
 
@@ -370,11 +402,11 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                 <tbody className="divide-y divide-[#1A1A28]">
                   {(proposal.features?.length > 0 ? proposal.features : [
                     { name: '1. Premium Website Design', individualValueInr: 2000, whatItDoes: 'Custom responsive design, branded visual identity, mobile-first layouts', customerBenefit: 'Converts visitors into paying clients' },
-                    { name: '2. Mobile Responsive Design', individualValueInr: 800, whatItDoes: 'Fluid adaptation across smartphones, tablets, and desktops', customerBenefit: 'Smooth experience for 85%+ mobile users' },
+                    { name: '2. Mobile Responsive Architecture', individualValueInr: 800, whatItDoes: 'Fluid adaptation across smartphones, tablets, and desktops', customerBenefit: 'Fluid, responsive browsing across iOS and Android' },
                     { name: '3. Product Catalog and Categories', individualValueInr: 1000, whatItDoes: 'Organized product showcase with prices, variants, photos, descriptions', customerBenefit: 'Clear offerings and menu pricing' },
                     { name: '4. Shopping Cart and Checkout', individualValueInr: 1000, whatItDoes: 'Real-time item additions, instant quantity updates, promo coupons', customerBenefit: 'Minimizes abandoned carts and purchase friction' },
-                    { name: '5. Cashfree Payment Integration', individualValueInr: 1000, whatItDoes: 'UPI (GPay/PhonePe/Paytm), Dynamic QR, Cards, Net Banking', customerBenefit: 'Direct payments to your merchant account' },
-                    { name: '6. Admin Dashboard', individualValueInr: 1000, whatItDoes: 'Self-editing portal to edit products, prices, banners, orders', customerBenefit: 'Zero developer dependency for updates' },
+                    { name: '5. Cashfree Payment Integration', individualValueInr: 1000, whatItDoes: 'UPI (GPay/PhonePe/Paytm), Dynamic QR, Cards, Net Banking', customerBenefit: 'Direct, secure bank settlements with server-side verification' },
+                    { name: '6. Business Owner Dashboard (Self-Editing)', individualValueInr: 1000, whatItDoes: 'Self-editing portal to edit products, prices, banners, orders', customerBenefit: 'Complete operational independence — zero developer fees' },
                     { name: '7. WhatsApp Integration', individualValueInr: 400, whatItDoes: 'Click-to-chat WhatsApp inquiry & instant order alerts', customerBenefit: 'Direct personal customer relationship' },
                     { name: '8. Basic SEO Setup', individualValueInr: 500, whatItDoes: 'Search-friendly meta tags, sitemap.xml, local city targeting', customerBenefit: 'Helps local customers find you on Google' },
                     { name: '9. Contact and Location Setup', individualValueInr: 299, whatItDoes: 'Interactive Google Map directions, business hours, dialers', customerBenefit: 'Walk-in footfall trust and easy navigation' },
@@ -400,144 +432,194 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
             <div className="bg-[#12121E] p-4 border-t border-[#242436] flex flex-wrap items-center justify-between gap-3 text-xs">
               <span className="text-[#8E8EA2]">Total Base Package Development Fee</span>
               <div className="flex items-center gap-4">
-                <span>Base: <strong className="text-white">₹7,999</strong></span>
-                <span>GST (18%): <strong className="text-white">₹1,440</strong></span>
-                <span className="text-sm font-bold text-[#ECC86A]">Grand Total: ₹9,439</span>
+                <span>Base: <strong className="text-white">₹{devFee.toLocaleString('en-IN')}</strong></span>
+                <span>Tax: <strong className="text-white">{hasConfirmedGst ? `₹${gstAmount.toLocaleString('en-IN')} (${proposal.gst_percent}% GST)` : 'Excluded / As Applicable'}</strong></span>
+                <span className="text-sm font-bold text-[#ECC86A]">Grand Total: ₹{totalPayable.toLocaleString('en-IN')}</span>
               </div>
             </div>
           </div>
         </section>
-
-        {/* SECTION 3: PACKAGE COMPARISON */}
+        {/* SECTION 3: PACKAGE DELIVERABLES */}
         <section className="space-y-4">
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span>Package Tiers Comparison</span>
+              <span>{showGoldAndPremium ? 'Package Tiers Comparison' : 'Starter Package Scope & Deliverables'}</span>
             </h2>
             <p className="text-xs text-[#8E8EA2]">
-              Choose the tier that matches your current business size. Upgrade anytime with seamless data migration.
+              {showGoldAndPremium
+                ? 'Choose the tier that matches your current business size. Upgrade anytime with seamless data migration.'
+                : 'Complete architectural scope and SLA inclusions for your Starter Business Package.'}
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* STARTER */}
-            <div className={`rounded-xl p-5 border flex flex-col justify-between ${
-              selectedTier === 'STARTER' ? 'border-[#D4AF37] bg-[#14131B] shadow-lg shadow-amber-500/10' : 'border-[#222232] bg-[#0E0E16]'
-            }`}>
-              <div className="space-y-3">
+          {showGoldAndPremium ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* STARTER */}
+              <div className={`rounded-xl p-5 border flex flex-col justify-between ${
+                selectedTier === 'STARTER' ? 'border-[#D4AF37] bg-[#14131B] shadow-lg shadow-amber-500/10' : 'border-[#222232] bg-[#0E0E16]'
+              }`}>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">STARTER TIER</span>
+                      <h3 className="text-xl font-bold text-white">₹{devFee.toLocaleString('en-IN')}</h3>
+                      <div className="text-[10px] text-[#8E8EA2]">{hasConfirmedGst ? `+${proposal.gst_percent}% GST (₹${totalPayable.toLocaleString('en-IN')} Total)` : 'Base Fee · Taxes As Applicable'}</div>
+                    </div>
+                    {selectedTier === 'STARTER' && (
+                      <span className="px-2 py-0.5 rounded text-[9px] bg-amber-400 text-black font-bold">Selected</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-[#B0B0C4] space-y-1.5 pt-2 border-t border-[#222234]">
+                    <div>✓ Custom Premium Website Design</div>
+                    <div>✓ All 9 Core Features Included</div>
+                    <div>✓ Product Catalog & Shopping Cart</div>
+                    <div>✓ Cashfree PG (UPI / QR / Cards)</div>
+                    <div>✓ Self-Editing Business Dashboard</div>
+                    <div>✓ 30 Days Free Support</div>
+                    <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery: 3–5 Business Days</div>
+                  </div>
+                </div>
+                {!isApproved && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTier('STARTER');
+                      setApproveModalOpen(true);
+                    }}
+                    className="w-full mt-4 py-2 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:bg-amber-400"
+                  >
+                    Select Starter (₹{devFee.toLocaleString('en-IN')})
+                  </button>
+                )}
+              </div>
+
+              {/* GOLD */}
+              <div className={`rounded-xl p-5 border flex flex-col justify-between ${
+                selectedTier === 'GOLD' ? 'border-[#D4AF37] bg-[#14131B] shadow-lg shadow-amber-500/10' : 'border-[#222232] bg-[#0E0E16]'
+              }`}>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">GOLD TIER</span>
+                      <h3 className="text-xl font-bold text-white">₹{goldPrice.toLocaleString('en-IN')}</h3>
+                      <div className="text-[10px] text-[#8E8EA2]">+18% GST (₹{Math.round(goldPrice * 1.18).toLocaleString('en-IN')} Total)</div>
+                    </div>
+                    {selectedTier === 'GOLD' && (
+                      <span className="px-2 py-0.5 rounded text-[9px] bg-amber-400 text-black font-bold">Selected</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-[#B0B0C4] space-y-1.5 pt-2 border-t border-[#222234]">
+                    <div>✓ Everything in Starter Tier</div>
+                    <div>✓ Customer Reviews & Ratings Engine</div>
+                    <div>✓ Discount Coupons & Promo Engine</div>
+                    <div>✓ Shiprocket Courier Integration</div>
+                    <div>✓ Priority DNS & Custom Domain</div>
+                    <div>✓ 90 Days Priority Support</div>
+                    <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery: 5–7 Business Days</div>
+                  </div>
+                </div>
+                {!isApproved && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTier('GOLD');
+                      setApproveModalOpen(true);
+                    }}
+                    className="w-full mt-4 py-2 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:bg-amber-400"
+                  >
+                    Select Gold (₹{goldPrice.toLocaleString('en-IN')})
+                  </button>
+                )}
+              </div>
+
+              {/* PREMIUM */}
+              <div className={`rounded-xl p-5 border flex flex-col justify-between ${
+                selectedTier === 'PREMIUM' ? 'border-[#D4AF37] bg-[#14131B] shadow-lg shadow-amber-500/10' : 'border-[#222232] bg-[#0E0E16]'
+              }`}>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">PREMIUM TIER</span>
+                      <h3 className="text-xl font-bold text-white">₹{premiumPrice.toLocaleString('en-IN')}</h3>
+                      <div className="text-[10px] text-[#8E8EA2]">+18% GST (₹{Math.round(premiumPrice * 1.18).toLocaleString('en-IN')} Total)</div>
+                    </div>
+                    {selectedTier === 'PREMIUM' && (
+                      <span className="px-2 py-0.5 rounded text-[9px] bg-amber-400 text-black font-bold">Selected</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-[#B0B0C4] space-y-1.5 pt-2 border-t border-[#222234]">
+                    <div>✓ Everything in Gold Tier</div>
+                    <div>✓ Installable Mobile PWA App</div>
+                    <div>✓ App Icon & Offline Caching</div>
+                    <div>✓ Multi-Currency FX Engine</div>
+                    <div>✓ Dedicated Account Manager</div>
+                    <div>✓ 1 Year VIP Support</div>
+                    <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery: 7–10 Business Days</div>
+                  </div>
+                </div>
+                {!isApproved && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTier('PREMIUM');
+                      setApproveModalOpen(true);
+                    }}
+                    className="w-full mt-4 py-2 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:bg-amber-400"
+                  >
+                    Select Premium (₹{premiumPrice.toLocaleString('en-IN')})
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl p-5 border border-[#D4AF37] bg-[#14131B] shadow-lg shadow-amber-500/10 flex flex-col md:flex-row justify-between gap-6">
+              <div className="space-y-3 flex-1">
                 <div className="flex justify-between items-start">
                   <div>
-                    <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">STARTER TIER</span>
-                    <h3 className="text-xl font-bold text-white">₹7,999</h3>
-                    <div className="text-[10px] text-[#8E8EA2]">+18% GST (₹9,439 Total)</div>
+                    <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">OFFICIAL PROPOSAL PACKAGE</span>
+                    <h3 className="text-xl font-bold text-white">Starter Business Architecture</h3>
+                    <div className="text-xs text-[#8E8EA2]">
+                      {hasConfirmedGst ? `₹${totalPayable.toLocaleString('en-IN')} (${proposal.gst_percent}% GST Included)` : `₹${devFee.toLocaleString('en-IN')} (Base Fee · Taxes As Applicable)`}
+                    </div>
                   </div>
-                  {selectedTier === 'STARTER' && (
-                    <span className="px-2 py-0.5 rounded text-[9px] bg-amber-400 text-black font-bold">Selected</span>
-                  )}
+                  <span className="px-2.5 py-1 rounded text-xs bg-amber-400 text-black font-bold">Included</span>
                 </div>
-                <div className="text-xs text-[#B0B0C4] space-y-1.5 pt-2 border-t border-[#222234]">
-                  <div>✓ Custom Premium Website Design</div>
-                  <div>✓ All 9 Core Features Included</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-[#B0B0C4] pt-2 border-t border-[#222234]">
+                  <div>✓ Custom Premium Responsive Design</div>
+                  <div>✓ Cashfree Payment Gateway (UPI / QR / Cards)</div>
+                  <div>✓ All 9 Core Website Features Included</div>
+                  <div>✓ Business Owner Dashboard (Self-Editing)</div>
                   <div>✓ Product Catalog & Shopping Cart</div>
-                  <div>✓ Cashfree PG (UPI / QR / Cards)</div>
-                  <div>✓ Self-Editing Business Dashboard</div>
-                  <div>✓ 30 Days Free Support</div>
-                  <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery: 3–5 Business Days</div>
+                  <div>✓ 30 Days Complimentary Assistance</div>
+                  <div>✓ One-Click WhatsApp Order Alerts</div>
+                  <div>✓ Delivery Timeline: 3–5 Business Days</div>
+                </div>
+                <div className="pt-2 text-[11px] text-[#7C7C92] italic">
+                  * Custom Enterprise Tiers: Multi-location sync, automated courier integrations, and mobile PWA apps are configured on-demand as separate scopes upon owner request.
                 </div>
               </div>
-              {!isApproved && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTier('STARTER');
-                    setApproveModalOpen(true);
-                  }}
-                  className="w-full mt-4 py-2 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:bg-amber-400"
-                >
-                  Select Starter (₹7,999)
-                </button>
-              )}
-            </div>
-
-            {/* GOLD */}
-            <div className={`rounded-xl p-5 border flex flex-col justify-between ${
-              selectedTier === 'GOLD' ? 'border-[#D4AF37] bg-[#14131B] shadow-lg shadow-amber-500/10' : 'border-[#222232] bg-[#0E0E16]'
-            }`}>
-              <div className="space-y-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">GOLD TIER</span>
-                    <h3 className="text-xl font-bold text-white">₹14,999</h3>
-                    <div className="text-[10px] text-[#8E8EA2]">+18% GST (₹17,699 Total)</div>
-                  </div>
-                  {selectedTier === 'GOLD' && (
-                    <span className="px-2 py-0.5 rounded text-[9px] bg-amber-400 text-black font-bold">Selected</span>
-                  )}
+              <div className="md:w-64 flex flex-col justify-between border-t md:border-t-0 md:border-l border-[#242436] pt-4 md:pt-0 md:pl-6">
+                <div>
+                  <div className="text-[10px] text-[#7C7C92] uppercase font-semibold">Total Base Investment</div>
+                  <div className="text-2xl font-extrabold text-[#ECC86A]">₹{totalPayable.toLocaleString('en-IN')}</div>
+                  <div className="text-[10px] text-emerald-400 mt-1">✓ Lifetime Self-Editing Included</div>
                 </div>
-                <div className="text-xs text-[#B0B0C4] space-y-1.5 pt-2 border-t border-[#222234]">
-                  <div>✓ Everything in Starter Tier</div>
-                  <div>✓ Customer Reviews & Ratings Engine</div>
-                  <div>✓ Discount Coupons & Promo Engine</div>
-                  <div>✓ Shiprocket Courier Integration</div>
-                  <div>✓ Priority DNS & Custom Domain</div>
-                  <div>✓ 90 Days Priority Support</div>
-                  <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery: 5–7 Business Days</div>
-                </div>
+                {!isApproved && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTier('STARTER');
+                      setApproveModalOpen(true);
+                    }}
+                    className="w-full mt-4 py-2.5 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:bg-amber-400 transition-colors"
+                  >
+                    Approve Package (₹{totalPayable.toLocaleString('en-IN')})
+                  </button>
+                )}
               </div>
-              {!isApproved && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTier('GOLD');
-                    setApproveModalOpen(true);
-                  }}
-                  className="w-full mt-4 py-2 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:bg-amber-400"
-                >
-                  Select Gold (₹14,999)
-                </button>
-              )}
             </div>
-
-            {/* PREMIUM */}
-            <div className={`rounded-xl p-5 border flex flex-col justify-between ${
-              selectedTier === 'PREMIUM' ? 'border-[#D4AF37] bg-[#14131B] shadow-lg shadow-amber-500/10' : 'border-[#222232] bg-[#0E0E16]'
-            }`}>
-              <div className="space-y-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">PREMIUM TIER</span>
-                    <h3 className="text-xl font-bold text-white">₹24,999</h3>
-                    <div className="text-[10px] text-[#8E8EA2]">+18% GST (₹29,499 Total)</div>
-                  </div>
-                  {selectedTier === 'PREMIUM' && (
-                    <span className="px-2 py-0.5 rounded text-[9px] bg-amber-400 text-black font-bold">Selected</span>
-                  )}
-                </div>
-                <div className="text-xs text-[#B0B0C4] space-y-1.5 pt-2 border-t border-[#222234]">
-                  <div>✓ Everything in Gold Tier</div>
-                  <div>✓ Installable Mobile PWA App</div>
-                  <div>✓ App Icon & Offline Caching</div>
-                  <div>✓ Multi-Currency FX Engine</div>
-                  <div>✓ Dedicated Account Manager</div>
-                  <div>✓ 1 Year VIP Support</div>
-                  <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery: 7–10 Business Days</div>
-                </div>
-              </div>
-              {!isApproved && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTier('PREMIUM');
-                    setApproveModalOpen(true);
-                  }}
-                  className="w-full mt-4 py-2 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:bg-amber-400"
-                >
-                  Select Premium (₹24,999)
-                </button>
-              )}
-            </div>
-          </div>
+          )}
         </section>
 
         {/* SECTION 4: ACTIONS & DOWNLOAD CALLOUT */}
@@ -620,38 +702,51 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                 Confirm your approval for the <strong>{proposal.business_name}</strong> digital storefront.
               </p>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-white mb-1.5">Selected Package Tier:</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['STARTER', 'GOLD', 'PREMIUM'] as const).map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setSelectedTier(t)}
-                      className={`p-2 rounded-lg border text-center transition-all ${
-                        selectedTier === t
-                          ? 'border-amber-400 bg-amber-950/30 text-amber-300 font-bold'
-                          : 'border-[#26263A] bg-[#161622] text-[#8E8EA2]'
-                      }`}
-                    >
-                      <span className="block text-xs">{t}</span>
-                      <span className="block text-[10px]">
-                        {t === 'STARTER' ? '₹7,999' : t === 'GOLD' ? '₹14,999' : '₹24,999'}
-                      </span>
-                    </button>
-                  ))}
+              {showGoldAndPremium ? (
+                <div>
+                  <label className="block text-[11px] font-semibold text-white mb-1.5">Selected Package Tier:</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['STARTER', 'GOLD', 'PREMIUM'] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setSelectedTier(t)}
+                        className={`p-2 rounded-lg border text-center transition-all ${
+                          selectedTier === t
+                            ? 'border-amber-400 bg-amber-950/30 text-amber-300 font-bold'
+                            : 'border-[#26263A] bg-[#161622] text-[#8E8EA2]'
+                        }`}
+                      >
+                        <span className="block text-xs">{t}</span>
+                        <span className="block text-[10px]">
+                          {t === 'STARTER' ? `₹${devFee.toLocaleString('en-IN')}` : t === 'GOLD' ? `₹${goldPrice.toLocaleString('en-IN')}` : `₹${premiumPrice.toLocaleString('en-IN')}`}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-[11px] font-semibold text-white mb-1.5">Authorized Package Tier:</label>
+                  <div className="p-3 rounded-lg border border-amber-400 bg-amber-950/30 flex items-center justify-between">
+                    <div>
+                      <span className="block text-xs font-bold text-amber-300">STARTER BUSINESS PACKAGE</span>
+                      <span className="block text-[10px] text-[#8E8EA2]">Includes all 9 features, dashboard & Cashfree PG</span>
+                    </div>
+                    <span className="text-sm font-extrabold text-white">₹{devFee.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+              )}
 
               <div className="bg-[#141420] p-3 rounded-lg border border-[#252538] space-y-1">
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span>Payable Amount:</span>
-                  <strong className="text-amber-300">
-                    {selectedTier === 'STARTER' ? '₹9,439' : selectedTier === 'GOLD' ? '₹17,699' : '₹29,499'} (incl. 18% GST)
+                  <strong className="text-amber-300 text-sm">
+                    ₹{totalPayable.toLocaleString('en-IN')} {hasConfirmedGst ? `(incl. ${proposal.gst_percent}% GST)` : '(Base Fee · Taxes As Applicable)'}
                   </strong>
                 </div>
                 <div className="text-[10px] text-[#7C7C92]">
-                  Includes all development, setup, and 30–90 days onboarding support.
+                  Includes all development, setup, and 30 days complimentary onboarding support.
                 </div>
               </div>
 

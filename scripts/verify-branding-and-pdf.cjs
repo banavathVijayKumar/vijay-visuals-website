@@ -41,6 +41,23 @@ if (pdfSource.includes('9999999999')) {
 }
 console.log('[PASS] proposalPdfGenerator.ts free of 9999999999 placeholder.');
 
+// Check that unsupported guarantees are absent from proposal code
+const guaranteePatterns = [
+  /under[\s-]1[\s-]second/i,
+  /sub-second\s+page\s+loads/i,
+  /zero\s+server\s+crashes/i,
+  /zero\s+payment\s+drop-offs/i,
+  /Quality\s+Guaranteed/i,
+];
+
+for (const pattern of guaranteePatterns) {
+  if (pattern.test(pdfSource)) {
+    console.error(`FAIL: proposalPdfGenerator.ts still contains unsupported guarantee matching ${pattern}`);
+    process.exit(1);
+  }
+}
+console.log('[PASS] proposalPdfGenerator.ts free of unsupported performance and results guarantees.');
+
 // Check that info@vijayvisuals.com is not present in proposalPdfGenerator
 if (pdfSource.includes('info@vijayvisuals.com')) {
   console.error('FAIL: proposalPdfGenerator.ts still contains info@vijayvisuals.com');
@@ -122,7 +139,7 @@ if (startIndex !== -1 && endIndex !== -1) {
     .replace(/\$\{p\.business_name\}/g, 'Royal Feast Gourmet Kitchen')
     .replace(/\$\{categoryName\}/g, 'Restaurant & Gourmet Dining')
     .replace(/\$\{tier\}/g, 'STARTER')
-    .replace(/\$\{totalAmount\.toLocaleString\('en-IN'\)\}/g, '9,439')
+    .replace(/\$\{totalAmount\.toLocaleString\('en-IN'\)\}/g, '7,999')
     .replace(/\$\{p\.customer_name\}/g, 'Vikram Malhotra')
     .replace(/\$\{p\.customer_phone \|\| '\+91 9381362201'\}/g, '+91 9381362201')
     .replace(/\$\{p\.city \|\| 'Hyderabad'\}/g, 'Hyderabad')
@@ -135,20 +152,21 @@ if (startIndex !== -1 && endIndex !== -1) {
     .replace(/\$\{maintFee\.toLocaleString\('en-IN'\)\}/g, '0')
     .replace(/\$\{domainHostingFee\.toLocaleString\('en-IN'\)\}/g, '0')
     .replace(/\$\{subtotal\.toLocaleString\('en-IN'\)\}/g, '7,999')
-    .replace(/\$\{gstPercent\}/g, '18')
-    .replace(/\$\{gstAmount\.toLocaleString\('en-IN'\)\}/g, '1,440');
+    .replace(/\$\{hasConfirmedGst\s*\?\s*`\+₹\$\{gstAmount\.toLocaleString\('en-IN'\)\}\s*\(\$\{p\.gst_percent\}%\s*GST\)`\s*:\s*'GST:\s*Excluded\s*\/\s*As\s*Applicable'\}/g, 'GST: Excluded / As Applicable')
+    .replace(/\$\{hasConfirmedGst\s*\?\s*`\(One-Time\s*·\s*\$\{p\.gst_percent\}%\s*GST\s*Included\)`\s*:\s*'\(One-Time\s*Base\s*Price\s*·\s*Exclusive\s*of\s*GST\s*\/\s*As\s*Applicable\)'\}/g, '(One-Time Base Price · Exclusive of GST / As Applicable)')
+    .replace(/\$\{hasConfirmedGst\s*\?\s*'All-Inclusive'\s*:\s*'\(Base Price\)'\}/g, '(Base Price)');
 
   // Replace features loop with rendered table rows
   const featuresRows = `
     <tr><td><strong>1. Premium Website Design</strong></td><td>Custom responsive design, branded visual identity, mobile-first layouts, and typography.</td><td class="col-price">₹2,000</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
-    <tr><td><strong>2. Mobile Responsive Design</strong></td><td>Fluid adaptation across smartphones, tablets, and desktops.</td><td class="col-price">₹800</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
-    <tr><td><strong>3. Product Catalog and Categories</strong></td><td>Organized product/service showcase with prices, variants, photos, and descriptions.</td><td class="col-price">₹1,000</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
-    <tr><td><strong>4. Shopping Cart and Checkout</strong></td><td>Real-time item additions, instant quantity updates, promo coupons, and address capture.</td><td class="col-price">₹1,000</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
-    <tr><td><strong>5. Cashfree Payment Integration</strong></td><td>Full payment processing with UPI (Google Pay, PhonePe, Paytm), dynamic QR codes, cards, and net banking.</td><td class="col-price">₹1,000</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
-    <tr><td><strong>6. Direct WhatsApp Ordering</strong></td><td>One-click WhatsApp order generation with complete itemized cart summaries.</td><td class="col-price">₹700</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
-    <tr><td><strong>7. Fast Cloudflare Hosting & SSL</strong></td><td>Edge-distributed fast SSD hosting with free automatic HTTPS/SSL encryption.</td><td class="col-price">₹700</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
-    <tr><td><strong>8. Search Engine Optimization (SEO)</strong></td><td>Search-friendly meta tags, sitemap.xml, robots.txt, and local area/city targeting.</td><td class="col-price">₹500</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
-    <tr><td><strong>9. Contact & Map Location Setup</strong></td><td>Interactive Google Map directions, business hours, phone dialers, and address display.</td><td class="col-price">₹299</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
+    <tr><td><strong>2. Mobile Responsive Architecture</strong></td><td>Fluid adaptation across smartphones, tablets, and desktops.</td><td class="col-price">₹800</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
+    <tr><td><strong>3. Product Catalog & Categories</strong></td><td>Organized product/service showcase with prices, variants, photos, and descriptions.</td><td class="col-price">₹1,000</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
+    <tr><td><strong>4. Shopping Cart & Frictionless Checkout</strong></td><td>Real-time item additions, instant quantity updates, promo coupons, and address capture.</td><td class="col-price">₹1,000</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
+    <tr><td><strong>5. Cashfree Payment Gateway Integration</strong></td><td>Full payment processing with UPI (Google Pay, PhonePe, Paytm), dynamic QR codes, cards, and net banking.</td><td class="col-price">₹1,000</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
+    <tr><td><strong>6. Business Owner Dashboard (Self-Editing)</strong></td><td>Dedicated private management portal to update items, change prices, and track orders with zero developer fees.</td><td class="col-price">₹1,000</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
+    <tr><td><strong>7. WhatsApp Business Integration</strong></td><td>One-click direct WhatsApp chat inquiry buttons and order alerts.</td><td class="col-price">₹400</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
+    <tr><td><strong>8. Ethical Local SEO & Search Readiness</strong></td><td>Search-friendly meta tags, sitemap.xml, robots.txt, and local area/city targeting.</td><td class="col-price">₹500</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
+    <tr><td><strong>9. Interactive Contact, Map & Business Hours</strong></td><td>Interactive Google Map directions, opening hours, click-to-call dialers, and address display.</td><td class="col-price">₹299</td><td style="color: #10B981; font-weight: 700; text-align: center;">INCLUDED</td></tr>
   `;
   rawHtml = rawHtml.replace(/\$\{features\.map\(\(f, idx\) =>[\s\S]*?join\(''\)\}/, featuresRows);
 

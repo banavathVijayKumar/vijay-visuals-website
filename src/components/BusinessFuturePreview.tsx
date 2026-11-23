@@ -198,6 +198,15 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
             </div>
           </div>
 
+          {/* Illustrative Demo Banner */}
+          <div className="bg-amber-950/40 border-b border-amber-500/30 px-3 py-1.5 flex items-center justify-between text-[11px] text-amber-200">
+            <span className="flex items-center gap-1.5">
+              <span className="font-bold uppercase tracking-wider text-[9px] bg-amber-400 text-black px-1.5 py-0.5 rounded">Illustrative Demo</span>
+              <span>Menu items, prices, and reviews shown below are sample demonstration data.</span>
+            </span>
+            <span className="text-[10px] text-amber-300/80 hidden sm:inline">Replaced with your verified business assets</span>
+          </div>
+
           {/* Storefront Navigation Bar */}
           <header className="border-b border-[#1E1E2C] bg-[#0E0E16]/95 backdrop-blur px-4 py-3 flex items-center justify-between sticky top-0 z-20">
             <div className="flex items-center gap-2.5">
@@ -313,8 +322,8 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
                   </div>
                   <div className="bg-[#11111A] border border-[#222232] p-3 rounded-lg">
                     <ShieldCheck className="w-4 h-4 text-blue-400 mx-auto mb-1" />
-                    <div className="text-xs font-semibold text-white">100% Genuine</div>
-                    <div className="text-[10px] text-[#8E8EA2]">Quality Guaranteed</div>
+                    <div className="text-xs font-semibold text-white">Quality Assured</div>
+                    <div className="text-[10px] text-[#8E8EA2]">Curated Inclusions [Demo]</div>
                   </div>
                 </div>
 
@@ -372,7 +381,10 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
               <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#202030] pb-3">
                   <div>
-                    <h2 className="text-base font-bold text-white">Catalog & Offerings</h2>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-bold text-white">Catalog & Offerings</h2>
+                      <span className="text-[9px] bg-amber-950/60 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Illustrative Demo</span>
+                    </div>
                     <p className="text-xs text-[#8E8EA2]">{products.length} offerings available online</p>
                   </div>
                 </div>
@@ -550,7 +562,14 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
             {/* 5. ABOUT PAGE */}
             {activePage === 'about' && (
               <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
-                <h2 className="text-lg font-bold text-white">About {data.businessName}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-white">About {data.businessName}</h2>
+                  <span className="text-[9px] bg-amber-950/60 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Demo Story</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/30 text-[10px] text-amber-300 flex items-center gap-1.5">
+                  <span className="font-bold uppercase tracking-wider text-[8px] bg-amber-400 text-black px-1.5 py-0.5 rounded">Demo Data</span>
+                  <span>Illustrative business story. Your authentic business history and owner profile will be published here upon launch.</span>
+                </div>
                 <div className="bg-[#12121C] border border-[#222232] rounded-xl p-5 space-y-3 text-xs text-[#B0B0C4] leading-relaxed">
                   <p>
                     {data.businessName} is dedicated to serving customers in {data.city || 'Hyderabad'} and surrounding areas with high-quality {categoryName.toLowerCase()} products and personalized attention.
@@ -565,7 +584,14 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
             {/* 6. CONTACT & MAP PAGE */}
             {activePage === 'contact' && (
               <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
-                <h2 className="text-base font-bold text-white">Visit & Contact Us</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-white">Visit & Contact Us</h2>
+                  <span className="text-[9px] bg-amber-950/60 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Demo Location</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/30 text-[10px] text-amber-300 flex items-center gap-1.5">
+                  <span className="font-bold uppercase tracking-wider text-[8px] bg-amber-400 text-black px-1.5 py-0.5 rounded">Demo Data</span>
+                  <span>Addresses, phone numbers, and business hours shown below are illustrative placeholders until verified client onboarding.</span>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                   <div className="bg-[#12121C] border border-[#222232] rounded-xl p-4 space-y-3">
                     <div className="flex items-start gap-2.5">

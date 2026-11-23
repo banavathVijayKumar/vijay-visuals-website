@@ -60,8 +60,11 @@ export function generateProposalHtml(p: ProposalRecord): string {
   } catch {}
 
   const tier = p.package_tier || 'STARTER';
+  const hasConfirmedGst = Boolean(p.gst_percent && p.gst_percent > 0 && p.gst_inr && p.gst_inr > 0);
   const devFee = p.development_fee_inr || 7999;
-  const totalAmount = p.grand_total_inr || (devFee + Math.round((devFee * 18) / 100));
+  const gstAmount = hasConfirmedGst ? (p.gst_inr || 0) : 0;
+  const totalAmount = hasConfirmedGst ? (p.grand_total_inr || (devFee + gstAmount)) : (p.grand_total_inr || devFee);
+  const showGoldAndPremium = Boolean(packagesCmp?.gold?.approved === true && packagesCmp?.premium?.approved === true);
   const goldPrice = packagesCmp.gold?.priceInr || 14999;
   const premiumPrice = packagesCmp.premium?.priceInr || 24999;
 
@@ -306,7 +309,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           ${tier} <span style="font-size: 15px; font-weight: 400; color: #A5A5B8;">PACKAGE</span>
         </div>
         <div style="font-size: 20px; font-weight: 800; color: #ECC86A;">
-          ₹${totalAmount.toLocaleString('en-IN')} <span style="font-size: 10px; font-weight: 400; color: #8E8EA2;">(One-Time · 18% GST Included)</span>
+          ₹${totalAmount.toLocaleString('en-IN')} <span style="font-size: 10px; font-weight: 400; color: #8E8EA2;">${hasConfirmedGst ? `(One-Time · ${p.gst_percent}% GST Included)` : '(One-Time Base Price · Exclusive of GST / As Applicable)'}</span>
         </div>
       </div>
     </div>
@@ -384,7 +387,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
         <div class="feature-card">
           <div style="font-size: 11px; font-weight: 600; color: #FFFFFF; margin-bottom: 4px;">Mobile-First Responsive Layout</div>
           <p style="font-size: 9.5px; color: #9A9AB4; margin: 0; line-height: 1.5;">
-            Over 85% of retail & dining customers browse on smartphones. Your website fluidly adapts to iOS Safari and Android Chrome with instant sub-second page loads.
+            Modern retail & dining customers browse primarily on smartphones. Your website fluidly adapts across iOS Safari and Android Chrome with optimized, responsive layouts.
           </p>
         </div>
         <div class="feature-card">
@@ -405,6 +408,10 @@ export function generateProposalHtml(p: ProposalRecord): string {
             You own a dedicated Business Owner Dashboard to change prices, upload photos, add products, view orders, and manage inquiries without hiring a web developer.
           </p>
         </div>
+      </div>
+
+      <div style="margin-top: 10px; font-size: 8px; color: #7C7C92; font-style: italic;">
+        * Illustrative Demo Notice: Sample product names, photos, and reviews shown in storefront illustrations represent illustrative demo data and will be replaced with your verified business assets upon onboarding.
       </div>
     </div>
 
@@ -437,35 +444,35 @@ export function generateProposalHtml(p: ProposalRecord): string {
         </p>
       </div>
 
-      <div style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; flex-direction: column; gap: 5px;">
         ${(features.length > 0 ? features : [
-          { name: 'Premium Website Design', whatItDoes: 'Custom responsive design, branded visual identity, mobile-first layouts, and typography.', customerBenefit: 'Establishes a luxury, trustworthy brand image that converts visitors into customers.', individualValueInr: 2000 },
-          { name: 'Mobile Responsive Design', whatItDoes: 'Fluid adaptation across smartphones, tablets, and desktops.', customerBenefit: 'Fast, seamless experience for 85%+ customers browsing on mobile devices.', individualValueInr: 800 },
-          { name: 'Product Catalog and Categories', whatItDoes: 'Organized product/service showcase with prices, variants, photos, and descriptions.', customerBenefit: 'Customers can quickly browse items and understand offerings and pricing.', individualValueInr: 1000 },
-          { name: 'Shopping Cart and Checkout', whatItDoes: 'Real-time item additions, instant quantity updates, promo coupons, and address capture.', customerBenefit: 'Frictionless purchasing process minimizing abandoned carts and maximizing revenue.', individualValueInr: 1000 },
-          { name: 'Cashfree Payment Integration', whatItDoes: 'Full payment processing with UPI (Google Pay, PhonePe, Paytm), Dynamic QR, Cards, and Net Banking.', customerBenefit: 'Direct, reliable payments with instant server verification and zero payment drop-offs.', individualValueInr: 1000 },
-          { name: 'Admin Dashboard', whatItDoes: 'Dedicated business management portal to edit products, prices, banners, orders, and inquiries.', customerBenefit: 'Total business independence without needing expensive developers for daily updates.', individualValueInr: 1000 },
-          { name: 'WhatsApp Integration', whatItDoes: 'Direct click-to-chat WhatsApp enquiry buttons and instant order alerts.', customerBenefit: 'Direct personal interaction with customers on India’s #1 messaging platform.', individualValueInr: 400 },
-          { name: 'Basic SEO Setup', whatItDoes: 'Search-friendly meta tags, sitemap.xml, robots.txt, and local area/city targeting.', customerBenefit: 'Helps local customers discover the business on Google searches without paid ads.', individualValueInr: 500 },
-          { name: 'Contact and Location Setup', whatItDoes: 'Interactive Google Map directions, business hours, phone dialers, and address display.', customerBenefit: 'Walk-in customers find the physical shop easily and build immediate trust.', individualValueInr: 299 },
-        ]).slice(0, 7).map((f: any, i: number) => `
-          <div style="background: #12121B; border: 1px solid #232332; border-radius: 6px; padding: 7px 10px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+          { name: '1. Premium Website Design', whatItDoes: 'Custom responsive design, branded visual identity, mobile-first layouts, and typography.', customerBenefit: 'Establishes a luxury, trustworthy brand image that converts visitors into customers.', individualValueInr: 2000 },
+          { name: '2. Mobile Responsive Architecture', whatItDoes: 'Fluid adaptation across smartphones, tablets, and desktops.', customerBenefit: 'Fluid, accessible browsing experience tailored for all modern mobile and desktop screens.', individualValueInr: 800 },
+          { name: '3. Product Catalog & Categories', whatItDoes: 'Organized product and menu showcase with prices, variants, photos, and descriptions.', customerBenefit: 'Customers can quickly browse items and understand offerings and pricing with zero confusion.', individualValueInr: 1000 },
+          { name: '4. Shopping Cart & Frictionless Checkout', whatItDoes: 'Real-time item additions, instant quantity updates, promo coupons, and address capture.', customerBenefit: 'Frictionless purchasing process minimizing abandoned carts and maximizing order completions.', individualValueInr: 1000 },
+          { name: '5. Cashfree Payment Gateway Integration', whatItDoes: 'Full payment processing with UPI (Google Pay, PhonePe, Paytm), Dynamic QR, Cards, and Net Banking.', customerBenefit: 'Secure, reliable payments with direct bank settlements and real-time server-side verification.', individualValueInr: 1000 },
+          { name: '6. Business Owner Dashboard (Self-Editing Portal)', whatItDoes: 'Dedicated private management portal to update menu/products, edit prices, upload photos, and view orders.', customerBenefit: 'Complete operational independence — update your business anytime with zero ongoing developer costs.', individualValueInr: 1000 },
+          { name: '7. WhatsApp Business Integration', whatItDoes: 'Direct click-to-chat WhatsApp inquiry buttons and instant order alerts.', customerBenefit: 'Direct personal interaction with customers on India’s #1 messaging platform.', individualValueInr: 400 },
+          { name: '8. Ethical Local SEO & Search Readiness', whatItDoes: 'Search-friendly meta tags, sitemap.xml, robots.txt, and local area/city targeting.', customerBenefit: 'Helps local customers discover the business on Google searches with ethical technical hygiene.', individualValueInr: 500 },
+          { name: '9. Interactive Contact, Map & Business Hours', whatItDoes: 'Interactive Google Map directions, opening hours, click-to-call dialers, and address display.', customerBenefit: 'Walk-in customers find the physical shop easily and build immediate operational trust.', individualValueInr: 299 },
+        ]).map((f: any, i: number) => `
+          <div style="background: #12121B; border: 1px solid #232332; border-radius: 5px; padding: 4.5px 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
             <div style="flex: 1;">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="color: #D4AF37; font-weight: 700; font-size: 10px;">0${i + 1}.</span>
-                <span style="font-size: 11px; font-weight: 600; color: #FFFFFF;">${f.name}</span>
-                <span class="badge badge-included">Included</span>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="color: #D4AF37; font-weight: 700; font-size: 9.5px;">0${i + 1}.</span>
+                <span style="font-size: 10px; font-weight: 600; color: #FFFFFF;">${f.name.replace(/^[0-9]+\.\s*/, '')}</span>
+                <span class="badge badge-included" style="font-size: 7px; padding: 1px 4px;">Included</span>
               </div>
-              <div style="font-size: 9px; color: #8E8EA2; margin-top: 2px;">
+              <div style="font-size: 8px; color: #8E8EA2; margin-top: 1px;">
                 <strong>What it does:</strong> ${f.whatItDoes}
               </div>
-              <div style="font-size: 9px; color: #10B981; margin-top: 1px;">
+              <div style="font-size: 8px; color: #10B981; margin-top: 1px;">
                 <strong>Benefit:</strong> ${f.customerBenefit}
               </div>
             </div>
-            <div style="text-align: right; min-width: 65px;">
-              <div style="font-size: 8px; color: #7C7C92; text-transform: uppercase;">Valued at</div>
-              <div style="font-size: 11px; font-weight: 700; color: #ECC86A;">₹${(f.individualValueInr || 0).toLocaleString('en-IN')}</div>
+            <div style="text-align: right; min-width: 60px;">
+              <div style="font-size: 7.5px; color: #7C7C92; text-transform: uppercase;">Valued at</div>
+              <div style="font-size: 10.5px; font-weight: 700; color: #ECC86A;">₹${(f.individualValueInr || 0).toLocaleString('en-IN')}</div>
             </div>
           </div>
         `).join('')}
@@ -520,10 +527,10 @@ export function generateProposalHtml(p: ProposalRecord): string {
             <td style="text-align: center;"><span class="badge badge-included">Included</span></td>
           </tr>
           <tr>
-            <td><strong>2. Mobile Responsive Design</strong></td>
+            <td><strong>2. Mobile Responsive Architecture</strong></td>
             <td style="text-align: right; color: #ECC86A; font-weight: 600;">₹800</td>
             <td style="font-size: 8.5px; color: #B0B0C4;">Fluid viewport adaptation for smartphones</td>
-            <td style="font-size: 8.5px; color: #10B981;">Smooth experience for 85%+ mobile users</td>
+            <td style="font-size: 8.5px; color: #10B981;">Fluid, responsive browsing across iOS and Android</td>
             <td style="text-align: center;"><span class="badge badge-included">Included</span></td>
           </tr>
           <tr>
@@ -544,14 +551,14 @@ export function generateProposalHtml(p: ProposalRecord): string {
             <td><strong>5. Cashfree Payment Gateway</strong></td>
             <td style="text-align: right; color: #ECC86A; font-weight: 600;">₹1,000</td>
             <td style="font-size: 8.5px; color: #B0B0C4;">UPI, Dynamic QR, Visa/Mastercard/RuPay & Banks</td>
-            <td style="font-size: 8.5px; color: #10B981;">Reliable direct payments to your account</td>
+            <td style="font-size: 8.5px; color: #10B981;">Direct, secure bank settlements with server-side verification</td>
             <td style="text-align: center;"><span class="badge badge-included">Included</span></td>
           </tr>
           <tr>
-            <td><strong>6. Business Owner Dashboard</strong></td>
+            <td><strong>6. Business Owner Dashboard (Self-Editing)</strong></td>
             <td style="text-align: right; color: #ECC86A; font-weight: 600;">₹1,000</td>
             <td style="font-size: 8.5px; color: #B0B0C4;">Self-editing portal for products, prices & orders</td>
-            <td style="font-size: 8.5px; color: #10B981;">Zero developer dependency for updates</td>
+            <td style="font-size: 8.5px; color: #10B981;">Complete operational independence — zero developer fees</td>
             <td style="text-align: center;"><span class="badge badge-included">Included</span></td>
           </tr>
           <tr>
@@ -581,15 +588,17 @@ export function generateProposalHtml(p: ProposalRecord): string {
       <div style="margin-top: 10px; background: #141420; border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
         <div>
           <div style="font-size: 9px; color: #8E8EA2; text-transform: uppercase;">Starter Package Base Fee</div>
-          <div style="font-size: 13px; font-weight: 700; color: #FFFFFF;">₹7,999 Subtotal</div>
+          <div style="font-size: 13px; font-weight: 700; color: #FFFFFF;">₹${devFee.toLocaleString('en-IN')} Subtotal</div>
         </div>
         <div>
-          <div style="font-size: 9px; color: #8E8EA2; text-transform: uppercase;">GST (18% Statutory)</div>
-          <div style="font-size: 13px; font-weight: 700; color: #FFFFFF;">+₹1,440 Tax</div>
+          <div style="font-size: 9px; color: #8E8EA2; text-transform: uppercase;">Tax Status</div>
+          <div style="font-size: 13px; font-weight: 700; color: #FFFFFF;">
+            ${hasConfirmedGst ? `+₹${gstAmount.toLocaleString('en-IN')} (${p.gst_percent}% GST)` : 'GST: Excluded / As Applicable'}
+          </div>
         </div>
         <div style="text-align: right;">
           <div style="font-size: 9px; color: #ECC86A; text-transform: uppercase; font-weight: 600;">Total Investment</div>
-          <div style="font-size: 17px; font-weight: 800; color: #ECC86A;">₹9,439 All-Inclusive</div>
+          <div style="font-size: 17px; font-weight: 800; color: #ECC86A;">₹${totalAmount.toLocaleString('en-IN')} ${hasConfirmedGst ? 'All-Inclusive' : '(Base Price)'}</div>
         </div>
       </div>
     </div>
@@ -723,7 +732,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
         <div class="feature-card">
           <div style="font-size: 11px; font-weight: 600; color: #FFFFFF; margin-bottom: 3px;">🛡️ Clean Code & Fast Core Web Vitals</div>
           <p style="font-size: 9px; color: #9A9AB4; margin: 0; line-height: 1.4;">
-            Hosted on Cloudflare Pages global edge network with sub-second response times, SSL security certificates, and lightweight clean bundles.
+            Hosted on Cloudflare Pages global edge network with high-performance edge caching, SSL security certificates, and lightweight clean bundles.
           </p>
         </div>
       </div>
@@ -740,7 +749,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
   </div>
 
   <!-- ========================================================================= -->
-  <!-- PAGE 7: PACKAGE COMPARISON (STARTER, GOLD, PREMIUM)                      -->
+  <!-- PAGE 7: PACKAGE SCOPE & DELIVERABLES                                      -->
   <!-- ========================================================================= -->
   <div class="page page-light">
     <div>
@@ -749,26 +758,29 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <img src="${OFFICIAL_VV_LOGO_BASE64}" alt="VIJAY VISUALS" class="header-logo-img" />
           <div class="header-logo-text">VIJAY VISUALS</div>
           <div style="color: #4A4A60;">·</div>
-          <div class="header-meta">Section 06 · Package Comparison Matrix</div>
+          <div class="header-meta">Section 06 · ${showGoldAndPremium ? 'Package Comparison Matrix' : 'Authoritative Package Deliverables'}</div>
         </div>
         <div class="header-meta">Proposal #${p.proposal_number}</div>
       </div>
 
       <div style="margin-bottom: 12px;">
-        <div style="font-size: 9px; text-transform: uppercase; color: #D4AF37; font-weight: 600; letter-spacing: 1.5px;">Choose Your Growth Pace</div>
-        <h2 style="font-size: 19px; font-weight: 700; color: #FFFFFF; margin: 2px 0 4px 0;">Configurable Package Options</h2>
+        <div style="font-size: 9px; text-transform: uppercase; color: #D4AF37; font-weight: 600; letter-spacing: 1.5px;">${showGoldAndPremium ? 'Choose Your Growth Pace' : 'Authoritative Scope of Work'}</div>
+        <h2 style="font-size: 19px; font-weight: 700; color: #FFFFFF; margin: 2px 0 4px 0;">${showGoldAndPremium ? 'Configurable Package Options' : 'Starter Business Package Deliverables'}</h2>
         <p style="font-size: 9.5px; color: #A0A0B8; margin: 0;">
-          Select the package that best matches your immediate business goals. You can start with Starter and upgrade anytime as your business expands:
+          ${showGoldAndPremium
+            ? 'Select the package that best matches your immediate business goals. You can start with Starter and upgrade anytime as your business expands:'
+            : `This proposal is tailored specifically for the <strong>₹${devFee.toLocaleString('en-IN')} Starter Business Package</strong>. Every feature, integration, and deliverable is fully committed with zero hidden clauses:`}
         </p>
       </div>
 
+      ${showGoldAndPremium ? `
       <div class="card-grid-3" style="margin-bottom: 12px;">
         <!-- STARTER -->
         <div class="package-column ${tier === 'STARTER' ? 'featured' : ''}">
           <div>
             <div style="font-size: 9px; color: #D4AF37; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">STARTER TIER</div>
-            <div style="font-size: 20px; font-weight: 800; color: #FFFFFF; margin: 4px 0;">₹7,999</div>
-            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">+18% GST (₹9,439 Total)</div>
+            <div style="font-size: 20px; font-weight: 800; color: #FFFFFF; margin: 4px 0;">₹${devFee.toLocaleString('en-IN')}</div>
+            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">${hasConfirmedGst ? `+${p.gst_percent}% GST (₹${totalAmount.toLocaleString('en-IN')} Total)` : 'Base Fee · Taxes As Applicable'}</div>
             <div style="font-size: 8.5px; color: #A0A0B8; text-align: left; line-height: 1.5; border-top: 1px solid #242436; padding-top: 8px;">
               ✓ Premium Responsive Design<br>
               ✓ 9 Core Website Features<br>
@@ -790,7 +802,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div>
             <div style="font-size: 9px; color: #D4AF37; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">GOLD TIER</div>
             <div style="font-size: 20px; font-weight: 800; color: #FFFFFF; margin: 4px 0;">₹${goldPrice.toLocaleString('en-IN')}</div>
-            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">+18% GST (₹${Math.round(goldPrice * 1.18).toLocaleString('en-IN')} Total)</div>
+            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">${hasConfirmedGst ? `+18% GST (₹${Math.round(goldPrice * 1.18).toLocaleString('en-IN')} Total)` : 'Base Fee · Taxes As Applicable'}</div>
             <div style="font-size: 8.5px; color: #A0A0B8; text-align: left; line-height: 1.5; border-top: 1px solid #242436; padding-top: 8px;">
               ✓ Everything in Starter<br>
               ✓ Verified Customer Reviews<br>
@@ -812,7 +824,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div>
             <div style="font-size: 9px; color: #D4AF37; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">PREMIUM TIER</div>
             <div style="font-size: 20px; font-weight: 800; color: #FFFFFF; margin: 4px 0;">₹${premiumPrice.toLocaleString('en-IN')}</div>
-            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">+18% GST (₹${Math.round(premiumPrice * 1.18).toLocaleString('en-IN')} Total)</div>
+            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">${hasConfirmedGst ? `+18% GST (₹${Math.round(premiumPrice * 1.18).toLocaleString('en-IN')} Total)` : 'Base Fee · Taxes As Applicable'}</div>
             <div style="font-size: 8.5px; color: #A0A0B8; text-align: left; line-height: 1.5; border-top: 1px solid #242436; padding-top: 8px;">
               ✓ Everything in Gold<br>
               ✓ Installable Mobile PWA App<br>
@@ -829,10 +841,59 @@ export function generateProposalHtml(p: ProposalRecord): string {
           </div>
         </div>
       </div>
+      ` : `
+      <div style="background: #111119; border: 1.5px solid #D4AF37; border-radius: 10px; padding: 14px; margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #242436; padding-bottom: 10px; margin-bottom: 10px;">
+          <div>
+            <span style="font-size: 9px; color: #D4AF37; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">OFFICIAL PROPOSAL SCOPE</span>
+            <div style="font-size: 18px; font-weight: 800; color: #FFFFFF;">Starter Business Website Architecture</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 18px; font-weight: 800; color: #ECC86A;">₹${devFee.toLocaleString('en-IN')}</div>
+            <div style="font-size: 8px; color: #8E8EA2;">${hasConfirmedGst ? `+₹${gstAmount.toLocaleString('en-IN')} (${p.gst_percent}% GST)` : 'Base Investment · Taxes As Applicable'}</div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; font-size: 8.5px; color: #D0D0E2; line-height: 1.6;">
+          <div style="background: #161622; padding: 10px; border-radius: 6px; border: 1px solid #252538;">
+            <div style="color: #D4AF37; font-weight: 700; font-size: 10px; margin-bottom: 4px;">✓ Front-End & Customer Experience</div>
+            • Custom responsive luxury design tailored for ${categoryName}<br>
+            • Fluid mobile layout for iOS Safari & Android Chrome<br>
+            • Product catalog, high-res photos, descriptions & categories<br>
+            • Interactive shopping cart with coupon support & instant checkout<br>
+            • Direct WhatsApp order button with cart summaries
+          </div>
+          <div style="background: #161622; padding: 10px; border-radius: 6px; border: 1px solid #252538;">
+            <div style="color: #D4AF37; font-weight: 700; font-size: 10px; margin-bottom: 4px;">✓ Payments, Control & Infrastructure</div>
+            • Cashfree Payment Gateway (UPI, Dynamic QR, Cards, NetBanking)<br>
+            • Dedicated Business Owner Dashboard for self-editing & pricing<br>
+            • Cloudflare Pages edge hosting with automated SSL certificates<br>
+            • Ethical local Google search tags & XML sitemap generation<br>
+            • Interactive Google Map location, contact dialers & hours
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; background: #0E0E16; border-radius: 6px; padding: 8px 12px; margin-top: 10px; font-size: 8.5px;">
+          <div>
+            <strong style="color: #FFFFFF;">Delivery Timeline:</strong> <span style="color: #ECC86A; font-weight: 700;">3–5 Business Days</span>
+          </div>
+          <div>
+            <strong style="color: #FFFFFF;">Post-Launch Support:</strong> <span style="color: #10B981; font-weight: 600;">30 Days Complimentary Assistance</span>
+          </div>
+          <div>
+            <strong style="color: #FFFFFF;">Self-Editing Fee:</strong> <span style="color: #10B981; font-weight: 600;">₹0 (Included for Lifetime)</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="background: rgba(212, 175, 55, 0.05); border: 1px dashed rgba(212, 175, 55, 0.35); border-radius: 8px; padding: 10px 14px; font-size: 8px; color: #9A9AB4; line-height: 1.5;">
+        <strong style="color: #ECC86A;">Enterprise & Growth Expansion Note:</strong> Additional expansion tiers (such as multi-location inventory syncing, Shiprocket automated logistics, customer review engines, and installable mobile PWA apps) are custom-configured and quoted separately when requested by the business owner.
+      </div>
+      `}
     </div>
 
     <div class="footer-bar">
-      <div>VIJAY VISUALS · +91 9381362201 · vk66278@gmail.com · Package Comparison</div>
+      <div>VIJAY VISUALS · +91 9381362201 · vk66278@gmail.com · ${showGoldAndPremium ? 'Package Comparison' : 'Authoritative Deliverables'}</div>
       <div>Page 7 of 9</div>
     </div>
   </div>
@@ -941,6 +1002,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div style="text-align: right;">
             <div style="font-size: 10px; color: #8E8EA2; text-transform: uppercase;">Total Payable</div>
             <div style="font-size: 22px; font-weight: 800; color: #ECC86A;">₹${totalAmount.toLocaleString('en-IN')}</div>
+            <div style="font-size: 8px; color: #8E8EA2;">${hasConfirmedGst ? `(${p.gst_percent}% GST Included)` : '(Taxes As Applicable)'}</div>
           </div>
         </div>
 
