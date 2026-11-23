@@ -318,7 +318,9 @@ export async function onRequestGet(
       compareAtPrice: 100,
       wholesalePrice: 1,
       minWholesaleQty: 1,
+      stock: 9999,
       stockQty: 9999,
+      lowStockThreshold: 5,
       sku: 'SANDBOX-TEST-1INR',
       barcode: 'SANDBOX-TEST-CF',
       featured: true,
@@ -330,7 +332,9 @@ export async function onRequestGet(
       specs: 'Cashfree Sandbox Test Mode · Safe ₹1 Authorization · RBI Simulator Card/UPI',
       videoUrl: '',
       rating: '5.0',
+      reviewCount: 1,
       reviewsCount: 1,
+      active: true,
       isActive: true,
     });
   }

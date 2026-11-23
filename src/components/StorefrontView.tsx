@@ -535,7 +535,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
   };
 
   const addToCart = (product: ProductRecord, variant = '') => {
-    const qtyToAdd = wholesaleMode ? product.minWholesaleQty : 1;
+    const qtyToAdd = wholesaleMode ? (product.minWholesaleQty || 1) : 1;
     let defaultVariant = variant;
     if (!defaultVariant) {
       try {
@@ -545,14 +545,18 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
         defaultVariant = 'Standard';
       }
     }
+    const maxStock = Number.isFinite(product.stock) && product.stock > 0
+      ? product.stock
+      : (Number((product as any).stockQty) || 9999);
     setCart((prev) => {
       const idx = prev.findIndex((c) => c.product.id === product.id && c.variant === defaultVariant);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = { ...next[idx], quantity: Math.min(product.stock, next[idx].quantity + qtyToAdd) };
+        const curQty = Number.isFinite(next[idx].quantity) && next[idx].quantity > 0 ? next[idx].quantity : 1;
+        next[idx] = { ...next[idx], quantity: Math.min(maxStock, curQty + qtyToAdd) };
         return next;
       }
-      return [...prev, { product, quantity: Math.min(product.stock, qtyToAdd), variant: defaultVariant }];
+      return [...prev, { product, quantity: Math.min(maxStock, qtyToAdd), variant: defaultVariant }];
     });
     onNotify(`Added ${product.name} to cart.`);
   };
@@ -562,11 +566,15 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
       const next = [...prev];
       const target = next[index];
       if (!target) return prev;
-      const newQty = target.quantity + delta;
+      const curQty = Number.isFinite(target.quantity) && target.quantity > 0 ? target.quantity : 1;
+      const newQty = curQty + delta;
       if (newQty <= 0) {
         next.splice(index, 1);
       } else {
-        next[index] = { ...target, quantity: Math.min(target.product.stock, newQty) };
+        const maxStock = Number.isFinite(target.product.stock) && target.product.stock > 0
+          ? target.product.stock
+          : (Number((target.product as any).stockQty) || 9999);
+        next[index] = { ...target, quantity: Math.min(maxStock, newQty) };
       }
       return next;
     });
@@ -584,7 +592,9 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
       : Math.min(subtotal, appliedCoupon.discountValue);
   }, [appliedCoupon, subtotal]);
 
-  const hasSandboxTestItem = cart.some((c) => c.product.id === 999999);
+  const hasSandboxTestItem = cart.some(
+    (c) => Number(c.product.id) === 999999 || (c.product.name && c.product.name.includes('[SANDBOX TEST]'))
+  );
   const deliveryFee = hasSandboxTestItem ? 0 : (tenant?.deliveryFee ?? 0);
   const grandTotal = Math.max(0, subtotal - discount + deliveryFee);
 
@@ -645,9 +655,9 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           paymentReference: paymentReference.trim(),
           isWholesale: wholesaleMode,
           items: cart.map((c) => ({
-            productId: c.product.id,
-            quantity: c.quantity,
-            variant: c.variant,
+            productId: Number(c.product.id),
+            quantity: Number.isFinite(c.quantity) && c.quantity > 0 ? c.quantity : 1,
+            variant: c.variant || 'Standard',
           })),
         }),
       });
@@ -1213,8 +1223,8 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                             </p>
                           )}
                         </div>
-                        <span className={`text-xs ${product.stock <= product.lowStockThreshold ? 'text-amber-400' : 'text-[#8E8EA2]'}`}>
-                          {outOfStock ? 'Out of stock' : `${product.stock} in stock`}
+                        <span className={`text-xs ${Number.isFinite(product.stock) && product.stock <= (product.lowStockThreshold || 5) ? 'text-amber-400' : 'text-[#8E8EA2]'}`}>
+                          {outOfStock ? 'Out of stock' : `${Number.isFinite(product.stock) ? product.stock : 9999} in stock`}
                         </span>
                       </div>
 
@@ -1947,6 +1957,13 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                 <p className="text-sm text-[#8E8EA2] text-center py-12">Your shopping cart is empty.</p>
               ) : (
                 <>
+                  {hasSandboxTestItem && (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-950/30 p-2.5 flex items-center gap-2 text-xs text-amber-200">
+                      <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="font-semibold text-amber-300">Sandbox Test Mode Active: ₹1 Safe Simulation</span>
+                    </div>
+                  )}
+
                   <div className="space-y-3">
                     {cart.map((item, idx) => (
                       <div
