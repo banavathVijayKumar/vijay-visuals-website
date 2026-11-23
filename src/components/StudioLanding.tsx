@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { initiatePlatformCheckout } from '../lib/razorpayClient';
+import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
 import {
   BUSINESS_CATEGORIES,
   CONTACT_INFO,
@@ -102,6 +103,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
 
   const { profile, openAuthModal } = useAuth();
   const [buyingPlan, setBuyingPlan] = useState<PlatformPlanRecord | null>(null);
+  const [selectedGateway, setSelectedGateway] = useState<'cashfree' | 'razorpay'>('cashfree');
   const [purchasing, setPurchasing] = useState(false);
 
   const handleOpenBuyNow = (plan: PlatformPlanRecord) => {
@@ -117,28 +119,51 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
     if (!buyingPlan) return;
     setPurchasing(true);
     try {
-      await initiatePlatformCheckout({
-        planCode: buyingPlan.code,
-        planName: buyingPlan.name,
-        prefill: {
-          name: profile?.name || '',
-          email: profile?.email || '',
-          contact: profile?.phone || '',
-        },
-        onSuccess: (res) => {
-          setBuyingPlan(null);
-          onNotify(`Payment verified! ${buyingPlan.name} package activated.`);
-          onNavigate('builder');
-        },
-        onError: (err) => {
-          onNotify(err.message || 'Payment verification failed.');
-        },
-        onDismiss: () => {
-          onNotify('Payment checkout was closed.');
-        },
-      });
+      if (selectedGateway === 'cashfree') {
+        await initiateCashfreePlatformCheckout({
+          planCode: buyingPlan.code,
+          planName: buyingPlan.name,
+          prefill: {
+            name: profile?.name || '',
+            email: profile?.email || '',
+            contact: profile?.phone || '',
+          },
+          onSuccess: () => {
+            setBuyingPlan(null);
+            onNotify(`Payment verified! ${buyingPlan.name} package activated via Cashfree.`);
+            onNavigate('builder');
+          },
+          onError: (err) => {
+            onNotify(err.message || 'Cashfree payment verification failed.');
+          },
+          onDismiss: () => {
+            onNotify('Cashfree checkout was closed.');
+          },
+        });
+      } else {
+        await initiatePlatformCheckout({
+          planCode: buyingPlan.code,
+          planName: buyingPlan.name,
+          prefill: {
+            name: profile?.name || '',
+            email: profile?.email || '',
+            contact: profile?.phone || '',
+          },
+          onSuccess: () => {
+            setBuyingPlan(null);
+            onNotify(`Payment verified! ${buyingPlan.name} package activated.`);
+            onNavigate('builder');
+          },
+          onError: (err) => {
+            onNotify(err.message || 'Payment verification failed.');
+          },
+          onDismiss: () => {
+            onNotify('Payment checkout was closed.');
+          },
+        });
+      }
     } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Unable to initialize Razorpay checkout.');
+      onNotify(err instanceof Error ? err.message : 'Unable to initialize checkout.');
     } finally {
       setPurchasing(false);
     }
@@ -1313,6 +1338,42 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               <span className="text-[10px] text-emerald-400 font-medium">✓ Verified Account</span>
             </div>
 
+            {/* Payment Gateway Selection */}
+            <div className="space-y-1.5 mb-4">
+              <label className="text-[11px] font-semibold text-[#D4AF37]">Select Payment Gateway:</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedGateway('cashfree')}
+                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                    selectedGateway === 'cashfree'
+                      ? 'border-[#D4AF37] bg-[#D4AF37]/10 text-white shadow-[0_0_12px_rgba(212,175,55,0.2)]'
+                      : 'border-[#232332] bg-[#12121B] text-[#A0A0B2] hover:border-[#38384D]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-[11px] text-white">Cashfree PG</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-400 font-semibold">Recommended</span>
+                  </div>
+                  <p className="text-[10px] text-[#8E8EA2] leading-tight">Instant UPI, Cards &amp; NetBanking</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedGateway('razorpay')}
+                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                    selectedGateway === 'razorpay'
+                      ? 'border-[#D4AF37] bg-[#D4AF37]/10 text-white shadow-[0_0_12px_rgba(212,175,55,0.2)]'
+                      : 'border-[#232332] bg-[#12121B] text-[#A0A0B2] hover:border-[#38384D]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-[11px] text-white">Razorpay</span>
+                  </div>
+                  <p className="text-[10px] text-[#8E8EA2] leading-tight">Cards, UPI &amp; NetBanking</p>
+                </button>
+              </div>
+            </div>
+
             {/* Modal Actions */}
             <div className="space-y-2">
               <button
@@ -1324,13 +1385,13 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                 {purchasing ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Opening Razorpay Secure Checkout...</span>
+                    <span>Opening {selectedGateway === 'cashfree' ? 'Cashfree' : 'Razorpay'} Secure Checkout...</span>
                   </>
                 ) : (
                   <>
                     <CreditCard className="w-4 h-4" />
                     <span>
-                      Proceed to Razorpay Checkout (₹{Math.round(buyingPlan.priceInr * 1.18).toLocaleString('en-IN')})
+                      Proceed to {selectedGateway === 'cashfree' ? 'Cashfree' : 'Razorpay'} Checkout (₹{Math.round(buyingPlan.priceInr * 1.18).toLocaleString('en-IN')})
                     </span>
                   </>
                 )}

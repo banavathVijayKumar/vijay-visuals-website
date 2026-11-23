@@ -5,22 +5,33 @@
 
 import { PagesContext, json } from '../_shared';
 import { getEdgeRazorpayStatus } from './_razorpay';
+import { getEdgeCashfreeStatus } from './_cashfree';
 
 export async function onRequestGet(context: PagesContext): Promise<Response> {
-  const status = getEdgeRazorpayStatus(context.env);
+  const rzpStatus = getEdgeRazorpayStatus(context.env);
+  const cfStatus = getEdgeCashfreeStatus(context.env);
+
   return json({
     razorpay: {
-      configured: status.configured,
-      mode: status.mode,
-      webhookConfigured: status.webhookConfigured,
-      liveApproved: status.liveApproved,
-      routeEnabled: status.routeEnabled,
-      message: status.message,
+      configured: rzpStatus.configured,
+      mode: rzpStatus.mode,
+      webhookConfigured: rzpStatus.webhookConfigured,
+      liveApproved: rzpStatus.liveApproved,
+      routeEnabled: rzpStatus.routeEnabled,
+      message: rzpStatus.message,
+    },
+    cashfree: {
+      configured: cfStatus.configured,
+      mode: cfStatus.mode,
+      webhookConfigured: cfStatus.webhookConfigured,
+      apiVersion: cfStatus.apiVersion,
+      webhookUrl: 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree',
+      message: cfStatus.message,
     },
     moneyFlowPolicy: {
-      platformPaymentsRecipient: 'Vijay Visuals Razorpay Account',
+      platformPaymentsRecipient: 'Vijay Visuals Official Accounts',
       sellerCustomerPaymentsPolicy:
-        'Shop owner customer payments are strictly separated and never settle into Vijay Visuals personal account without verified Razorpay Route Linked Account routing.',
+        'Shop owner customer payments are strictly separated and never settle into Vijay Visuals personal account without verified Route / Merchant routing.',
     },
   });
 }

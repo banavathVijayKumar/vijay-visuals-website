@@ -54,6 +54,11 @@ export interface CloudflareEnv {
   RAZORPAY_WEBHOOK_SECRET?: string;
   RAZORPAY_LIVE_APPROVED?: string;
   RAZORPAY_ROUTE_ENABLED?: string;
+  CASHFREE_ENV?: string;
+  CASHFREE_CLIENT_ID?: string;
+  CASHFREE_CLIENT_SECRET?: string;
+  CASHFREE_API_VERSION?: string;
+  CASHFREE_WEBHOOK_SECRET?: string;
   CLOUDFLARE_API_TOKEN?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_PAGES_PROJECT?: string;
@@ -222,6 +227,24 @@ export async function hmacSha256Hex(secret: string, message: string): Promise<st
   );
   const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
   return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function hmacSha256Base64(secret: string, message: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+  const bytes = new Uint8Array(sig);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 export function safeEqual(a: string, b: string): boolean {

@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { initiatePlatformCheckout } from '../lib/razorpayClient';
+import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
 import { readAndOptimizeImageFile } from '../lib/imageUpload';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -1033,7 +1034,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     if (!profile) return;
     setBuyingPackage(true);
     try {
-      await initiatePlatformCheckout({
+      const opts = {
         planCode: 'business-website',
         planName: 'Business Website Package (₹7,999)',
         websiteId: tenantId ? String(tenantId) : ownedTenants[0]?.id ? String(ownedTenants[0].id) : undefined,
@@ -1048,15 +1049,21 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
           await refreshProfile();
           onNotify('Payment verified! Your website package subscription is active.');
         },
-        onError: (err) => {
+        onError: (err: Error) => {
           onNotify(err.message || 'Payment verification failed.');
         },
         onDismiss: () => {
           onNotify('Payment checkout was closed.');
         },
-      });
+      };
+
+      try {
+        await initiateCashfreePlatformCheckout(opts);
+      } catch {
+        await initiatePlatformCheckout(opts);
+      }
     } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Unable to initialize Razorpay checkout.');
+      onNotify(err instanceof Error ? err.message : 'Unable to initialize payment checkout.');
     } finally {
       setBuyingPackage(false);
     }

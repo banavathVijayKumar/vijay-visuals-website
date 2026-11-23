@@ -33,6 +33,7 @@ import { generateSlugFromName, validateSlug } from '../lib/slug';
 import { optimizeImageFileToDataUrl } from '../lib/imageUpload';
 import { useAuth } from '../hooks/useAuth';
 import { initiatePlatformCheckout } from '../lib/razorpayClient';
+import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
 import { AiSetupDraft, GalleryItem, TenantModules, TenantRecord } from '../types/platform';
 
 import fashionBanner from '../assets/images/store_fashion_royal_1795055802960.jpg';
@@ -232,6 +233,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   }, [initialTenantId, ownedTenants]);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [purchaseModalTenantId, setPurchaseModalTenantId] = useState<number | null>(null);
+  const [builderGateway, setBuilderGateway] = useState<'cashfree' | 'razorpay'>('cashfree');
   const [checkoutBusy, setCheckoutBusy] = useState(false);
 
   // Core business identity
@@ -467,7 +469,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     setCheckoutBusy(true);
     try {
       const selectedTier = PLAN_TIER_CONFIG[planTier] || PLAN_TIER_CONFIG.website_only;
-      await initiatePlatformCheckout({
+      const checkoutOptions = {
         planCode: selectedTier.code,
         planName: `${selectedTier.name} (${selectedTier.totalStr})`,
         websiteId: purchaseModalTenantId
@@ -481,7 +483,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
           email: profile?.email || '',
           contact: profile?.phone || '',
         },
-        onSuccess: async (verifyRes) => {
+        onSuccess: async (verifyRes: any) => {
           setPublishModalOpen(false);
           setSitePublished(true);
           await refreshProfile();
@@ -495,15 +497,21 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
             }
           }
         },
-        onError: (err) => {
+        onError: (err: Error) => {
           onNotify(err.message || 'Payment verification failed.');
         },
         onDismiss: () => {
           onNotify('Payment checkout was closed.');
         },
-      });
+      };
+
+      if (builderGateway === 'cashfree') {
+        await initiateCashfreePlatformCheckout(checkoutOptions);
+      } else {
+        await initiatePlatformCheckout(checkoutOptions);
+      }
     } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Unable to initialize Razorpay checkout.');
+      onNotify(err instanceof Error ? err.message : 'Unable to initialize checkout.');
     } finally {
       setCheckoutBusy(false);
     }
@@ -2174,6 +2182,42 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
               <p>• <strong>Tenant Isolation:</strong> You receive exclusive management access to your website. No access to other tenants or platform admin controls.</p>
             </div>
 
+            {/* Payment Gateway Selection */}
+            <div className="space-y-1.5 mb-4">
+              <label className="text-[11px] font-semibold text-[#D4AF37]">Select Payment Gateway:</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBuilderGateway('cashfree')}
+                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                    builderGateway === 'cashfree'
+                      ? 'border-[#D4AF37] bg-[#D4AF37]/10 text-white shadow-[0_0_12px_rgba(212,175,55,0.2)]'
+                      : 'border-[#232332] bg-[#12121B] text-[#A0A0B2] hover:border-[#38384D]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-[11px] text-white">Cashfree PG</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-500/20 text-emerald-400 font-semibold">Recommended</span>
+                  </div>
+                  <p className="text-[10px] text-[#8E8EA2] leading-tight">Instant UPI, Cards &amp; NetBanking</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBuilderGateway('razorpay')}
+                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                    builderGateway === 'razorpay'
+                      ? 'border-[#D4AF37] bg-[#D4AF37]/10 text-white shadow-[0_0_12px_rgba(212,175,55,0.2)]'
+                      : 'border-[#232332] bg-[#12121B] text-[#A0A0B2] hover:border-[#38384D]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-[11px] text-white">Razorpay</span>
+                  </div>
+                  <p className="text-[10px] text-[#8E8EA2] leading-tight">Cards, UPI &amp; NetBanking</p>
+                </button>
+              </div>
+            </div>
+
             {/* Action Buttons */}
             <div className="space-y-2">
               <button
@@ -2185,13 +2229,13 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                 {checkoutBusy ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verifying with Razorpay...</span>
+                    <span>Verifying with {builderGateway === 'cashfree' ? 'Cashfree' : 'Razorpay'}...</span>
                   </>
                 ) : (
                   <>
                     <CreditCard className="w-4 h-4" />
                     <span>
-                      Pay via Razorpay &amp; Publish (
+                      Pay via {builderGateway === 'cashfree' ? 'Cashfree' : 'Razorpay'} &amp; Publish (
                       {(PLAN_TIER_CONFIG[planTier] || PLAN_TIER_CONFIG.website_only).totalStr}
                       )
                     </span>

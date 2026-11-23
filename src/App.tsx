@@ -230,6 +230,35 @@ function PlatformShell() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  // Handle Cashfree Hosted Checkout Return & Auto-Verification
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const isReturn = url.pathname.includes('/payments/cashfree/return');
+      const orderId = url.searchParams.get('order_id');
+      if (isReturn && orderId && profile) {
+        apiFetch<{ verified: boolean; status: string; websiteUrl?: string }>(
+          '/api/payments/cashfree/verify',
+          {
+            method: 'POST',
+            body: JSON.stringify({ orderId }),
+          }
+        )
+          .then((res) => {
+            if (res.verified) {
+              showToast('Cashfree payment verified! Your website package is active.');
+              navigateTo('dashboards');
+            } else {
+              showToast(`Cashfree payment status: ${res.status}`);
+            }
+          })
+          .catch((err) => {
+            showToast(err instanceof Error ? err.message : 'Cashfree payment verification failed.');
+          });
+      }
+    } catch {}
+  }, [profile, navigateTo, showToast]);
+
   const toggleWishlist = (productId: number) => {
     setWishlistIds((prev) => {
       const next = prev.includes(productId)
