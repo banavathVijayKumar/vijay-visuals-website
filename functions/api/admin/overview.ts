@@ -8,6 +8,7 @@ import { requireAdmin } from '../_auth';
 import { PagesContext, handleOptions, jsonResponse } from '../_shared';
 import { mapOrderRowToUi } from '../_tenantAccess';
 import { PublicationRow, mapPublicationToTenant } from '../_tenantMapper';
+import { getEdgeCashfreeStatus } from '../payments/_cashfree';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -53,12 +54,20 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         ).all<PublicationRow>();
         rows = res.results || [];
       }
+      const cfStatus = getEdgeCashfreeStatus(env);
+      const cashfreeOnlineReady = Boolean(cfStatus.configured);
+
       for (const row of rows) {
         let parsed: Record<string, any> = {};
         try {
           parsed = row.website_json ? JSON.parse(row.website_json) : {};
         } catch {}
-        tenants.push(mapPublicationToTenant(row, parsed) as unknown as Record<string, unknown>);
+        tenants.push(
+          mapPublicationToTenant(row, parsed, {
+            cashfreeOnlineReady,
+            razorpayOnlineReady: cashfreeOnlineReady,
+          }) as unknown as Record<string, unknown>
+        );
       }
     } catch {}
 

@@ -27,6 +27,7 @@ import {
 } from './_tenantAccess';
 import { PublicationRow, mapPublicationToTenant } from './_tenantMapper';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from './plans';
+import { getEdgeCashfreeStatus } from './payments/_cashfree';
 
 const SAFE_COLOR = /^#[0-9a-fA-F]{3,8}$/;
 
@@ -59,6 +60,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         rows = pubs.results || [];
       }
 
+      const cfStatus = getEdgeCashfreeStatus(env);
+      const cashfreeOnlineReady = Boolean(cfStatus.configured);
+
       for (const row of rows) {
         let parsed: Record<string, any> = {};
         try {
@@ -68,7 +72,10 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
           }
         } catch {}
         tenants.push(
-          mapPublicationToTenant(row, parsed) as unknown as Record<string, unknown>
+          mapPublicationToTenant(row, parsed, {
+            cashfreeOnlineReady,
+            razorpayOnlineReady: cashfreeOnlineReady,
+          }) as unknown as Record<string, unknown>
         );
       }
     } catch {
