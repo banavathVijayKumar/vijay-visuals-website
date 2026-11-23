@@ -318,7 +318,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
       <div>
         <div style="font-size: 8.5px; color: #7C7C92; text-transform: uppercase;">Client / Owner</div>
         <div style="font-size: 11px; font-weight: 600; color: #FFFFFF; margin-top: 2px;">${p.customer_name}</div>
-        <div style="font-size: 9.5px; color: #9A9AB0;">${p.customer_phone || '+91 9381362201'}</div>
+        <div style="font-size: 9.5px; color: #9A9AB0;">${p.customer_phone || '+91 9876543210'}</div>
       </div>
       <div>
         <div style="font-size: 8.5px; color: #7C7C92; text-transform: uppercase;">Location / Region</div>
@@ -946,9 +946,9 @@ export function generateProposalHtml(p: ProposalRecord): string {
         <div style="background: #12121C; border: 1px solid #222232; border-radius: 6px; padding: 8px 12px; display: flex; justify-content: space-between;">
           <div>
             <strong style="color: #FFFFFF;">4. Cashfree Payment Gateway Charges</strong>
-            <div style="color: #8E8EA2;">Zero platform commission. Standard Cashfree PG MDR (~1.9% on cards/netbanking, 0% on standard UPI) paid directly to Cashfree.</div>
+            <div style="color: #8E8EA2;">Zero platform commission. Standard payment gateway processing charges apply as per your merchant agreement directly with Cashfree.</div>
           </div>
-          <div style="color: #B0B0C4;">Standard Gateway MDR</div>
+          <div style="color: #B0B0C4;">As Per Merchant Terms</div>
         </div>
         <div style="background: #12121C; border: 1px solid #222232; border-radius: 6px; padding: 8px 12px; display: flex; justify-content: space-between;">
           <div>
@@ -1013,7 +1013,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           </div>
           <div style="display: flex; gap: 8px; margin-bottom: 6px;">
             <span style="color: #D4AF37; font-weight: 700;">Step 2:</span>
-            <span>Authorize payment via Cashfree Sandbox / Live gateway (UPI / QR / Cards / NetBanking).</span>
+            <span>Authorize secure payment via Cashfree Payments (UPI / QR / Cards / NetBanking).</span>
           </div>
           <div style="display: flex; gap: 8px;">
             <span style="color: #D4AF37; font-weight: 700;">Step 3:</span>

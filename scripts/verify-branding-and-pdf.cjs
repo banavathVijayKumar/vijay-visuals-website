@@ -89,6 +89,27 @@ if (!pdfSource.includes('href="tel:+919381362201"') || !pdfSource.includes('href
 }
 console.log('[PASS] Clickable tel:+919381362201 and mailto:vk66278@gmail.com verified.');
 
+// Check that unverified MDR claim is not present in proposalPdfGenerator
+if (pdfSource.includes('~1.9%') || pdfSource.includes('0% on standard UPI')) {
+  console.error('FAIL: proposalPdfGenerator.ts still contains unverified MDR percentage claims');
+  process.exit(1);
+}
+console.log('[PASS] proposalPdfGenerator.ts free of unverified MDR claims.');
+
+// Check that Sandbox is not offered as a customer payment option
+if (pdfSource.includes('Sandbox / Live gateway') || pdfSource.includes('Cashfree Sandbox / Live')) {
+  console.error('FAIL: proposalPdfGenerator.ts still offers Sandbox as customer payment option');
+  process.exit(1);
+}
+console.log('[PASS] proposalPdfGenerator.ts free of Sandbox customer payment text.');
+
+// Check customer phone fallback does not use agency phone
+if (pdfSource.includes("p.customer_phone || '+91 9381362201'")) {
+  console.error('FAIL: proposalPdfGenerator.ts substitutes agency owner phone for customer phone');
+  process.exit(1);
+}
+console.log('[PASS] proposalPdfGenerator.ts strictly separates customer contact from owner contact.');
+
 // 3. Check entire src and functions directory for remaining placeholders
 const searchDirs = ['D:/VIJAY_VISUALS_PROJECTS/vvv/src', 'D:/VIJAY_VISUALS_PROJECTS/vvv/functions'];
 let placeholderFound = false;
@@ -141,7 +162,7 @@ if (startIndex !== -1 && endIndex !== -1) {
     .replace(/\$\{tier\}/g, 'STARTER')
     .replace(/\$\{totalAmount\.toLocaleString\('en-IN'\)\}/g, '7,999')
     .replace(/\$\{p\.customer_name\}/g, 'Vikram Malhotra')
-    .replace(/\$\{p\.customer_phone \|\| '\+91 9381362201'\}/g, '+91 9381362201')
+    .replace(/\$\{p\.customer_phone \|\| '\+91 9876543210'\}/g, '+91 9876543210')
     .replace(/\$\{p\.city \|\| 'Hyderabad'\}/g, 'Hyderabad')
     .replace(/\$\{p\.state \|\| 'Telangana'\}/g, 'Telangana')
     .replace(/\$\{p\.pincode \|\| '500081'\}/g, '500081')

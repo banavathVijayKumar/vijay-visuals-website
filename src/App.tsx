@@ -16,6 +16,8 @@ import { OfflineIndicator } from './components/PWAControls';
 import { AuthModal } from './components/auth/AuthModal';
 import { InteractiveDemoHub } from './components/InteractiveDemoHub';
 import { CustomerProposalView } from './components/CustomerProposalView';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { NotFoundView } from './components/NotFoundView';
 
 const VALID_LANGS = new Set<string>(SUPPORTED_LANGUAGES.map((l) => l.code));
 const VALID_CURRENCIES = new Set<string>(GLOBAL_CURRENCIES.map((c) => c.code));
@@ -378,93 +380,113 @@ function PlatformShell() {
 
       <div className="flex-1">
         {(activeView === 'studio' || activeView === 'marketplace') && (
-          <StudioLanding
-            mode={activeView}
-            lang={lang}
-            onChangeLang={setLang}
-            currency={currency}
-            fxRates={fxRates}
-            fxSource={fxSource}
-            tenants={tenants}
-            plans={plans}
-            onNavigate={(v) => navigateTo(v)}
-            onOpenStorefront={(slug) => navigateTo('storefront', slug)}
-            onOpenTracker={() => setTrackerOpen(true)}
-            onNotify={showToast}
-          />
+          <ErrorBoundary sectionName="Platform Overview">
+            <StudioLanding
+              mode={activeView}
+              lang={lang}
+              onChangeLang={setLang}
+              currency={currency}
+              fxRates={fxRates}
+              fxSource={fxSource}
+              tenants={tenants}
+              plans={plans}
+              onNavigate={(v) => navigateTo(v)}
+              onOpenStorefront={(slug) => navigateTo('storefront', slug)}
+              onOpenTracker={() => setTrackerOpen(true)}
+              onNotify={showToast}
+            />
+          </ErrorBoundary>
         )}
 
         {activeView === 'demo' && (
-          <InteractiveDemoHub
-            onNavigatePlan={(planCode) => {
-              navigateTo('studio');
-              // triggers plan purchase modal
-              showToast(`Selected package: ${planCode}. Opening checkout...`);
-            }}
-            onGoBuilder={(tId?: number) => {
-              setBuilderTenantId(tId ?? null);
-              navigateTo('builder');
-            }}
-            onNotify={showToast}
-          />
+          <ErrorBoundary sectionName="Interactive Demo Hub">
+            <InteractiveDemoHub
+              onNavigatePlan={(planCode) => {
+                navigateTo('studio');
+                showToast(`Selected package: ${planCode}. Opening checkout...`);
+              }}
+              onGoBuilder={(tId?: number) => {
+                setBuilderTenantId(tId ?? null);
+                navigateTo('builder');
+              }}
+              onNotify={showToast}
+            />
+          </ErrorBoundary>
         )}
 
         {activeView === 'builder' && (
-          <WebsiteBuilder
-            initialTenantId={builderTenantId}
-            onPublished={() => {
-              loadPublicData();
-            }}
-            onOpenStorefront={(slug) => navigateTo('storefront', slug)}
-            onNotify={showToast}
-          />
+          <ErrorBoundary sectionName="Website Builder">
+            <WebsiteBuilder
+              initialTenantId={builderTenantId}
+              onPublished={() => {
+                loadPublicData();
+              }}
+              onOpenStorefront={(slug) => navigateTo('storefront', slug)}
+              onNotify={showToast}
+            />
+          </ErrorBoundary>
         )}
 
         {activeView === 'storefront' && activeSlug && (
-          <StorefrontView
-            slug={activeSlug}
-            lang={lang}
-            wishlistIds={wishlistIds}
-            onToggleWishlist={toggleWishlist}
-            onBack={() => navigateTo('marketplace')}
-            onGoDashboards={() => navigateTo('dashboards')}
-            onOpenInvoice={(order, tenantName) => setInvoiceState({ order, tenantName })}
-            onNotify={showToast}
+          <ErrorBoundary sectionName="Storefront View">
+            <StorefrontView
+              slug={activeSlug}
+              lang={lang}
+              wishlistIds={wishlistIds}
+              onToggleWishlist={toggleWishlist}
+              onBack={() => navigateTo('marketplace')}
+              onGoDashboards={() => navigateTo('dashboards')}
+              onOpenInvoice={(order, tenantName) => setInvoiceState({ order, tenantName })}
+              onNotify={showToast}
+            />
+          </ErrorBoundary>
+        )}
+
+        {activeView === 'storefront' && !activeSlug && (
+          <NotFoundView
+            onGoHome={() => navigateTo('studio')}
+            onGoMarketplace={() => navigateTo('marketplace')}
           />
         )}
 
         {activeView === 'dashboards' && (
-          <DashboardsHub
-            allTenants={tenants}
-            wishlistIds={wishlistIds}
-            lang={lang}
-            onToggleWishlist={toggleWishlist}
-            onRefreshTenants={loadPublicData}
-            onOpenStorefront={(slug) => navigateTo('storefront', slug)}
-            onOpenInvoice={(order, tenantName) => setInvoiceState({ order, tenantName })}
-            onGoBuilder={(tId?: number) => {
-              setBuilderTenantId(tId ?? null);
-              navigateTo('builder');
-            }}
-            onGoAiCenter={() => navigateTo('ai')}
-            onNotify={showToast}
-          />
+          <ErrorBoundary sectionName="Dashboards Hub">
+            <DashboardsHub
+              allTenants={tenants}
+              wishlistIds={wishlistIds}
+              lang={lang}
+              onToggleWishlist={toggleWishlist}
+              onRefreshTenants={loadPublicData}
+              onOpenStorefront={(slug) => navigateTo('storefront', slug)}
+              onOpenInvoice={(order, tenantName) => setInvoiceState({ order, tenantName })}
+              onGoBuilder={(tId?: number) => {
+                setBuilderTenantId(tId ?? null);
+                navigateTo('builder');
+              }}
+              onGoAiCenter={() => navigateTo('ai')}
+              onNotify={showToast}
+            />
+          </ErrorBoundary>
         )}
 
         {activeView === 'ai' && (
-          <AiAutomationCenter
-            lang={lang}
-            onGoBuilder={() => navigateTo('builder')}
-            onNotify={showToast}
-          />
+          <ErrorBoundary sectionName="AI Automation Center">
+            <AiAutomationCenter
+              lang={lang}
+              onGoBuilder={() => navigateTo('builder')}
+              onNotify={showToast}
+            />
+          </ErrorBoundary>
         )}
 
         {activeView === 'proposal' && (
-          <CustomerProposalView
-            token={activeSlug || ''}
-            onBackToHome={() => navigateTo('studio')}
-            onNotify={showToast}
-          />
+          <ErrorBoundary sectionName="Proposal Viewer">
+            <CustomerProposalView
+              token={activeSlug || ''}
+              onBackToHome={() => navigateTo('studio')}
+              onNotify={showToast}
+            />
+          </ErrorBoundary>
         )}
       </div>
 
