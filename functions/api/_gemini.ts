@@ -12,6 +12,9 @@ let cachedWorkingModel: string | null = null;
 let lastModelCheckTime = 0;
 const MODEL_CACHE_TTL_MS = 300_000; // 5 minutes
 
+// In-memory set of models confirmed to have quota limit 0 (avoid repeated retries)
+const zeroQuotaModels = new Set<string>();
+
 export function redactSecretsAndPii(text: string): string {
   if (!text || typeof text !== 'string') return '';
   return text
@@ -53,10 +56,6 @@ export function normalizeGeminiContents(prompt: string | any[]): {
   return { contents, systemText: systemParts.join('\n\n') };
 }
 
-/**
- * Queries Google Generative Language Developer API to inspect model availability.
- * Never prints or leaks secrets.
- */
 export async function inspectGeminiModelAvailability(env: CloudflareEnv): Promise<{
   hasKey: boolean;
   httpStatus: number;
@@ -84,8 +83,7 @@ export async function inspectGeminiModelAvailability(env: CloudflareEnv): Promis
     httpStatus = listRes.status;
     if (listRes.ok) {
       const data: any = await listRes.json().catch(() => ({}));
-      const models = Array.isArray(data?.models) ? data.models : [];
-      for (const m of models) {
+      for (const m of (data?.models || [])) {
         if (
           Array.isArray(m?.supportedGenerationMethods) &&
           m.supportedGenerationMethods.includes('generateContent')
@@ -94,11 +92,8 @@ export async function inspectGeminiModelAvailability(env: CloudflareEnv): Promis
         }
       }
     }
-  } catch (err) {
-    // Network or fetch error
-  }
+  } catch {}
 
-  // Test candidate generation with safe sample prompt
   const candidate = env.GEMINI_MODEL || (supportedModels[0] ? supportedModels[0].replace(/^models\//, '') : 'gemini-2.5-flash');
   let testSuccess = false;
   let modelUsed: string | undefined;
@@ -129,6 +124,7 @@ export async function inspectGeminiModelAvailability(env: CloudflareEnv): Promis
 /**
  * Robust server-side Gemini execution with actual Google API response inspection,
  * dynamic model discovery, safe logging, and resilient fallback.
+ * Skips zero-quota models and never retries known exhausted models.
  */
 export async function callGeminiWithFallback(
   prompt: string | any[],
@@ -154,19 +150,32 @@ export async function callGeminiWithFallback(
   const now = Date.now();
   const modelsToTry: string[] = [];
 
-  // 1. Edge cached verified model
-  if (cachedWorkingModel && now - lastModelCheckTime < MODEL_CACHE_TTL_MS) {
+  // 1. Edge cached verified working model (if not marked zero quota)
+  if (cachedWorkingModel && !zeroQuotaModels.has(cachedWorkingModel) && now - lastModelCheckTime < MODEL_CACHE_TTL_MS) {
     modelsToTry.push(cachedWorkingModel);
   }
 
-  // 2. Explicitly configured model
-  if (requestedModel && !modelsToTry.includes(requestedModel)) {
+  // 2. Explicitly configured model (if not marked zero quota)
+  if (requestedModel && !zeroQuotaModels.has(requestedModel) && !modelsToTry.includes(requestedModel)) {
     modelsToTry.push(requestedModel);
   }
 
-  // 3. Known stable 2026 production models
-  for (const m of ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-pro-latest', 'gemini-2.5-pro']) {
-    if (!modelsToTry.includes(m)) modelsToTry.push(m);
+  // 3. Known stable Flash models (highest free-tier RPM & RPD)
+  const flashCandidates = [
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-flash-latest',
+    'gemini-flash-lite-latest',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-pro-latest',
+    'gemini-2.5-pro',
+  ];
+
+  for (const m of flashCandidates) {
+    if (!zeroQuotaModels.has(m) && !modelsToTry.includes(m)) {
+      modelsToTry.push(m);
+    }
   }
 
   // 4. Dynamic discovery from Google Developer API if cache is cold
@@ -184,7 +193,8 @@ export async function callGeminiWithFallback(
             m.supportedGenerationMethods.includes('generateContent')
           ) {
             const raw = String(m.name || '').replace(/^models\//, '');
-            if (raw && !modelsToTry.includes(raw)) {
+            // Only add generation-capable flash/pro models, excluding TTS and specialized models
+            if (raw && !raw.includes('tts') && !raw.includes('embedding') && !zeroQuotaModels.has(raw) && !modelsToTry.includes(raw)) {
               modelsToTry.push(raw);
             }
           }
@@ -197,6 +207,9 @@ export async function callGeminiWithFallback(
   let attemptsCount = 0;
 
   for (const model of modelsToTry) {
+    // Skip if dynamically added to zeroQuotaModels during this loop
+    if (zeroQuotaModels.has(model)) continue;
+
     attemptsCount++;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
@@ -228,15 +241,28 @@ export async function callGeminiWithFallback(
           continue;
         }
 
-        // For non-model errors (e.g. 401 invalid key, 429 quota, 503 capacity), throw informative error
+        // If 429 with "limit: 0" (Model not permitted on Free Tier):
+        // Record in zeroQuotaModels to prevent retrying, and continue to next candidate
+        if (response.status === 429 && /limit:\s*0/i.test(safeErrMsg)) {
+          zeroQuotaModels.add(model);
+          lastError = new Error(`Google Gemini Model "${model}" has Free Tier quota limit 0. (HTTP 429: ${safeErrMsg})`);
+          continue;
+        }
+
+        // For non-model errors (e.g. 401 invalid key, 403 permission), throw informative error
         if (response.status === 401 || response.status === 403) {
           throw new Error(`AI Provider Authentication Failed: Invalid or unauthorized GEMINI_API_KEY. (Google API ${response.status}: ${safeErrMsg})`);
         }
+
+        // If general rate limit (RPM exceeded), try another candidate before failing completely
         if (response.status === 429) {
-          throw new Error(`Google Gemini API rate/quota limit reached. (HTTP 429: ${safeErrMsg})`);
+          lastError = new Error(`Google Gemini API rate/quota limit reached on model "${model}". (HTTP 429: ${safeErrMsg})`);
+          continue;
         }
+
         if (response.status >= 500) {
-          throw new Error(`Google Gemini API service temporarily unavailable. (HTTP ${response.status}: ${safeErrMsg})`);
+          lastError = new Error(`Google Gemini API service temporarily unavailable on model "${model}". (HTTP ${response.status}: ${safeErrMsg})`);
+          continue;
         }
 
         throw new Error(`Google Gemini API error ${response.status}: ${safeErrMsg}`);
@@ -246,7 +272,8 @@ export async function callGeminiWithFallback(
       const parts = result?.candidates?.[0]?.content?.parts || [];
       const text = parts.map((part: any) => part?.text || '').join('\n').trim();
       if (!text) {
-        throw new Error(`Gemini model "${model}" returned an empty candidates payload.`);
+        lastError = new Error(`Gemini model "${model}" returned an empty candidates payload.`);
+        continue;
       }
 
       // Update edge cache with verified working model
@@ -264,7 +291,7 @@ export async function callGeminiWithFallback(
       } else {
         lastError = err instanceof Error ? err : new Error(String(err));
       }
-      if (/Authentication Failed|rate\/quota/i.test(lastError.message)) {
+      if (/Authentication Failed/i.test(lastError.message)) {
         throw lastError;
       }
     } finally {

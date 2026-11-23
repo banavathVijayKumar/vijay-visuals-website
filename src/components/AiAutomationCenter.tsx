@@ -542,10 +542,10 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
             <h3 className="text-sm font-semibold text-white mb-2">Production Connector Status</h3>
             {[
               { key: 'cloudflareD1', label: 'Cloudflare D1 Multi-Tenant Edge DB', active: integrations.cloudflareD1 ?? integrations.postgresql },
-              { key: 'geminiAi', label: 'Server-Side Gemini AI Engine', active: integrations.geminiAi },
-              { key: 'razorpayGateway', label: 'Razorpay / Card Webhook Settlement (External Keys)', active: integrations.razorpayGateway },
-              { key: 'whatsappCloudApi', label: 'WhatsApp Business Cloud API (External Token)', active: integrations.whatsappCloudApi },
-              { key: 'smtpEmail', label: 'SMTP Transactional Email Relay (External Credentials)', active: integrations.smtpEmail },
+              { key: 'geminiAi', label: 'Server-Side Gemini AI Engine', active: integrations.geminiAi ?? integrations.gemini },
+              { key: 'razorpayGateway', label: 'Razorpay / Card Webhook Settlement (External Keys)', active: integrations.razorpayGateway ?? integrations.razorpay },
+              { key: 'whatsappCloudApi', label: 'WhatsApp Business Cloud API (External Token)', active: integrations.whatsappCloudApi ?? integrations.whatsapp },
+              { key: 'smtpEmail', label: 'SMTP Transactional Email Relay (External Credentials)', active: integrations.smtpEmail ?? integrations.smtp },
             ].map((item) => (
               <div key={item.key} className="flex justify-between py-1.5 border-b border-[#1A1A26] last:border-0">
                 <span className="text-[#B8B8C8]">{item.label}</span>
