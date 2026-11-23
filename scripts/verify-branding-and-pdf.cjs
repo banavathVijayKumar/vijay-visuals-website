@@ -154,7 +154,13 @@ if (startIndex !== -1 && endIndex !== -1) {
     .replace(/\$\{subtotal\.toLocaleString\('en-IN'\)\}/g, '7,999')
     .replace(/\$\{hasConfirmedGst\s*\?\s*`\+₹\$\{gstAmount\.toLocaleString\('en-IN'\)\}\s*\(\$\{p\.gst_percent\}%\s*GST\)`\s*:\s*'GST:\s*Excluded\s*\/\s*As\s*Applicable'\}/g, 'GST: Excluded / As Applicable')
     .replace(/\$\{hasConfirmedGst\s*\?\s*`\(One-Time\s*·\s*\$\{p\.gst_percent\}%\s*GST\s*Included\)`\s*:\s*'\(One-Time\s*Base\s*Price\s*·\s*Exclusive\s*of\s*GST\s*\/\s*As\s*Applicable\)'\}/g, '(One-Time Base Price · Exclusive of GST / As Applicable)')
-    .replace(/\$\{hasConfirmedGst\s*\?\s*'All-Inclusive'\s*:\s*'\(Base Price\)'\}/g, '(Base Price)');
+    .replace(/\$\{hasConfirmedGst\s*\?\s*'All-Inclusive'\s*:\s*'\(Base Price\)'\}/g, '(Base Price)')
+    .replace(/\$\{showGoldAndPremium\s*\?\s*`[\s\S]*?`\s*:\s*`([\s\S]*?)`\}/, '$1')
+    .replace(/\$\{showGoldAndPremium\s*\?\s*'Package Comparison Matrix'\s*:\s*'Authoritative Package Deliverables'\}/g, 'Authoritative Package Deliverables')
+    .replace(/\$\{showGoldAndPremium\s*\?\s*'Choose Your Growth Pace'\s*:\s*'Authoritative Scope of Work'\}/g, 'Authoritative Scope of Work')
+    .replace(/\$\{showGoldAndPremium\s*\?\s*'Configurable Package Options'\s*:\s*'Starter Business Package Deliverables'\}/g, 'Starter Business Package Deliverables')
+    .replace(/\$\{showGoldAndPremium[\s\S]*?zero hidden clauses:`\}/g, 'This proposal is tailored specifically for the <strong>₹7,999 Starter Business Package</strong>. Every feature, integration, and deliverable is fully committed with zero hidden clauses:')
+    .replace(/\$\{showGoldAndPremium\s*\?\s*'Package Comparison'\s*:\s*'Authoritative Deliverables'\}/g, 'Authoritative Deliverables');
 
   // Replace features loop with rendered table rows
   const featuresRows = `
