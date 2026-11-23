@@ -8,6 +8,17 @@ import { apiFetch } from './api';
 
 declare global {
   interface Window {
+    Cashfree?: (options: { mode: 'sandbox' | 'production' }) => {
+      checkout: (options: {
+        paymentSessionId: string;
+        redirectTarget?: '_self' | '_blank' | '_top' | '_modal';
+        platform?: string;
+      }) => Promise<{
+        error?: { message?: string; code?: string };
+        redirect?: boolean;
+        paymentDetails?: any;
+      }>;
+    };
     loadCashfree?: (options: { mode: 'sandbox' | 'production' }) => Promise<{
       checkout: (options: {
         paymentSessionId: string;
@@ -25,11 +36,18 @@ declare global {
 export function loadCashfreeScript(): Promise<boolean> {
   return new Promise((resolve) => {
     if (typeof window === 'undefined') return resolve(false);
-    if (window.loadCashfree) return resolve(true);
+    if (typeof window.Cashfree === 'function' || typeof window.loadCashfree === 'function') {
+      return resolve(true);
+    }
 
     const existing = document.querySelector('script[src="https://sdk.cashfree.com/js/v3/cashfree.js"]');
     if (existing) {
-      existing.addEventListener('load', () => resolve(true));
+      if (typeof window.Cashfree === 'function' || typeof window.loadCashfree === 'function') {
+        return resolve(true);
+      }
+      existing.addEventListener('load', () => {
+        resolve(typeof window.Cashfree === 'function' || typeof window.loadCashfree === 'function');
+      });
       existing.addEventListener('error', () => resolve(false));
       return;
     }
@@ -37,10 +55,29 @@ export function loadCashfreeScript(): Promise<boolean> {
     const script = document.createElement('script');
     script.src = 'https://sdk.cashfree.com/js/v3/cashfree.js';
     script.async = true;
-    script.onload = () => resolve(true);
+    script.onload = () => {
+      resolve(typeof window.Cashfree === 'function' || typeof window.loadCashfree === 'function');
+    };
     script.onerror = () => resolve(false);
     document.body.appendChild(script);
   });
+}
+
+export async function getCashfreeInstance(mode: 'sandbox' | 'production') {
+  const loaded = await loadCashfreeScript();
+  if (!loaded) {
+    throw new Error('Unable to load official Cashfree SDK. Please check your internet connection.');
+  }
+
+  if (typeof window.loadCashfree === 'function') {
+    return await window.loadCashfree({ mode });
+  }
+
+  if (typeof window.Cashfree === 'function') {
+    return window.Cashfree({ mode });
+  }
+
+  throw new Error('Official Cashfree SDK is not available on window.');
 }
 
 export interface CashfreePlatformCheckoutOptions {
@@ -100,14 +137,9 @@ export async function initiateCashfreePlatformCheckout(
   }
 
   // 2. Load official Cashfree SDK
-  const loaded = await loadCashfreeScript();
-  if (!loaded || !window.loadCashfree) {
-    throw new Error('Unable to load official Cashfree SDK. Please check your internet connection.');
-  }
-
-  const cashfree = await window.loadCashfree({
-    mode: orderRes.environment === 'production' ? 'production' : 'sandbox',
-  });
+  const cashfree = await getCashfreeInstance(
+    orderRes.environment === 'production' ? 'production' : 'sandbox'
+  );
 
   const redirectTarget = options.redirectTarget || '_modal';
 
@@ -168,14 +200,9 @@ export interface CashfreeStorefrontCheckoutOptions {
 export async function initiateCashfreeStorefrontCheckout(
   options: CashfreeStorefrontCheckoutOptions
 ): Promise<void> {
-  const loaded = await loadCashfreeScript();
-  if (!loaded || !window.loadCashfree) {
-    throw new Error('Unable to load official Cashfree SDK. Please check your internet connection.');
-  }
-
-  const cashfree = await window.loadCashfree({
-    mode: options.environment === 'production' ? 'production' : 'sandbox',
-  });
+  const cashfree = await getCashfreeInstance(
+    options.environment === 'production' ? 'production' : 'sandbox'
+  );
 
   const checkoutResult = await cashfree.checkout({
     paymentSessionId: options.paymentSessionId,
