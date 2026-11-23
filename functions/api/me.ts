@@ -49,29 +49,71 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   let savedPhone = '';
 
   if (env.DB) {
-    // Load strictly this user's own websites (super_admin also sees their own in ownedTenants; all sites are in /api/admin/overview)
+    // Load authorized websites: Super Admins see all active publications to manage & verify any tenant;
+    // Business Owners & Staff see their owned or assigned tenants.
     try {
       let rows: PublicationRow[] = [];
       try {
-        const pubs = await env.DB.prepare(
-          `SELECT rowid, website_id, owner_id, business_name, public_slug, status, website_json, published_at, created_at, updated_at
-           FROM customer_website_publications
-           WHERE owner_id = ? OR owner_id = ?
-           ORDER BY updated_at DESC LIMIT 50`
-        )
-          .bind(auth.user.id, auth.user.authSubject)
-          .all<PublicationRow>();
-        rows = pubs.results || [];
+        if (auth.user.isSuperAdmin) {
+          const pubs = await env.DB.prepare(
+            `SELECT rowid, website_id, owner_id, business_name, public_slug, status, website_json, published_at, created_at, updated_at
+             FROM customer_website_publications
+             ORDER BY updated_at DESC LIMIT 50`
+          ).all<PublicationRow>();
+          rows = pubs.results || [];
+        } else {
+          try {
+            const pubs = await env.DB.prepare(
+              `SELECT rowid, website_id, owner_id, business_name, public_slug, status, website_json, published_at, created_at, updated_at
+               FROM customer_website_publications
+               WHERE owner_id = ? OR owner_id = ? OR owner_id = ?
+                  OR website_id IN (
+                    SELECT website_id FROM tenant_memberships
+                    WHERE (user_id = ? OR user_id = ? OR email = ?) AND status = 'active'
+                  )
+               ORDER BY updated_at DESC LIMIT 50`
+            )
+              .bind(
+                auth.user.id,
+                auth.user.authSubject,
+                auth.user.email,
+                auth.user.id,
+                auth.user.authSubject,
+                auth.user.email
+              )
+              .all<PublicationRow>();
+            rows = pubs.results || [];
+          } catch {
+            const pubs = await env.DB.prepare(
+              `SELECT rowid, website_id, owner_id, business_name, public_slug, status, website_json, published_at, created_at, updated_at
+               FROM customer_website_publications
+               WHERE owner_id = ? OR owner_id = ? OR owner_id = ?
+               ORDER BY updated_at DESC LIMIT 50`
+            )
+              .bind(auth.user.id, auth.user.authSubject, auth.user.email)
+              .all<PublicationRow>();
+            rows = pubs.results || [];
+          }
+        }
       } catch {
-        const pubs = await env.DB.prepare(
-          `SELECT website_id, owner_id, business_name, public_slug, status, website_json, published_at, created_at, updated_at
-           FROM customer_website_publications
-           WHERE owner_id = ? OR owner_id = ?
-           ORDER BY updated_at DESC LIMIT 50`
-        )
-          .bind(auth.user.id, auth.user.authSubject)
-          .all<PublicationRow>();
-        rows = pubs.results || [];
+        if (auth.user.isSuperAdmin) {
+          const pubs = await env.DB.prepare(
+            `SELECT website_id, owner_id, business_name, public_slug, status, website_json, published_at, created_at, updated_at
+             FROM customer_website_publications
+             ORDER BY updated_at DESC LIMIT 50`
+          ).all<PublicationRow>();
+          rows = pubs.results || [];
+        } else {
+          const pubs = await env.DB.prepare(
+            `SELECT website_id, owner_id, business_name, public_slug, status, website_json, published_at, created_at, updated_at
+             FROM customer_website_publications
+             WHERE owner_id = ? OR owner_id = ? OR owner_id = ?
+             ORDER BY updated_at DESC LIMIT 50`
+          )
+            .bind(auth.user.id, auth.user.authSubject, auth.user.email)
+            .all<PublicationRow>();
+          rows = pubs.results || [];
+        }
       }
 
       for (const row of rows) {
@@ -88,6 +130,40 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       }
     } catch {
       // Non-fatal if D1 table not yet seeded
+    }
+
+    // Load delivery partner profiles if user is assigned as delivery partner
+    try {
+      const delivRes = await env.DB.prepare(
+        `SELECT tm.id, tm.website_id, tm.role, tm.status, cwp.business_name, cwp.public_slug
+         FROM tenant_memberships tm
+         LEFT JOIN customer_website_publications cwp ON tm.website_id = cwp.website_id
+         WHERE tm.role = 'delivery_partner' AND tm.status = 'active'
+           AND (tm.user_id = ? OR tm.user_id = ? OR tm.email = ?)
+         LIMIT 10`
+      )
+        .bind(auth.user.id, auth.user.authSubject, auth.user.email)
+        .all<{
+          id: number;
+          website_id: string;
+          role: string;
+          status: string;
+          business_name: string | null;
+          public_slug: string | null;
+        }>();
+
+      for (const d of delivRes.results || []) {
+        deliveryProfiles.push({
+          id: d.id,
+          websiteId: d.website_id,
+          businessName: d.business_name || d.public_slug || 'Storefront Delivery',
+          slug: d.public_slug,
+          status: d.status,
+          role: d.role,
+        });
+      }
+    } catch {
+      // Optional table not yet migrated
     }
 
     // Load saved addresses & phone from optional customer_addresses table

@@ -80,8 +80,8 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
         apiFetch<{ integrations: Record<string, boolean> }>('/api/health'),
       ]);
       setTenant(overview.tenant);
-      setWorkflows(overview.workflows);
-      setLogs(overview.logs);
+      setWorkflows(Array.isArray(overview.workflows) ? overview.workflows : []);
+      setLogs(Array.isArray(overview.logs) ? overview.logs : []);
       setIntegrations(health.integrations || {});
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Unable to load AI Automation Center.');
@@ -96,7 +96,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
 
   const handleRunAiTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTenantId || !aiPrompt.trim()) return;
+    if (!aiPrompt.trim()) return;
     setAiRunning(true);
     setAiOutput('');
     try {
@@ -110,7 +110,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
           }),
         });
         setAiOutput(res.reply);
-        await loadWorkspace(selectedTenantId);
+        if (selectedTenantId) await loadWorkspace(selectedTenantId);
         onNotify('Storefront AI Support reply generated (1 credit used).');
       } else if (
         aiTask === 'seo_metadata' ||
@@ -121,27 +121,27 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
         const res = await apiFetch<{ output: string; creditsUsed: number }>('/api/ai/content-studio', {
           method: 'POST',
           body: JSON.stringify({
-            tenantId: selectedTenantId,
+            tenantId: selectedTenantId || 0,
             mode: aiTask,
             topic: aiPrompt.trim(),
             language: aiLang,
           }),
         });
         setAiOutput(res.output);
-        await loadWorkspace(selectedTenantId);
+        if (selectedTenantId) await loadWorkspace(selectedTenantId);
         onNotify(`AI Content Studio generated (${res.creditsUsed} credits used).`);
       } else {
         const res = await apiFetch<{ output: string; creditsUsed: number }>('/api/ai/generate', {
           method: 'POST',
           body: JSON.stringify({
-            tenantId: selectedTenantId,
+            tenantId: selectedTenantId || 0,
             task: aiTask,
             input: aiPrompt.trim(),
             language: aiLang,
           }),
         });
         setAiOutput(res.output);
-        await loadWorkspace(selectedTenantId);
+        if (selectedTenantId) await loadWorkspace(selectedTenantId);
         onNotify(`Gemini AI response generated (${res.creditsUsed} credits used).`);
       }
     } catch (err) {
@@ -196,27 +196,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
     );
   }
 
-  if (ownedTenants.length === 0) {
-    return (
-      <div className="max-w-2xl mx-auto px-6 py-20 text-center">
-        <div className="rounded-xl border border-[#242434] bg-[#0E0E15] p-8 space-y-4">
-          <h1 className="font-luxury text-2xl font-bold text-white">Create a Business First</h1>
-          <p className="text-sm text-[#9E9EB2]">
-            Publish a business website in the Website Builder so the AI Automation Center can analyze your real products, stock, and orders.
-          </p>
-          <button
-            type="button"
-            onClick={onGoBuilder}
-            className="px-6 py-3 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold"
-          >
-            Open Website Builder
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const pendingApprovals = logs.filter((l) => l.status === 'awaiting_approval');
+  const pendingApprovals = (logs || []).filter((l) => l.status === 'awaiting_approval');
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 space-y-8">
@@ -231,17 +211,21 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <select
-            value={selectedTenantId ?? ''}
-            onChange={(e) => setSelectedTenantId(Number(e.target.value))}
-            className="rounded-md border border-[#2A2A3A] bg-[#0D0D13] px-3 py-2 text-xs text-white"
-          >
-            {ownedTenants.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+          {ownedTenants.length > 0 ? (
+            <select
+              value={selectedTenantId ?? ''}
+              onChange={(e) => setSelectedTenantId(Number(e.target.value))}
+              className="rounded-md border border-[#2A2A3A] bg-[#0D0D13] px-3 py-2 text-xs text-white"
+            >
+              {ownedTenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-xs text-[#A5A5B8]">Sandbox / Draft Mode</span>
+          )}
           {tenant && (
             <div className="px-3.5 py-2 rounded-md border border-[#242434] bg-[#0D0D13] text-xs font-mono-tabular">
               AI Credits: <strong className="text-[#ECC86A]">{tenant.aiCreditsUsed}</strong> / {tenant.aiCreditsLimit}
@@ -249,6 +233,24 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
           )}
         </div>
       </div>
+
+      {ownedTenants.length === 0 && (
+        <div className="rounded-xl border border-[#D4AF37]/30 bg-[#14120D] p-5 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-white font-semibold text-sm">No Published Business Website Yet</p>
+            <p className="text-xs text-[#A5A5B8] mt-0.5">
+              You can test the Gemini AI Content Studio below. To enable automated workflow triggers and live order sync, launch a website in the Website Builder.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onGoBuilder}
+            className="px-4 py-2 rounded bg-gold-gradient text-[#08080A] text-xs font-semibold shrink-0"
+          >
+            Launch Website Builder
+          </button>
+        </div>
+      )}
 
       {/* Gemini Live AI Studio */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -418,7 +420,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
           </form>
 
           <div className="space-y-2.5">
-            {workflows.map((wf) => (
+            {(workflows || []).map((wf) => (
               <div
                 key={wf.id}
                 className="rounded-lg border border-[#20202E] bg-[#09090D] p-3.5 flex items-center justify-between gap-3 text-xs"
@@ -523,7 +525,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
           <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-6 space-y-3">
             <h2 className="text-sm font-semibold text-white">Automation History & Logs</h2>
             <div className="space-y-2 max-h-56 overflow-y-auto pr-1 text-xs">
-              {logs.map((l) => (
+              {(logs || []).map((l) => (
                 <div key={l.id} className="rounded border border-[#1E1E2A] bg-[#09090D] p-3">
                   <div className="flex justify-between text-[11px] mb-1">
                     <span className="font-mono-tabular text-[#ECC86A]">{l.eventType}</span>

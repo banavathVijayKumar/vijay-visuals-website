@@ -231,6 +231,53 @@ export async function onRequestGet(
     ['ready_for_pickup', 'out_for_delivery'].includes(String(o.status || ''))
   ).length;
 
+  // Automation Workflows & Logs for AI Automation Center
+  const defaultWorkflows = [
+    {
+      id: 1,
+      tenantId: tenantRowId,
+      name: 'Abandoned Cart WhatsApp Recovery',
+      triggerType: 'abandoned_cart',
+      conditionText: 'Cart value > ₹1,000 and customer consented',
+      actionType: 'whatsapp_template',
+      requiresApproval: false,
+      scheduleCron: '0 */2 * * *',
+      enabled: true,
+      lastRunAt: null,
+    },
+    {
+      id: 2,
+      tenantId: tenantRowId,
+      name: 'Low Stock Auto-Alert & Vendor PO Draft',
+      triggerType: 'low_stock',
+      conditionText: 'stock_qty <= low_stock_threshold',
+      actionType: 'draft_purchase_order',
+      requiresApproval: true,
+      scheduleCron: '0 9 * * *',
+      enabled: true,
+      lastRunAt: null,
+    },
+    {
+      id: 3,
+      tenantId: tenantRowId,
+      name: 'New Order Welcome & Invoice PDF Delivery',
+      triggerType: 'order_placed',
+      conditionText: 'payment_status = paid',
+      actionType: 'send_whatsapp_invoice',
+      requiresApproval: false,
+      scheduleCron: 'realtime',
+      enabled: true,
+      lastRunAt: null,
+    },
+  ];
+
+  const workflows =
+    Array.isArray(parsed.automationWorkflows) && parsed.automationWorkflows.length > 0
+      ? parsed.automationWorkflows
+      : defaultWorkflows;
+
+  const logs = Array.isArray(parsed.automationLogs) ? parsed.automationLogs : [];
+
   return jsonResponse({
     tenant,
     stats: {
@@ -257,5 +304,7 @@ export async function onRequestGet(
     coupons,
     deliveryPartners,
     staff,
+    workflows,
+    logs,
   });
 }
