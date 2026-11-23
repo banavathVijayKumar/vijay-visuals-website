@@ -442,7 +442,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
                     onClick={async () => {
                       await apiFetch(`/api/workflows/${wf.id}`, {
                         method: 'PATCH',
-                        body: JSON.stringify({ enabled: !wf.enabled }),
+                        body: JSON.stringify({ enabled: !wf.enabled, tenantId: selectedTenantId }),
                       });
                       await loadWorkspace(selectedTenantId!);
                       onNotify(`Workflow "${wf.name}" ${wf.enabled ? 'paused' : 'enabled'}.`);
@@ -459,7 +459,10 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
                     type="button"
                     disabled={!wf.enabled}
                     onClick={async () => {
-                      await apiFetch(`/api/workflows/${wf.id}/run`, { method: 'POST' });
+                      await apiFetch(`/api/workflows/${wf.id}/run`, {
+                        method: 'POST',
+                        body: JSON.stringify({ tenantId: selectedTenantId }),
+                      });
                       await loadWorkspace(selectedTenantId!);
                       onNotify(`Triggered "${wf.name}".`);
                     }}
@@ -494,7 +497,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
                         onClick={async () => {
                           await apiFetch(`/api/automation-logs/${log.id}/decision`, {
                             method: 'PATCH',
-                            body: JSON.stringify({ decision: 'approved' }),
+                            body: JSON.stringify({ decision: 'approved', tenantId: selectedTenantId }),
                           });
                           await loadWorkspace(selectedTenantId!);
                           onNotify('Action approved.');
@@ -509,7 +512,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
                         onClick={async () => {
                           await apiFetch(`/api/automation-logs/${log.id}/decision`, {
                             method: 'PATCH',
-                            body: JSON.stringify({ decision: 'rejected' }),
+                            body: JSON.stringify({ decision: 'rejected', tenantId: selectedTenantId }),
                           });
                           await loadWorkspace(selectedTenantId!);
                           onNotify('Action rejected.');
