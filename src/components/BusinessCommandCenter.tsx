@@ -170,12 +170,13 @@ export const BusinessCommandCenter: React.FC<BusinessCommandCenterProps> = ({
     setAiQuestion(q);
     setAiBusy(true);
     setAiAnswer('');
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     try {
       const res = await apiFetch<{ answer: string; creditsUsed: number }>(
         `/api/owner/tenants/${tenant.id}/ai-assistant`,
         {
           method: 'POST',
-          body: JSON.stringify({ question: q, language: aiLang }),
+          body: JSON.stringify({ question: q, language: aiLang, requestId }),
         }
       );
       setAiAnswer(res.answer);

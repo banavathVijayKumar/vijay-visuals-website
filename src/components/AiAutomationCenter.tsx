@@ -99,6 +99,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
     if (!aiPrompt.trim()) return;
     setAiRunning(true);
     setAiOutput('');
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     try {
       if (aiTask === 'support_chat' && tenant) {
         const res = await apiFetch<{ reply: string }>('/api/ai/support-chat', {
@@ -107,6 +108,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
             tenantSlug: tenant.slug,
             message: aiPrompt.trim(),
             language: aiLang,
+            requestId,
           }),
         });
         setAiOutput(res.reply);
@@ -125,11 +127,12 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
             mode: aiTask,
             topic: aiPrompt.trim(),
             language: aiLang,
+            requestId,
           }),
         });
         setAiOutput(res.output);
         if (selectedTenantId) await loadWorkspace(selectedTenantId);
-        onNotify(`AI Content Studio generated (${res.creditsUsed} credits used).`);
+        onNotify(`AI Content Studio generated (${res.creditsUsed} credit used).`);
       } else {
         const res = await apiFetch<{ output: string; creditsUsed: number }>('/api/ai/generate', {
           method: 'POST',
@@ -138,11 +141,12 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
             task: aiTask,
             input: aiPrompt.trim(),
             language: aiLang,
+            requestId,
           }),
         });
         setAiOutput(res.output);
         if (selectedTenantId) await loadWorkspace(selectedTenantId);
-        onNotify(`Gemini AI response generated (${res.creditsUsed} credits used).`);
+        onNotify(`Gemini AI response generated (${res.creditsUsed} credit used).`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Gemini AI request failed.';
@@ -323,7 +327,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
             disabled={aiRunning}
             className="w-full py-2.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold"
           >
-            {aiRunning ? 'Running Server-Side Gemini AI...' : 'Run AI Generation (2 Credits)'}
+            {aiRunning ? 'Running Server-Side Gemini AI...' : 'Run AI Generation (1 Credit)'}
           </button>
         </form>
 

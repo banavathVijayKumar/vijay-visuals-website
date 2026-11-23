@@ -127,12 +127,21 @@ export async function getTenantAiQuota(
 
     // 2. Query used credits for the current billing period
     try {
+      // Auto-expire stale reservations older than 2 minutes (e.g. from timeouts or worker aborts)
+      try {
+        await env.DB.prepare(
+          `UPDATE tenant_ai_usage
+           SET status = 'failed', credits_deducted = 0, error_message = 'Reservation timed out or aborted'
+           WHERE status = 'reserved' AND created_at < datetime('now', '-2 minutes')`
+        ).run();
+      } catch {}
+
       const usedRow = await env.DB.prepare(
         `SELECT COALESCE(SUM(credits_deducted), 0) AS total_used
          FROM tenant_ai_usage
          WHERE (website_id = ? OR (tenant_rowid IS NOT NULL AND tenant_rowid = ?))
            AND billing_period = ?
-           AND status IN ('success', 'reserved')`
+           AND (status = 'success' OR (status = 'reserved' AND created_at >= datetime('now', '-2 minutes')))`
       )
         .bind(websiteId, tenantRowId || -1, billingPeriod)
         .first<{ total_used: number }>();
