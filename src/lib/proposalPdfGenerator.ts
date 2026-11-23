@@ -36,6 +36,8 @@ export interface ProposalRecord {
   packages_comparison_json?: string;
   feature_breakdown_json?: string;
   status: string;
+  delivery_status?: string;
+  view_count?: number;
   secure_token?: string;
   created_at: string;
   expires_at?: string;

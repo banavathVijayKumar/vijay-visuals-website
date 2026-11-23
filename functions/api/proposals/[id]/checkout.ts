@@ -41,12 +41,12 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
   try {
     const cfOrder = await createEdgeCashfreeOrder(env, {
       orderId: cfOrderId,
-      orderAmount: amountInr,
+      amountInr,
       currency: 'INR',
       customerDetails: {
         customerId: `prop_cust_${proposal.id}_${proposal.customer_phone.replace(/[^0-9]/g, '') || 'client'}`,
         customerName: proposal.customer_name,
-        customerEmail: proposal.customer_email || 'client@vijayvisuals.com',
+        customerEmail: proposal.customer_email || 'vk66278@gmail.com',
         customerPhone: proposal.customer_phone || '9381362201',
       },
       orderMeta: {
@@ -62,7 +62,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       },
     });
 
-    if (!cfOrder.payment_session_id) {
+    if (!cfOrder.paymentSessionId) {
       throw new Error('Cashfree did not return a valid payment_session_id.');
     }
 
@@ -82,8 +82,8 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
     )
       .bind(
         cfOrderId,
-        String(cfOrder.cf_order_id || ''),
-        cfOrder.payment_session_id,
+        String(cfOrder.order.cf_order_id || ''),
+        cfOrder.paymentSessionId,
         proposal.package_code || 'business-website',
         proposal.website_id,
         proposal.owner_id || 'unassigned_client',
@@ -99,7 +99,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
           businessName: proposal.business_name,
           packageTier: proposal.package_tier,
         }),
-        JSON.stringify(cfOrder)
+        JSON.stringify(cfOrder.order)
       )
       .run();
 
@@ -111,9 +111,9 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       .run();
 
     return json({
-      paymentSessionId: cfOrder.payment_session_id,
+      paymentSessionId: cfOrder.paymentSessionId,
       orderId: cfOrderId,
-      cfOrderId: cfOrder.cf_order_id,
+      cfOrderId: cfOrder.order.cf_order_id,
       environment: cfStatus.mode,
       amountInr,
       proposalNumber: proposal.proposal_number,
