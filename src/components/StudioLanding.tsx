@@ -4,11 +4,13 @@ import {
   Check,
   CreditCard,
   ExternalLink,
+  Eye,
   Globe,
   Instagram,
   Loader2,
   Mail,
   MessageCircle,
+  Play,
   Search,
   Send,
   ShieldCheck,
@@ -33,6 +35,7 @@ import {
 } from '../data/content';
 import { apiFetch } from '../lib/api';
 import { AppView, PlatformPlanRecord, TenantRecord } from '../types/platform';
+import { VijayVisualsLogo } from './VijayVisualsLogo';
 import { PWAInstallButton } from './PWAControls';
 import { GlobalGrowthHub } from './GlobalGrowthHub';
 import heroStudioImg from '../assets/images/hero_vijay_studio_1795055804014.jpg';
@@ -486,8 +489,16 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               <div className="flex flex-wrap items-center gap-4">
                 <button
                   type="button"
+                  onClick={() => onNavigate('demo')}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-gold-gradient text-[#08080A] text-sm font-semibold hover:opacity-95 transition-opacity whitespace-nowrap shrink-0 shadow-lg shadow-[#D4AF37]/20"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>Try Interactive Live Demo</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => onNavigate('builder')}
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-gold-gradient text-[#08080A] text-sm font-semibold hover:opacity-95 transition-opacity whitespace-nowrap shrink-0"
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-md border border-[#D4AF37]/50 text-sm font-medium text-white hover:border-[#D4AF37] hover:bg-[#D4AF37]/10 transition-colors whitespace-nowrap shrink-0"
                 >
                   <span>{t.ctaLaunchBuilder}</span>
                   <ArrowRight className="w-4 h-4" />
@@ -495,20 +506,11 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigate('marketplace')}
-                  className="inline-flex items-center gap-2 px-5 py-3 rounded-md border border-[#2C2C3C] text-sm font-medium text-white hover:border-[#D4AF37] transition-colors whitespace-nowrap shrink-0"
+                  className="inline-flex items-center gap-2 px-4 py-3 rounded-md border border-[#2C2C3C] text-sm font-medium text-[#A5A5B8] hover:text-white hover:border-[#3E3E50] transition-colors whitespace-nowrap shrink-0"
                 >
                   <Globe className="w-4 h-4 text-[#D4AF37]" />
                   <span>{t.ctaExploreStores}</span>
                 </button>
-                <a
-                  href={`${CONTACT_INFO.whatsappUrl}?text=${encodeURIComponent('Hello Vijay, I want to launch my business website on Vijay Visuals.')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-3 text-sm font-medium text-[#ECC86A] hover:underline whitespace-nowrap shrink-0"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>{t.ctaWhatsApp}</span>
-                </a>
               </div>
             </div>
 
@@ -1172,10 +1174,10 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
             </form>
           </div>
 
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pt-4">
             <div>
-              <p className="font-luxury text-base font-bold tracking-widest text-white">VIJAY VISUALS</p>
-              <p className="mt-1 text-[#7D7D90]">
+              <VijayVisualsLogo variant="full" size="md" mode="dark" showTagline />
+              <p className="mt-2 text-[#7D7D90]">
                 Multi-Tenant Business Platform &amp; Creative Studio · {CONTACT_INFO.location}
               </p>
               <p className="mt-1 text-[11px] text-[#6A6A7C]">

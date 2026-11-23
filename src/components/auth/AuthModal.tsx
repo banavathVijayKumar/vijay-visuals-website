@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { initSupabaseClient, authService, UserProfile, UserRole } from '../../lib/supabase';
 import { X, Lock, Mail, User, Phone, KeyRound, CheckCircle2 } from 'lucide-react';
+import { VijayVisualsLogo } from '../VijayVisualsLogo';
 
 export type AuthModalMode = 'signin' | 'register' | 'forgot' | 'reset_password';
 
@@ -193,10 +194,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-[#0E0E16] border border-[#2B2B3C] rounded-2xl max-w-md w-full p-6 shadow-2xl relative text-xs">
         <div className="flex items-center justify-between pb-4 border-b border-[#1E1E2A] mb-4">
-          <div className="flex items-center gap-2.5">
-            <span className="w-7 h-7 rounded bg-gradient-to-br from-[#DFBA5A] to-[#8C6D1F] flex items-center justify-center text-[#08080A] font-black">
-              VV
-            </span>
+          <div className="flex items-center gap-3">
+            <VijayVisualsLogo variant="icon" size="sm" mode="dark" />
             <div>
               <h3 className="font-luxury font-bold text-white text-base">{heading}</h3>
               <p className="text-[11px] text-[#868698]">Secure Vijay Visuals account</p>

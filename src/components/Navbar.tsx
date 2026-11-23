@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { LogOut, Menu, User, X } from 'lucide-react';
+import { LogOut, Menu, Sparkles, User, X } from 'lucide-react';
 import { AppView } from '../types/platform';
 import { getI18n, Lang } from '../data/content';
 import { useAuth } from '../hooks/useAuth';
+import { VijayVisualsLogo } from './VijayVisualsLogo';
 
 interface NavbarProps {
   activeView: AppView;
@@ -16,8 +17,9 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const t = getI18n(lang);
 
-  const links: Array<{ id: AppView; label: string }> = [
+  const links: Array<{ id: AppView; label: string; badge?: string }> = [
     { id: 'studio', label: t.navStudio },
+    { id: 'demo', label: 'Live Demo', badge: 'Interactive' },
     { id: 'builder', label: t.navBuilder },
     { id: 'marketplace', label: t.navMarketplace },
     { id: 'dashboards', label: t.navDashboards },
@@ -33,31 +35,38 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
   return (
     <header className="sticky top-0 z-40 border-b border-[#1E1E28] bg-[#08080A]/95 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-8">
-        {/* Zone 1: Single-line Brand Wordmark */}
-        <button
-          type="button"
+        {/* Zone 1: Premium Vijay Visuals Brand Logo */}
+        <VijayVisualsLogo
+          variant="compact"
+          size="sm"
+          mode="dark"
           onClick={() => handleLink('studio')}
-          className="font-luxury text-lg font-bold tracking-[0.16em] text-white hover:text-[#ECC86A] transition-colors whitespace-nowrap shrink-0 focus:outline-none"
-        >
-          VIJAY VISUALS
-        </button>
+          className="hover:opacity-95 transition-opacity"
+        />
 
-        {/* Zone 2: 5 Concise Single-Line Text Navigation Links */}
-        <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-[#A3A3B5]">
+        {/* Zone 2: Navigation Links */}
+        <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-[#A3A3B5]">
           {links.map((item) => {
-            const active = activeView === item.id || (item.id === 'marketplace' && activeView === 'storefront');
+            const active =
+              activeView === item.id ||
+              (item.id === 'marketplace' && activeView === 'storefront');
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => handleLink(item.id)}
-                className={`whitespace-nowrap shrink-0 py-1 transition-colors border-b-2 ${
+                className={`whitespace-nowrap shrink-0 py-1 transition-colors border-b-2 inline-flex items-center gap-1.5 ${
                   active
                     ? 'text-[#ECC86A] border-[#D4AF37]'
                     : 'border-transparent hover:text-white hover:border-[#3A3A4A]'
                 }`}
               >
-                {item.label}
+                <span>{item.label}</span>
+                {item.badge && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30 tracking-tight">
+                    {item.badge}
+                  </span>
+                )}
               </button>
             );
           })}

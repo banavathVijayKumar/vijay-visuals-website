@@ -65,6 +65,7 @@ import { BusinessCommandCenter } from './BusinessCommandCenter';
 import { InventoryAndHrOps } from './InventoryAndHrOps';
 import { HelpAndSuccessCenter } from './HelpAndSuccessCenter';
 import { CustomerSupportCenter } from './CustomerSupportCenter';
+import { CustomerLogoCustomizer } from './CustomerLogoCustomizer';
 import { BusinessLocationsManager } from './BusinessLocationsManager';
 import { DeliveryGpsSharer } from './DeliveryGpsSharer';
 import { DomainManagementCenter } from './DomainManagementCenter';
@@ -73,6 +74,7 @@ import { OwnerReviewsManager } from './OwnerReviewsManager';
 import { AdminReviewsModeration } from './AdminReviewsModeration';
 import { AdminDeliveriesPanel } from './AdminDeliveriesPanel';
 import { Lang } from '../data/content';
+import { VijayVisualsLogo } from './VijayVisualsLogo';
 
 interface DashboardsHubProps {
   allTenants: TenantRecord[];
@@ -155,6 +157,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     | 'marketing'
     | 'help_center'
     | 'support_center'
+    | 'logo_branding'
     | OperationsTab
     | GrowthTab
   >('command_center');
@@ -583,15 +586,16 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   if (!profile) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-20 text-center">
-        <div className="rounded-xl border border-[#242434] bg-[#0E0E15] p-8 space-y-4">
-          <h1 className="font-luxury text-2xl font-bold text-white">Sign In to Access Role Workspaces</h1>
-          <p className="text-sm text-[#9E9EB2]">
+        <div className="rounded-xl border border-[#242434] bg-[#0E0E15] p-8 space-y-5 flex flex-col items-center">
+          <VijayVisualsLogo variant="stacked" size="lg" mode="dark" showTagline />
+          <h1 className="font-luxury text-2xl font-bold text-white mt-2">Sign In to Access Role Workspaces</h1>
+          <p className="text-sm text-[#9E9EB2] max-w-md">
             Manage your multi-tenant business website, products, gallery, orders, invoices, or Super Admin controls with your secure VIJAY VISUALS account.
           </p>
           <button
             type="button"
             onClick={() => openAuthModal()}
-            className="px-6 py-3 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold"
+            className="px-6 py-3 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold hover:opacity-95 transition-opacity"
           >
             Sign In / Create Account
           </button>
@@ -1324,6 +1328,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       { id: 'supply_hr', label: 'Warehouses & HR' },
                       { id: 'plugins_dns', label: 'Plugins & Webhooks' },
                       { id: 'subscription_policy', label: 'Renewal & Export' },
+                      { id: 'logo_branding', label: 'Logo & Branding' },
                       { id: 'support_center', label: 'Support & Changes' },
                       { id: 'help_center', label: 'Help & Status' },
                     ].map((tab) => (
@@ -1367,6 +1372,34 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
                   {ownerSection === 'help_center' && (
                     <HelpAndSuccessCenter tenantId={ownerData.tenant.id} onNotify={onNotify} />
+                  )}
+
+                  {ownerSection === 'logo_branding' && (
+                    <CustomerLogoCustomizer
+                      tenantId={ownerData.tenant.id}
+                      tenantName={ownerData.tenant.name}
+                      currentLogo={{
+                        initials: ownerData.tenant.logoText,
+                        businessName: ownerData.tenant.name,
+                      }}
+                      onSaveLogo={async (cfg) => {
+                        // Persist customized logo to tenant website settings
+                        try {
+                          await apiFetch(`/api/owner/tenants/${ownerData.tenant.id}/overview`, {
+                            method: 'PATCH',
+                            body: JSON.stringify({
+                              logoText: cfg.initials || 'VV',
+                              logoImage: cfg.type === 'image' ? cfg.imageUrl : null,
+                            }),
+                          });
+                        } catch {
+                          // Fallback local update
+                        }
+                        if (selectedTenantId) loadOwnerOverview(selectedTenantId);
+                        onRefreshTenants();
+                      }}
+                      onNotify={onNotify}
+                    />
                   )}
 
                   {ownerSection === 'support_center' && (
@@ -3814,10 +3847,13 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
             {/* Invoice Header */}
             <div className="border-b border-[#242436] pb-4 mb-4">
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="font-luxury text-lg font-bold text-white tracking-wider">VIJAY VISUALS</h2>
-                  <p className="text-[10px] text-[#A0A0B4] mt-0.5">Platform Web Engineering &amp; Multi-Tenant Cloud Services</p>
-                  <p className="text-[10px] text-[#7E7E92]">Tax Invoice · SAC Code: 998314 (GSTIN: Pending Registration / Business Settings)</p>
+                <div className="flex items-center gap-3">
+                  <VijayVisualsLogo variant="icon" size="md" mode="dark" />
+                  <div>
+                    <h2 className="font-luxury text-lg font-bold text-white tracking-wider">VIJAY VISUALS</h2>
+                    <p className="text-[10px] text-[#A0A0B4] mt-0.5">Platform Web Engineering &amp; Multi-Tenant Cloud Services</p>
+                    <p className="text-[10px] text-[#7E7E92]">Tax Invoice · SAC Code: 998314 (GSTIN: Pending Registration / Business Settings)</p>
+                  </div>
                 </div>
                 <div className="text-right">
                   <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/70 text-emerald-400 border border-emerald-500/40 mb-1">

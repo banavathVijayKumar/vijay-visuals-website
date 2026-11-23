@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="vvFavGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF3C4" />
+      <stop offset="30%" stop-color="#F5D061" />
+      <stop offset="60%" stop-color="#D4AF37" />
+      <stop offset="100%" stop-color="#7A5600" />
+    </linearGradient>
+
+    <linearGradient id="vvFavNavy" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#163B7D" />
+      <stop offset="50%" stop-color="#0A1D3F" />
+      <stop offset="100%" stop-color="#030812" />
+    </linearGradient>
+
+    <radialGradient id="vvFavLens" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1D478A" />
+      <stop offset="100%" stop-color="#030A17" />
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="#060609" />
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="url(#vvFavGold)" stroke-width="8" stroke-opacity="0.8" />
+
+  <g transform="translate(256, 256) scale(0.85) translate(-300, -230)">
+    <g transform="translate(300, 200)">
+      <circle cx="0" cy="0" r="92" fill="none" stroke="url(#vvFavGold)" stroke-width="8" />
+      <circle cx="0" cy="0" r="85" fill="url(#vvFavLens)" />
+
+      <path d="M 0,-85 A 85,85 0 0,1 73,-42 L 20,-11 Z" fill="#0E2752" stroke="url(#vvFavGold)" stroke-width="2" />
+      <path d="M 73,-42 A 85,85 0 0,1 73,42 L 11,20 Z" fill="#0B2044" stroke="url(#vvFavGold)" stroke-width="2" />
+      <path d="M 73,42 A 85,85 0 0,1 0,85 L -20,11 Z" fill="#081834" stroke="url(#vvFavGold)" stroke-width="2" />
+      <path d="M 0,85 A 85,85 0 0,1 -73,42 L -11,-20 Z" fill="#0B2044" stroke="url(#vvFavGold)" stroke-width="2" />
+      <path d="M -73,42 A 85,85 0 0,1 -73,-42 L 20,-11 Z" fill="#0E2752" stroke="url(#vvFavGold)" stroke-width="2" />
+      <path d="M -73,-42 A 85,85 0 0,1 0,-85 L -11,20 Z" fill="#123164" stroke="url(#vvFavGold)" stroke-width="2" />
+
+      <polygon points="-11,-20 22,0 -11,20" fill="url(#vvFavGold)" />
+    </g>
+
+    <path d="M 100,110 L 195,110 L 255,270 L 315,110 L 410,110 L 290,370 L 220,370 Z"
+          fill="url(#vvFavGold)" stroke="#684700" stroke-width="3" stroke-linejoin="round" />
+    <path d="M 118,122 L 182,122 L 255,290 L 328,122 L 392,122 L 285,355 L 225,355 Z"
+          fill="url(#vvFavNavy)" />
+
+    <path d="M 225,140 L 305,140 L 375,305 L 445,140 L 525,140 L 405,395 L 345,395 Z"
+          fill="url(#vvFavGold)" stroke="#684700" stroke-width="3.5" stroke-linejoin="round" />
+    <path d="M 240,152 L 295,152 L 375,325 L 455,152 L 510,152 L 400,380 L 350,380 Z"
+          fill="url(#vvFavNavy)" />
+
+    <path d="M 110,320 C 130,380 240,420 370,390 C 470,365 540,300 580,240 C 600,210 595,170 560,160 C 530,150 490,170 440,200"
+          fill="none" stroke="url(#vvFavGold)" stroke-width="12" stroke-linecap="round" />
+  </g>
+</svg>

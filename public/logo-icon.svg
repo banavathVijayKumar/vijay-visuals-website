@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 500" width="100%" height="100%">
+  <defs>
+    <!-- Metallic Gold Gradients -->
+    <linearGradient id="vvGoldMain" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF3C4" />
+      <stop offset="25%" stop-color="#F5D061" />
+      <stop offset="50%" stop-color="#D4AF37" />
+      <stop offset="75%" stop-color="#AA7C11" />
+      <stop offset="100%" stop-color="#6B4E00" />
+    </linearGradient>
+
+    <linearGradient id="vvGoldGleam" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#AA7C11" />
+      <stop offset="35%" stop-color="#FDF3CD" />
+      <stop offset="70%" stop-color="#D4AF37" />
+      <stop offset="100%" stop-color="#7A5600" />
+    </linearGradient>
+
+    <linearGradient id="vvGoldBevel" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#684700" />
+      <stop offset="50%" stop-color="#E5C158" />
+      <stop offset="100%" stop-color="#FFF6D6" />
+    </linearGradient>
+
+    <!-- Deep Royal Navy Gradients -->
+    <linearGradient id="vvNavyDeep" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0F2B5C" />
+      <stop offset="40%" stop-color="#0A1D3F" />
+      <stop offset="100%" stop-color="#040C1A" />
+    </linearGradient>
+
+    <linearGradient id="vvNavyFacet" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#163B7D" />
+      <stop offset="50%" stop-color="#0C234C" />
+      <stop offset="100%" stop-color="#051024" />
+    </linearGradient>
+
+    <!-- Lens Aperture Radial Gradient -->
+    <radialGradient id="vvLensGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1A3E78" stop-opacity="0.9" />
+      <stop offset="70%" stop-color="#081A38" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#020813" />
+    </radialGradient>
+
+    <!-- Drop Shadows for 3D Depth -->
+    <filter id="vvShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.75" />
+    </filter>
+
+    <filter id="vvGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Orbit (Back Arc) -->
+  <path d="M 80,310 C 60,250 140,160 300,105 C 460,50 560,90 580,140"
+        fill="none" stroke="url(#vvGoldGleam)" stroke-width="8" stroke-linecap="round" opacity="0.65" />
+
+  <!-- 1. Central Camera Aperture / Lens Sphere -->
+  <g transform="translate(300, 200)" filter="url(#vvShadow)">
+    <!-- Outer Golden Bezel of Aperture -->
+    <circle cx="0" cy="0" r="102" fill="none" stroke="url(#vvGoldMain)" stroke-width="9" />
+    <circle cx="0" cy="0" r="95" fill="url(#vvLensGlow)" />
+
+    <!-- Aperture Blades (Curved Camera Shutter Facets) -->
+    <!-- Blade 1 -->
+    <path d="M 0,-95 A 95,95 0 0,1 82,-48 L 22,-12 Z" fill="#0E2752" stroke="url(#vvGoldBevel)" stroke-width="3" />
+    <!-- Blade 2 -->
+    <path d="M 82,-48 A 95,95 0 0,1 82,48 L 12,22 Z" fill="#0B2044" stroke="url(#vvGoldBevel)" stroke-width="3" />
+    <!-- Blade 3 -->
+    <path d="M 82,48 A 95,95 0 0,1 0,95 L -22,12 Z" fill="#081834" stroke="url(#vvGoldBevel)" stroke-width="3" />
+    <!-- Blade 4 -->
+    <path d="M 0,95 A 95,95 0 0,1 -82,48 L -12,-22 Z" fill="#0B2044" stroke="url(#vvGoldBevel)" stroke-width="3" />
+    <!-- Blade 5 -->
+    <path d="M -82,48 A 95,95 0 0,1 -82,-48 L 22,-12 Z" fill="#0E2752" stroke="url(#vvGoldBevel)" stroke-width="3" />
+    <!-- Blade 6 -->
+    <path d="M -82,-48 A 95,95 0 0,1 0,-95 L -12,22 Z" fill="#123164" stroke="url(#vvGoldBevel)" stroke-width="3" />
+
+    <!-- Inner Aperture Ring -->
+    <circle cx="0" cy="0" r="42" fill="#051022" stroke="url(#vvGoldMain)" stroke-width="3.5" />
+
+    <!-- 3D Metallic Gold Play Button -->
+    <polygon points="-12,-22 24,0 -12,22" fill="url(#vvGoldMain)" stroke="url(#vvGoldBevel)" stroke-width="2.5" stroke-linejoin="round" />
+  </g>
+
+  <!-- 2. The Interlocking 3D "VV" Monogram -->
+  <g filter="url(#vvShadow)">
+    <!-- LEFT 'V' (Back / Outer) -->
+    <!-- Left V Bevel / Base Outline -->
+    <path d="M 100,110 L 195,110 L 255,270 L 315,110 L 410,110 L 290,370 L 220,370 Z"
+          fill="url(#vvGoldMain)" stroke="url(#vvGoldBevel)" stroke-width="4" stroke-linejoin="round" />
+    <!-- Left V Navy Core Infill -->
+    <path d="M 118,122 L 182,122 L 255,290 L 328,122 L 392,122 L 285,355 L 225,355 Z"
+          fill="url(#vvNavyDeep)" />
+    <!-- Left V Left Facet Highlight -->
+    <path d="M 118,122 L 150,122 L 235,320 L 225,355 Z" fill="url(#vvNavyFacet)" opacity="0.6" />
+
+    <!-- RIGHT 'V' (Foreground / Intersecting) -->
+    <!-- Right V Golden 3D Bevel/Chassis -->
+    <path d="M 225,140 L 305,140 L 375,305 L 445,140 L 525,140 L 405,395 L 345,395 Z"
+          fill="url(#vvGoldMain)" stroke="url(#vvGoldBevel)" stroke-width="4.5" stroke-linejoin="round" />
+    <!-- Right V Deep Navy Face -->
+    <path d="M 240,152 L 295,152 L 375,325 L 455,152 L 510,152 L 400,380 L 350,380 Z"
+          fill="url(#vvNavyFacet)" />
+    <!-- Right V Inner Facet Shadow -->
+    <path d="M 240,152 L 270,152 L 360,345 L 350,380 Z" fill="#040D1D" opacity="0.75" />
+    <!-- Right V Specular Sheen on Outer Arm -->
+    <path d="M 470,152 L 510,152 L 400,380 L 385,380 Z" fill="url(#vvGoldGleam)" opacity="0.25" />
+  </g>
+
+  <!-- 3. Dynamic Orbital Ring (Foreground Swoop Across Front) -->
+  <path d="M 110,320 C 130,380 240,420 370,390 C 470,365 540,300 580,240 C 600,210 595,170 560,160 C 530,150 490,170 440,200"
+        fill="none" stroke="url(#vvGoldMain)" stroke-width="12" stroke-linecap="round" filter="url(#vvShadow)" />
+  <path d="M 110,320 C 130,380 240,420 370,390 C 470,365 540,300 580,240 C 600,210 595,170 560,160 C 530,150 490,170 440,200"
+        fill="none" stroke="url(#vvGoldGleam)" stroke-width="5" stroke-linecap="round" />
+  <path d="M 110,320 C 100,290 102,260 115,230"
+        fill="none" stroke="url(#vvGoldBevel)" stroke-width="8" stroke-linecap="round" opacity="0.8" />
+</svg>

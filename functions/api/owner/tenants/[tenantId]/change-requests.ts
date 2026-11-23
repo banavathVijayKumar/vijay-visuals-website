@@ -145,7 +145,7 @@ export async function onRequestPost(
     aiSummary = `Feature / Design Change Request (${category.replace(/_/g, ' ')}). Technical review required to formulate official GST quotation and milestone timeline.`;
   }
 
-  const requestNumber = `CR-${Date.now().toString().slice(-6)}`;
+  const requestNumber = `CR-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
 
   try {
     const res = await env.DB.prepare(

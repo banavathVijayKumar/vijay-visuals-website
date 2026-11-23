@@ -532,4 +532,4 @@ export interface CartItem {
   variant: string;
 }
 
-export type AppView = 'studio' | 'builder' | 'marketplace' | 'storefront' | 'dashboards' | 'ai';
+export type AppView = 'studio' | 'builder' | 'marketplace' | 'storefront' | 'dashboards' | 'ai' | 'demo';

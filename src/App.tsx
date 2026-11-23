@@ -14,6 +14,7 @@ import { OrderTrackerModal } from './components/OrderTrackerModal';
 import { InvoiceModal } from './components/InvoiceModal';
 import { OfflineIndicator } from './components/PWAControls';
 import { AuthModal } from './components/auth/AuthModal';
+import { InteractiveDemoHub } from './components/InteractiveDemoHub';
 
 const VALID_LANGS = new Set<string>(SUPPORTED_LANGUAGES.map((l) => l.code));
 const VALID_CURRENCIES = new Set<string>(GLOBAL_CURRENCIES.map((c) => c.code));
@@ -46,6 +47,7 @@ function parseRouteFromPath(): { view: AppView; slug: string | null } {
     const slug = decodeURIComponent(pathname.slice('/sites/'.length).split('/')[0] || '').trim().toLowerCase();
     if (slug) return { view: 'storefront', slug };
   }
+  if (pathname.startsWith('/demo')) return { view: 'demo', slug: null };
   if (pathname.startsWith('/builder')) return { view: 'builder', slug: null };
   if (pathname.startsWith('/marketplace')) return { view: 'marketplace', slug: null };
   if (pathname.startsWith('/dashboards')) return { view: 'dashboards', slug: null };
@@ -343,6 +345,18 @@ function PlatformShell() {
             onNavigate={(v) => navigateTo(v)}
             onOpenStorefront={(slug) => navigateTo('storefront', slug)}
             onOpenTracker={() => setTrackerOpen(true)}
+            onNotify={showToast}
+          />
+        )}
+
+        {activeView === 'demo' && (
+          <InteractiveDemoHub
+            onNavigatePlan={(planCode) => {
+              navigateTo('studio');
+              // triggers plan purchase modal
+              showToast(`Selected package: ${planCode}. Opening checkout...`);
+            }}
+            onGoBuilder={() => navigateTo('builder')}
             onNotify={showToast}
           />
         )}

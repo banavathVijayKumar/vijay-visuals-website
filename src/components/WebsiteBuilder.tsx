@@ -28,6 +28,7 @@ import {
 import { BUSINESS_CATEGORIES, GLOBAL_CURRENCIES } from '../data/content';
 import { TEMPLATES_DATA, BusinessTemplate } from '../lib/templatesData';
 import { apiFetch } from '../lib/api';
+import { CustomerLogoCustomizer } from './CustomerLogoCustomizer';
 import { generateSlugFromName, validateSlug } from '../lib/slug';
 import { optimizeImageFileToDataUrl } from '../lib/imageUpload';
 import { useAuth } from '../hooks/useAuth';
@@ -157,6 +158,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   );
   const [logoText, setLogoText] = useState('SLS');
   const [logoImage, setLogoImage] = useState('');
+  const [logoStudioOpen, setLogoStudioOpen] = useState(false);
   const [bannerImage, setBannerImage] = useState(fashionBanner);
   const [primaryColor, setPrimaryColor] = useState('#D4AF37');
   const [accentColor, setAccentColor] = useState('#0D0D12');
@@ -990,7 +992,17 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-[#9D9DB0] mb-1">Logo Initials / Upload</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs text-[#9D9DB0]">Logo Customization</label>
+                    <button
+                      type="button"
+                      onClick={() => setLogoStudioOpen(true)}
+                      className="text-[11px] text-[#ECC86A] hover:underline flex items-center gap-1 font-medium"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>Open Logo Studio</span>
+                    </button>
+                  </div>
                   <div className="flex gap-2">
                     <input
                       type="text"
@@ -2151,6 +2163,42 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                 Keep Saved as Unpublished Draft
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Customer Logo Studio Modal */}
+      {logoStudioOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl">
+            <button
+              type="button"
+              onClick={() => setLogoStudioOpen(false)}
+              className="absolute top-4 right-4 z-10 p-1.5 rounded-md text-[#8E8EA2] hover:text-white bg-[#1A1A26] border border-[#2B2B3C]"
+              aria-label="Close Logo Studio"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <CustomerLogoCustomizer
+              tenantId={slug}
+              tenantName={name}
+              currentLogo={{
+                type: logoImage ? 'image' : 'text',
+                imageUrl: logoImage,
+                initials: logoText,
+                businessName: name,
+              }}
+              onSaveLogo={(cfg) => {
+                if (cfg.type === 'image' && cfg.imageUrl) {
+                  setLogoImage(cfg.imageUrl);
+                } else {
+                  setLogoImage('');
+                  setLogoText(cfg.initials || 'VV');
+                }
+                setLogoStudioOpen(false);
+                onNotify('Logo customized and updated in website draft!');
+              }}
+              onNotify={onNotify}
+            />
           </div>
         </div>
       )}
