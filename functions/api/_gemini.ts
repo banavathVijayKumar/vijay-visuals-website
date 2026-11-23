@@ -1,7 +1,7 @@
 // ============================================================================
 // VIJAY VISUALS — UNIFIED SERVER-SIDE GEMINI AI CLIENT
 // Provides verified model discovery, safe secrets redaction, upstream error
-// transparency, and automatic fallback across Gemini 1.5/2.0 families.
+// transparency, and automatic dynamic fallback across Gemini model families.
 // NEVER exposes API keys, tokens, customer PII, or prompt contents.
 // ============================================================================
 
@@ -70,7 +70,7 @@ export async function inspectGeminiModelAvailability(env: CloudflareEnv): Promis
       hasKey: false,
       httpStatus: 0,
       supportedModels: [],
-      testedCandidate: env.GEMINI_MODEL || 'gemini-1.5-flash',
+      testedCandidate: env.GEMINI_MODEL || 'gemini-2.5-flash',
       testGeneration: { success: false, errorSnippet: 'GEMINI_API_KEY is not configured.' },
     };
   }
@@ -99,7 +99,7 @@ export async function inspectGeminiModelAvailability(env: CloudflareEnv): Promis
   }
 
   // Test candidate generation with safe sample prompt
-  const candidate = env.GEMINI_MODEL || 'gemini-1.5-flash';
+  const candidate = env.GEMINI_MODEL || (supportedModels[0] ? supportedModels[0].replace(/^models\//, '') : 'gemini-2.5-flash');
   let testSuccess = false;
   let modelUsed: string | undefined;
   let errorSnippet: string | undefined;
@@ -128,7 +128,7 @@ export async function inspectGeminiModelAvailability(env: CloudflareEnv): Promis
 
 /**
  * Robust server-side Gemini execution with actual Google API response inspection,
- * model discovery, safe logging, and resilient fallback.
+ * dynamic model discovery, safe logging, and resilient fallback.
  */
 export async function callGeminiWithFallback(
   prompt: string | any[],
@@ -150,20 +150,47 @@ export async function callGeminiWithFallback(
   if (systemText) payload.systemInstruction = { parts: [{ text: systemText }] };
   if (config?.responseMimeType) payload.generationConfig = { responseMimeType: config.responseMimeType };
 
-  // Candidate models sequence
   const requestedModel = env.GEMINI_MODEL?.trim();
   const now = Date.now();
   const modelsToTry: string[] = [];
 
+  // 1. Edge cached verified model
   if (cachedWorkingModel && now - lastModelCheckTime < MODEL_CACHE_TTL_MS) {
     modelsToTry.push(cachedWorkingModel);
   }
+
+  // 2. Explicitly configured model
   if (requestedModel && !modelsToTry.includes(requestedModel)) {
     modelsToTry.push(requestedModel);
   }
-  // Standard stable models in order of performance and availability
-  for (const m of ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro']) {
+
+  // 3. Known stable 2026 production models
+  for (const m of ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-pro-latest', 'gemini-2.5-pro']) {
     if (!modelsToTry.includes(m)) modelsToTry.push(m);
+  }
+
+  // 4. Dynamic discovery from Google Developer API if cache is cold
+  if (!cachedWorkingModel || now - lastModelCheckTime >= MODEL_CACHE_TTL_MS) {
+    try {
+      const listRes = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+        headers: { 'x-goog-api-key': apiKey },
+      });
+      if (listRes.ok) {
+        const data: any = await listRes.json().catch(() => ({}));
+        const models = Array.isArray(data?.models) ? data.models : [];
+        for (const m of models) {
+          if (
+            Array.isArray(m?.supportedGenerationMethods) &&
+            m.supportedGenerationMethods.includes('generateContent')
+          ) {
+            const raw = String(m.name || '').replace(/^models\//, '');
+            if (raw && !modelsToTry.includes(raw)) {
+              modelsToTry.push(raw);
+            }
+          }
+        }
+      }
+    } catch {}
   }
 
   let lastError: Error | null = null;
@@ -222,7 +249,7 @@ export async function callGeminiWithFallback(
         throw new Error(`Gemini model "${model}" returned an empty candidates payload.`);
       }
 
-      // Update cache
+      // Update edge cache with verified working model
       cachedWorkingModel = model;
       lastModelCheckTime = Date.now();
 
@@ -237,7 +264,6 @@ export async function callGeminiWithFallback(
       } else {
         lastError = err instanceof Error ? err : new Error(String(err));
       }
-      // If error was auth failure or explicit throw, propagate immediately
       if (/Authentication Failed|rate\/quota/i.test(lastError.message)) {
         throw lastError;
       }
