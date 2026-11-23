@@ -369,13 +369,13 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     const isWebsitePackage = ALLOWED_WEBSITE_PACKAGE_CODES.has(existing.reference_id);
 
     if (targetWebsiteId && existing.reference_id) {
-      // One-time website purchases never expire: current_period_end is NULL
+      // One-time website packages provisioned with 1-year renewable active status
       const subRes = await env.DB.prepare(
         `INSERT INTO tenant_subscriptions
           (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
            total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
            current_period_start, current_period_end, created_at, updated_at)
-         VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, 0, 'cashfree', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
+         VALUES (?, ?, ?, 'monthly', 'active', ?, ?, ?, 0, 'cashfree', ?, datetime('now'), datetime('now', '+365 days'), datetime('now'), datetime('now'))`
       )
         .bind(
           targetWebsiteId,

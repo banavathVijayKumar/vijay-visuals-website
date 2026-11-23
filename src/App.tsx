@@ -15,6 +15,7 @@ import { InvoiceModal } from './components/InvoiceModal';
 import { OfflineIndicator } from './components/PWAControls';
 import { AuthModal } from './components/auth/AuthModal';
 import { InteractiveDemoHub } from './components/InteractiveDemoHub';
+import { CustomerProposalView } from './components/CustomerProposalView';
 
 const VALID_LANGS = new Set<string>(SUPPORTED_LANGUAGES.map((l) => l.code));
 const VALID_CURRENCIES = new Set<string>(GLOBAL_CURRENCIES.map((c) => c.code));
@@ -39,6 +40,14 @@ function resolveInitialCurrency(): CurrencyCode {
 
 function parseRouteFromPath(): { view: AppView; slug: string | null } {
   const pathname = window.location.pathname || '/';
+  if (pathname.startsWith('/proposal/')) {
+    const token = decodeURIComponent(pathname.slice('/proposal/'.length).split('/')[0] || '').trim();
+    if (token) return { view: 'proposal', slug: token };
+  }
+  if (pathname.startsWith('/proposals/')) {
+    const token = decodeURIComponent(pathname.slice('/proposals/'.length).split('/')[0] || '').trim();
+    if (token) return { view: 'proposal', slug: token };
+  }
   if (pathname.startsWith('/site/')) {
     const slug = decodeURIComponent(pathname.slice('/site/'.length).split('/')[0] || '').trim().toLowerCase();
     if (slug) return { view: 'storefront', slug };
@@ -223,9 +232,11 @@ function PlatformShell() {
     const nextUrl =
       view === 'storefront' && slug
         ? `/site/${slug}`
-        : view === 'studio'
-          ? '/'
-          : `/${view}`;
+        : view === 'proposal' && slug
+          ? `/proposal/${slug}`
+          : view === 'studio'
+            ? '/'
+            : `/${view}`;
     window.history.pushState({}, '', nextUrl);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
@@ -309,50 +320,54 @@ function PlatformShell() {
         </div>
       )}
 
-      <Navbar activeView={activeView} onNavigate={(v) => navigateTo(v)} lang={lang} />
+      {activeView !== 'proposal' && (
+        <>
+          <Navbar activeView={activeView} onNavigate={(v) => navigateTo(v)} lang={lang} />
 
-      {/* Global Persistent 12-Language & Multi-Currency Utility Strip (Public Site + Dashboards) */}
-      <div className="border-b border-[#181822] bg-[#0B0B10]">
-        <div className="max-w-7xl mx-auto px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 text-[#A7A7BA]">
-            <Globe className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
-            <span>Made in India · Built for the World</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <label className="inline-flex items-center gap-1.5 text-[#8E8EA2]">
-              <span className="sr-only">Language</span>
-              <select
-                aria-label="Select platform language"
-                value={lang}
-                onChange={(e) => setLang(e.target.value as Lang)}
-                className="rounded border border-[#252534] bg-[#0E0E15] px-2.5 py-1 text-xs text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none"
-              >
-                {SUPPORTED_LANGUAGES.map((l) => (
-                  <option key={l.code} value={l.code}>
-                    {l.nativeName} · {l.englishName}
-                  </option>
-                ))}
-              </select>
-            </label>
+          {/* Global Persistent 12-Language & Multi-Currency Utility Strip (Public Site + Dashboards) */}
+          <div className="border-b border-[#181822] bg-[#0B0B10]">
+            <div className="max-w-7xl mx-auto px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-[#A7A7BA]">
+                <Globe className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                <span>Made in India · Built for the World</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <label className="inline-flex items-center gap-1.5 text-[#8E8EA2]">
+                  <span className="sr-only">Language</span>
+                  <select
+                    aria-label="Select platform language"
+                    value={lang}
+                    onChange={(e) => setLang(e.target.value as Lang)}
+                    className="rounded border border-[#252534] bg-[#0E0E15] px-2.5 py-1 text-xs text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none"
+                  >
+                    {SUPPORTED_LANGUAGES.map((l) => (
+                      <option key={l.code} value={l.code}>
+                        {l.nativeName} · {l.englishName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-            <label className="inline-flex items-center gap-1.5 text-[#8E8EA2]">
-              <span className="sr-only">Display currency</span>
-              <select
-                aria-label="Select display currency"
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-                className="rounded border border-[#252534] bg-[#0E0E15] px-2.5 py-1 text-xs text-[#E8E8ED] focus:border-[#D4AF37] focus:outline-none"
-              >
-                {GLOBAL_CURRENCIES.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <label className="inline-flex items-center gap-1.5 text-[#8E8EA2]">
+                  <span className="sr-only">Display currency</span>
+                  <select
+                    aria-label="Select display currency"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+                    className="rounded border border-[#252534] bg-[#0E0E15] px-2.5 py-1 text-xs text-[#E8E8ED] focus:border-[#D4AF37] focus:outline-none"
+                  >
+                    {GLOBAL_CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
 
       {announcements.length > 0 && (
         <div className="border-b border-[#D4AF37]/25 bg-[#12100A] px-6 py-2 text-center text-xs text-[#F2DC9B]">
@@ -440,6 +455,14 @@ function PlatformShell() {
           <AiAutomationCenter
             lang={lang}
             onGoBuilder={() => navigateTo('builder')}
+            onNotify={showToast}
+          />
+        )}
+
+        {activeView === 'proposal' && (
+          <CustomerProposalView
+            token={activeSlug || ''}
+            onBackToHome={() => navigateTo('studio')}
             onNotify={showToast}
           />
         )}

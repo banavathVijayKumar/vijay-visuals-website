@@ -148,6 +148,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         status: string;
         user_id: string;
         website_id: string | null;
+        entity_type: string;
         reference_id: string;
         base_amount_inr: number;
         gst_amount_inr: number;
@@ -202,36 +203,40 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           .bind(cfPaymentId, JSON.stringify(notes), `cf_${orderId}`)
           .run();
 
-        // Activate website publication if linked
-        if (existingPayment.website_id) {
-          await env.DB.prepare(
-            `UPDATE customer_website_publications
-             SET status = 'published',
-                 published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
-                 updated_at = datetime('now')
-             WHERE website_id = ?`
-          )
-            .bind(existingPayment.website_id)
-            .run();
-
-          // Provision subscription
-          await env.DB.prepare(
-            `INSERT OR IGNORE INTO tenant_subscriptions
-              (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-               total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-               current_period_start, current_period_end, created_at, updated_at)
-             VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, 0, 'cashfree', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
-          )
-            .bind(
-              existingPayment.website_id,
-              existingPayment.user_id,
-              existingPayment.reference_id,
-              existingPayment.base_amount_inr,
-              existingPayment.gst_amount_inr,
-              existingPayment.amount_inr,
-              cfPaymentId
+        // Activate website publication if linked for platform packages
+        if (existingPayment.entity_type === 'platform_package' && existingPayment.website_id) {
+          try {
+            await env.DB.prepare(
+              `UPDATE customer_website_publications
+               SET status = 'published',
+                   published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
+                   updated_at = datetime('now')
+               WHERE website_id = ?`
             )
-            .run();
+              .bind(existingPayment.website_id)
+              .run();
+
+            // Provision subscription
+            await env.DB.prepare(
+              `INSERT OR IGNORE INTO tenant_subscriptions
+                (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+                 total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+                 current_period_start, current_period_end, created_at, updated_at)
+               VALUES (?, ?, ?, 'monthly', 'active', ?, ?, ?, 0, 'cashfree', ?, datetime('now'), datetime('now', '+365 days'), datetime('now'), datetime('now'))`
+            )
+              .bind(
+                existingPayment.website_id,
+                existingPayment.user_id,
+                existingPayment.reference_id,
+                existingPayment.base_amount_inr,
+                existingPayment.gst_amount_inr,
+                existingPayment.amount_inr,
+                cfPaymentId
+              )
+              .run();
+          } catch (pubErr) {
+            console.error('Tenant publication/subscription activation notice:', pubErr);
+          }
         }
       }
     }

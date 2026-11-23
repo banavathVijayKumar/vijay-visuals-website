@@ -16,6 +16,7 @@ import { apiFetch } from '../lib/api';
 import { DomainLang } from '../lib/domainI18n';
 import { TenantRecord } from '../types/platform';
 import { DomainManagementCenter } from './DomainManagementCenter';
+import { ProposalManager } from './ProposalManager';
 
 export type GrowthTab = 'domains_dns' | 'seo_growth' | 'proposals_quotes' | 'subscription_policy';
 
@@ -533,11 +534,20 @@ export const GrowthWorkspace: React.FC<GrowthWorkspaceProps> = ({ tenant, active
   if (activeTab === 'proposals_quotes') {
     return (
       <div className="space-y-6 text-xs">
+        {/* Full-featured Luxury Proposal & Future Preview Engine */}
+        <ProposalManager
+          onNotify={onNotify}
+          onOpenCustomerView={(token) => {
+            window.history.pushState({}, '', `/proposal/${token}`);
+            window.location.reload();
+          }}
+        />
+
         <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
               <FileText className="w-4 h-4 text-[#D4AF37]" />
-              <span>Locked Proposals & Quotations ({proposalsList.length})</span>
+              <span>Legacy Pricing Cart Quotations ({proposalsList.length})</span>
             </h3>
             <span className="text-[11px] text-[#8E8EA2]">
               Accepted quotations lock all line-item prices & 18% GST permanently.
