@@ -58,8 +58,6 @@ interface VerifyPaymentBody {
 
 export async function onRequestPost(context: PagesContext): Promise<Response> {
   const { request, env } = context;
-  const auth = await requireUser(request, env);
-  if (!auth.ok) return auth.response;
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
   const url = new URL(request.url);
@@ -86,13 +84,32 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson('Cashfree payment order record not found.', 404);
   }
 
-  const isOwner =
-    existing.user_id === auth.user.id ||
-    existing.user_id === auth.user.authSubject ||
-    auth.user.isSuperAdmin;
+  // Strict ownership check for platform subscription packages; flexible for storefront orders
+  const auth = await requireUser(request, env).catch(() => null);
+  const authUser = auth && auth.ok ? auth.user : null;
 
-  if (!isOwner) {
-    return errorJson('Forbidden: you cannot verify another customer’s payment order.', 403);
+  if (existing.entity_type === 'platform_package') {
+    if (!authUser) {
+      return auth && !auth.ok ? auth.response : errorJson('Authentication required to verify platform subscriptions.', 401);
+    }
+    const isOwner =
+      existing.user_id === authUser.id ||
+      existing.user_id === authUser.authSubject ||
+      authUser.isSuperAdmin;
+
+    if (!isOwner) {
+      return errorJson('Forbidden: you cannot verify another customer’s platform package.', 403);
+    }
+  } else if (existing.entity_type === 'storefront_order') {
+    if (authUser && existing.user_id && existing.user_id !== 'guest' && existing.user_id !== 'guest_customer') {
+      const isOwner =
+        existing.user_id === authUser.id ||
+        existing.user_id === authUser.authSubject ||
+        authUser.isSuperAdmin;
+      if (!isOwner) {
+        return errorJson('Forbidden: you cannot verify another customer’s storefront order.', 403);
+      }
+    }
   }
 
   // 2. Idempotent check
@@ -292,6 +309,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   // 5. Automatic Website Delivery & Tenant Provisioning Engine
+  if (!authUser) {
+    return errorJson('Authentication required to verify platform subscriptions.', 401);
+  }
+
   let targetWebsiteId = existing.website_id;
   let targetSlug = '';
   let subscriptionId: number | null = null;
@@ -321,9 +342,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }
       if (resolvedRow) {
         const canAccess =
-          resolvedRow.owner_id === auth.user.id ||
-          resolvedRow.owner_id === auth.user.authSubject ||
-          auth.user.isSuperAdmin;
+          resolvedRow.owner_id === authUser.id ||
+          resolvedRow.owner_id === authUser.authSubject ||
+          authUser.isSuperAdmin;
         if (canAccess) {
           targetWebsiteId = resolvedRow.website_id;
           targetSlug = resolvedRow.public_slug;
@@ -337,7 +358,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
          WHERE owner_id = ? OR owner_id = ?
          ORDER BY updated_at DESC LIMIT 1`
       )
-        .bind(auth.user.id, auth.user.authSubject)
+        .bind(authUser.id, authUser.authSubject)
         .first<{ website_id: string; public_slug: string }>();
       if (latestDraft) {
         targetWebsiteId = latestDraft.website_id;
@@ -369,7 +390,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
 
       if (body?.publishWebsite) {
-        if (!isWebsitePackage && !auth.user.isSuperAdmin) {
+        if (!isWebsitePackage && !authUser.isSuperAdmin) {
           throw new Error('Cannot publish website with a non-website subscription tier.');
         }
         await env.DB.prepare(
@@ -407,8 +428,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     notes.provisioningError = provisioningError;
 
     await writeAuditLog(env, {
-      actorId: auth.user.id,
-      actorRole: auth.user.platformRole,
+      actorId: authUser.id,
+      actorRole: authUser.platformRole,
       action: 'delivery_provisioning_failed_cashfree',
       targetType: 'cashfree_payments',
       targetId: String(existing.id),
@@ -452,8 +473,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     .run();
 
   await writeAuditLog(env, {
-    actorId: auth.user.id,
-    actorRole: auth.user.platformRole,
+    actorId: authUser.id,
+    actorRole: authUser.platformRole,
     action: provisioningError
       ? 'cashfree_payment_paid_provisioning_failed'
       : 'cashfree_payment_verified',

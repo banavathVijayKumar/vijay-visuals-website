@@ -163,6 +163,25 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         return jsonResponse({ error: 'Invalid item quantity.' }, 400);
       }
 
+      // Safe Sandbox Test Product bypass (₹1 test item in Sandbox mode)
+      if (productId === 999999) {
+        const cfStatus = getEdgeCashfreeStatus(env);
+        if (cfStatus.mode === 'sandbox') {
+          const unitPrice = 1;
+          const lineTotal = unitPrice * quantity;
+          subtotal += lineTotal;
+          orderLines.push({
+            productId: 999999,
+            name: '[SANDBOX TEST] Cashfree Test Item — ₹1',
+            variant: variant || 'Test Standard (₹1)',
+            quantity,
+            unitPrice,
+            lineTotal,
+          });
+          continue;
+        }
+      }
+
       const prod = await env.DB.prepare(
         `SELECT id, name, price_inr, stock_qty, variants_json, is_active
          FROM store_products
@@ -242,11 +261,18 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }
     }
 
-    const total = Math.max(0, subtotal - discount + deliveryFee);
-    const orderNumber = `VV-${Date.now().toString().slice(-6)}-${randomHex(2).toUpperCase()}`;
+    const hasSandboxItem = orderLines.some((l) => l.productId === 999999);
+    const cfStatus = getEdgeCashfreeStatus(env);
+    const isSandboxTestOrder = hasSandboxItem || cfStatus.mode === 'sandbox';
+    const effectiveDeliveryFee = hasSandboxItem ? 0 : deliveryFee;
+    const total = Math.max(0, subtotal - discount + effectiveDeliveryFee);
+    const orderNumber = isSandboxTestOrder
+      ? `TEST-ORD-${Date.now().toString().slice(-6)}-${randomHex(2).toUpperCase()}`
+      : `VV-${Date.now().toString().slice(-6)}-${randomHex(2).toUpperCase()}`;
 
-    // 3. Decrement product stock atomically (conditional WHERE stock_qty >= quantity)
+    // 3. Decrement product stock atomically (skip 999999 sandbox test items)
     for (const line of orderLines) {
+      if (line.productId === 999999) continue;
       const dec = await env.DB.prepare(
         `UPDATE store_products
          SET stock_qty = stock_qty - ?, updated_at = datetime('now')
@@ -268,7 +294,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     let cfMode: 'sandbox' | 'production' = 'sandbox';
 
     if (dbPaymentMethod === 'cashfree_online') {
-      cfOrderId = `vv_store_${orderNumber}_${randomHex(2)}`;
+      cfOrderId = isSandboxTestOrder
+        ? `test_vv_store_${orderNumber}_${randomHex(2)}`
+        : `vv_store_${orderNumber}_${randomHex(2)}`;
       const returnUrl = `https://master.vijay-visuals-site.pages.dev/site/${pub.public_slug}?order_id=${encodeURIComponent(
         cfOrderId
       )}`;
@@ -279,15 +307,18 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         currency: 'INR',
         customerDetails: {
           customerId: customerUserId || `cust_${Date.now().toString(36)}`,
-          customerName,
-          customerEmail: customerEmail || 'store.customer@vijayvisuals.com',
+          customerName: isSandboxTestOrder ? `[SANDBOX TEST] ${customerName}` : customerName,
+          customerEmail: customerEmail || 'test.customer@vijayvisuals.com',
           customerPhone: customerPhone || '9999999999',
         },
         orderMeta: { returnUrl },
-        orderNote: `Store Order #${orderNumber} (${pub.public_slug || 'Store'})`,
+        orderNote: isSandboxTestOrder
+          ? `[SANDBOX TEST ORDER] Cashfree PG Sandbox Test (₹${total})`
+          : `Store Order #${orderNumber} (${pub.public_slug || 'Store'})`,
         orderTags: {
           website_id: pub.website_id,
           order_number: orderNumber,
+          is_sandbox_test: isSandboxTestOrder ? 'true' : 'false',
         },
       });
 
@@ -296,6 +327,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     }
 
     // 5. Insert order with honest payment_status = 'pending' (never fake paid)
+    const effectiveShippingAddress = isSandboxTestOrder
+      ? `[SANDBOX TEST ORDER] ${shippingAddress}`
+      : shippingAddress;
+
     const insertRes = await env.DB.prepare(
       `INSERT INTO store_orders
        (order_number, website_id, owner_id, customer_user_id, customer_name, customer_phone, customer_email,
@@ -308,14 +343,14 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         pub.website_id,
         pub.owner_id,
         customerUserId,
-        customerName,
+        isSandboxTestOrder ? `[SANDBOX TEST] ${customerName}` : customerName,
         customerPhone,
         customerEmail,
-        shippingAddress,
+        effectiveShippingAddress,
         JSON.stringify(orderLines),
         subtotal,
         discount,
-        deliveryFee,
+        effectiveDeliveryFee,
         total,
         appliedCode,
         dbPaymentMethod,
@@ -352,7 +387,15 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           total,
           total,
           cfMode,
-          JSON.stringify({ orderNumber, websiteId: pub.website_id, deliveryFee, subtotal, discount })
+          JSON.stringify({
+            storeOrderId: orderId,
+            orderNumber,
+            websiteId: pub.website_id,
+            isSandboxTest: isSandboxTestOrder,
+            deliveryFee: effectiveDeliveryFee,
+            subtotal,
+            discount,
+          })
         )
         .run();
     }

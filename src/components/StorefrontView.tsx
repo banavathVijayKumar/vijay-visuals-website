@@ -584,7 +584,8 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
       : Math.min(subtotal, appliedCoupon.discountValue);
   }, [appliedCoupon, subtotal]);
 
-  const deliveryFee = tenant?.deliveryFee ?? 0;
+  const hasSandboxTestItem = cart.some((c) => c.product.id === 999999);
+  const deliveryFee = hasSandboxTestItem ? 0 : (tenant?.deliveryFee ?? 0);
   const grandTotal = Math.max(0, subtotal - discount + deliveryFee);
 
   const handleApplyCoupon = () => {
@@ -2021,6 +2022,31 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                       <span className="font-mono-tabular text-[#ECC86A]">₹{grandTotal.toLocaleString('en-IN')}</span>
                     </div>
                   </div>
+
+                  {/* Sandbox Testing Information Helper */}
+                  {hasSandboxTestItem && (
+                    <div className="rounded-lg border border-amber-500/35 bg-amber-950/20 p-3 space-y-2 text-[11px] text-amber-200">
+                      <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                        <span>Cashfree Sandbox Test Mode (Safe ₹1 Simulation)</span>
+                      </div>
+                      <p className="text-[10px] text-amber-200/80 leading-relaxed">
+                        This is a safe sandbox test checkout. Zero real money will be charged. Use these official Cashfree simulator credentials:
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5 text-[10px] font-mono-tabular">
+                        <div className="rounded bg-black/50 p-2 border border-[#2D2A1C]">
+                          <span className="text-[#8E8EA2] block text-[9px] uppercase font-sans font-semibold">Test Card (Visa/Mastercard)</span>
+                          <span className="text-white font-bold block select-all">4012 0010 3714 1112</span>
+                          <span className="text-[#A5A5B8] block text-[9px]">Exp: 12/28 · CVV: 123 · OTP: 123456</span>
+                        </div>
+                        <div className="rounded bg-black/50 p-2 border border-[#2D2A1C]">
+                          <span className="text-[#8E8EA2] block text-[9px] uppercase font-sans font-semibold">Test UPI / NetBanking</span>
+                          <span className="text-white font-bold block select-all">success@upi</span>
+                          <span className="text-[#A5A5B8] block text-[9px]">Select Test Bank or click Approve</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Checkout Form */}
                   <form onSubmit={handleCheckout} className="space-y-3">

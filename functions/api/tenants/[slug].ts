@@ -305,6 +305,36 @@ export async function onRequestGet(
     // Optional table
   }
 
+  // Prepend dedicated Sandbox Test Product in Sandbox mode for safe ₹1 Cashfree testing
+  if (cfStatus.mode === 'sandbox') {
+    products.unshift({
+      id: 999999,
+      tenantId: tenant.id,
+      name: '[SANDBOX TEST] Cashfree Test Item — ₹1',
+      description: 'SAFE SANDBOX PAYMENT TEST ITEM. Non-commercial test order for Cashfree Sandbox Payment Gateway verification. Exactly ₹1.00 authorization in Sandbox mode. Zero real money.',
+      category: 'Sandbox Testing',
+      subcategory: 'Cashfree PG',
+      price: 1,
+      compareAtPrice: 100,
+      wholesalePrice: 1,
+      minWholesaleQty: 1,
+      stockQty: 9999,
+      sku: 'SANDBOX-TEST-1INR',
+      barcode: 'SANDBOX-TEST-CF',
+      featured: true,
+      bestseller: false,
+      imageUrl: 'https://images.unsplash.com/photo-1556742049-0a67c5574f73?w=500&auto=format&fit=crop&q=80',
+      images: ['https://images.unsplash.com/photo-1556742049-0a67c5574f73?w=500&auto=format&fit=crop&q=80'],
+      variantsJson: JSON.stringify(['Test Standard (₹1)']),
+      variants: ['Test Standard (₹1)'],
+      specs: 'Cashfree Sandbox Test Mode · Safe ₹1 Authorization · RBI Simulator Card/UPI',
+      videoUrl: '',
+      rating: '5.0',
+      reviewsCount: 1,
+      isActive: true,
+    });
+  }
+
   // Load real active coupons
   const coupons: Array<{
     id: number;
