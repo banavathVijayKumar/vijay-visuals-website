@@ -112,6 +112,31 @@ function buildTenantHeadInjection(row: ResolvedTenantRow, canonicalUrl: string):
 export async function onRequest(context: PagesContext): Promise<Response> {
   const { request, env, next } = context;
   const url = new URL(request.url);
+
+  // SECURITY & SPA SAFEGUARD: Never allow an API route to fall through to the HTML SPA shell.
+  // When a Cloudflare Pages Function route is missing or fails to match, Pages serves index.html (200 text/html).
+  // This interceptor guarantees any unmatched /api/* call returns 404 JSON with proper Content-Type.
+  if (url.pathname.startsWith('/api/')) {
+    const response = await next();
+    const contentType = (response.headers.get('Content-Type') || '').toLowerCase();
+    if (contentType.includes('text/html')) {
+      return new Response(
+        JSON.stringify({
+          error: `API route not found: ${url.pathname}`,
+          status: 404,
+        }),
+        {
+          status: 404,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store',
+          },
+        }
+      );
+    }
+    return response;
+  }
+
   // SECURITY: Always use the TLS-verified request URL hostname — never trust arbitrary Host/X-Forwarded-Host headers.
   const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
 
