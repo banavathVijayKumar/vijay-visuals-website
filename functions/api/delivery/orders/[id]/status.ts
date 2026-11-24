@@ -40,6 +40,38 @@ export async function onRequestPatch(
   }
 
   try {
+    const existingOrder = await env.DB.prepare(
+      'SELECT id, payment_method, payment_status, order_status FROM store_orders WHERE id = ? LIMIT 1'
+    )
+      .bind(orderId)
+      .first<{
+        id: number;
+        payment_method: string;
+        payment_status: string;
+        order_status: string;
+      }>();
+
+    if (!existingOrder) {
+      return jsonResponse({ error: 'Order not found.' }, 404);
+    }
+
+    // UNPAID ORDER FULFILLMENT PROTECTION:
+    // If payment_method is cashfree_online and payment_status is not paid,
+    // block transitions to ready_for_pickup, out_for_delivery, and delivered with HTTP 409.
+    const RESTRICTED_FULFILLMENT_STATUSES = ['ready_for_pickup', 'out_for_delivery', 'delivered'];
+    if (
+      existingOrder.payment_method === 'cashfree_online' &&
+      existingOrder.payment_status !== 'paid' &&
+      RESTRICTED_FULFILLMENT_STATUSES.includes(nextStatus)
+    ) {
+      return jsonResponse(
+        {
+          error: `Cannot transition unpaid online order to "${nextStatus}". Payment must be verified before fulfillment.`,
+        },
+        409
+      );
+    }
+
     await env.DB.prepare(
       `UPDATE store_orders SET order_status = ?, updated_at = datetime('now') WHERE id = ?`
     )

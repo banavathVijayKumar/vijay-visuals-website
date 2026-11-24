@@ -14,7 +14,7 @@ interface AdminEcosystemPanelProps {
 
 export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNotify }) => {
   const [loading, setLoading] = useState(true);
-  const [razorpay, setRazorpay] = useState<{
+  const [cashfree, setCashfree] = useState<{
     configured: boolean;
     mode: string;
     message: string;
@@ -39,14 +39,15 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
     setLoading(true);
     try {
       const res = await apiFetch<{
-        razorpay: { configured: boolean; mode: string; message: string; webhookConfigured: boolean };
+        cashfree?: { configured: boolean; mode: string; message: string; webhookConfigured: boolean };
+        razorpay?: { configured: boolean; mode: string; message: string; webhookConfigured: boolean };
         platformPayments: PlatformPaymentRecord[];
         sellerAccounts: SellerPayoutAccountRecord[];
         sellerTransfers: SellerTransferRecord[];
         announcements: PlatformAnnouncementRecord[];
         webhookEvents: Array<{ id: number }>;
       }>('/api/admin/ecosystem');
-      setRazorpay(res.razorpay);
+      setCashfree(res.cashfree || res.razorpay || null);
       setPayments(res.platformPayments);
       setSellers(res.sellerAccounts);
       setTransfers(res.sellerTransfers);
@@ -88,11 +89,11 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
             <ShieldCheck className="w-4 h-4" />
             <span>Cashfree Payments &amp; Webhook Security Status</span>
           </p>
-          <p className="text-[#A3A3B5] mt-1">{razorpay?.message}</p>
+          <p className="text-[#A3A3B5] mt-1">{cashfree?.message}</p>
         </div>
         <div className="flex flex-wrap gap-2 font-mono-tabular">
           <span className="px-2.5 py-1 rounded border border-[#2A2A38] text-[#ECC86A]">
-            Mode: {(razorpay?.mode || 'unconfigured').toUpperCase()}
+            Mode: {(cashfree?.mode || 'unconfigured').toUpperCase()}
           </span>
           <span className="px-2.5 py-1 rounded border border-[#2A2A38] text-[#B8B8C8]">
             Verified Webhooks: {webhookCount}
@@ -284,7 +285,7 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
                           routeEnabled: Boolean(routeIdDrafts[s.id]),
                         }),
                       });
-                      onNotify(`Updated Route verification for ${s.legalBusinessName}.`);
+                      onNotify(`Updated Cashfree Easy Split verification for ${s.legalBusinessName}.`);
                       loadData();
                     }}
                     className="px-3 py-1.5 rounded bg-emerald-600 text-white font-semibold"

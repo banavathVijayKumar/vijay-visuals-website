@@ -56,6 +56,13 @@ interface VerifyPaymentBody {
   publishWebsite?: boolean;
 }
 
+function toIntegerPaise(amount: unknown): number {
+  if (typeof amount === 'string' && amount.trim() === '') return -1;
+  const num = Number(amount);
+  if (!Number.isFinite(num) || isNaN(num) || num <= 0) return -1;
+  return Math.round(num * 100);
+}
+
 export async function onRequestPost(context: PagesContext): Promise<Response> {
   const { request, env } = context;
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
@@ -187,7 +194,82 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     });
   }
 
-  // 4. Payment is verified PAID! Extract payment metadata
+  // 4. CRITICAL FINANCIAL VALIDATION: Authoritative Amount & Currency Verification
+  // Rule: Retrieve expected order amount from trusted server-side Preview D1 records.
+  // Never trust client-submitted amounts. Reject NaN, Infinity, negative, zero, and malformed values.
+  const expectedPaise = toIntegerPaise(existing.amount_inr);
+  if (expectedPaise <= 0) {
+    return errorJson('Invalid authoritative expected order amount in database.', 500);
+  }
+
+  // Validate Currency is strictly INR
+  const cfOrderCurrency = String(cfOrder.order_currency || '').trim().toUpperCase();
+  if (cfOrderCurrency !== 'INR') {
+    return errorJson(`Payment currency mismatch. Expected INR, received ${cfOrderCurrency || 'unspecified'}.`, 400);
+  }
+
+  // Validate Cashfree Order Amount in integer paise
+  const cfOrderPaise = toIntegerPaise(cfOrder.order_amount);
+  if (cfOrderPaise <= 0 || cfOrderPaise !== expectedPaise) {
+    return errorJson(
+      `Payment order amount mismatch. Expected ₹${(expectedPaise / 100).toFixed(2)}, received ₹${(cfOrderPaise > 0 ? cfOrderPaise / 100 : 0).toFixed(2)}.`,
+      400
+    );
+  }
+
+  // Validate Successful Payment entity (if present)
+  if (successfulPayment) {
+    const paymentCurrency = String(successfulPayment.payment_currency || '').trim().toUpperCase();
+    if (paymentCurrency && paymentCurrency !== 'INR') {
+      return errorJson(`Payment currency mismatch. Expected INR, received ${paymentCurrency}.`, 400);
+    }
+    const paymentPaise = toIntegerPaise(successfulPayment.payment_amount);
+    if (paymentPaise <= 0 || paymentPaise !== expectedPaise) {
+      return errorJson(
+        `Captured payment amount mismatch. Expected ₹${(expectedPaise / 100).toFixed(2)}, received ₹${(paymentPaise > 0 ? paymentPaise / 100 : 0).toFixed(2)}.`,
+        400
+      );
+    }
+  }
+
+  // For storefront orders, compare against authoritative store_orders.total_inr
+  let storeOrder: {
+    id: number;
+    website_id: string;
+    owner_id: string;
+    order_number: string;
+    total_inr: number;
+    payment_status: string;
+  } | null = null;
+
+  if (existing.entity_type === 'storefront_order') {
+    storeOrder = await env.DB.prepare(
+      'SELECT id, website_id, owner_id, order_number, total_inr, payment_status FROM store_orders WHERE gateway_order_id = ? LIMIT 1'
+    )
+      .bind(orderId)
+      .first<{
+        id: number;
+        website_id: string;
+        owner_id: string;
+        order_number: string;
+        total_inr: number;
+        payment_status: string;
+      }>();
+
+    if (!storeOrder) {
+      return errorJson('Associated storefront store_order record not found.', 404);
+    }
+
+    const storeOrderPaise = toIntegerPaise(storeOrder.total_inr);
+    if (storeOrderPaise <= 0 || storeOrderPaise !== expectedPaise) {
+      return errorJson(
+        `Storefront order total mismatch. Database store_order total ₹${(storeOrderPaise > 0 ? storeOrderPaise / 100 : 0).toFixed(2)} does not match payment expected ₹${(expectedPaise / 100).toFixed(2)}.`,
+        400
+      );
+    }
+  }
+
+  // 5. Payment is verified PAID and Amounts/Currency Validated! Extract payment metadata
   const cfPaymentId = successfulPayment
     ? String(successfulPayment.cf_payment_id)
     : String(cfOrder.cf_order_id || Date.now());
@@ -246,22 +328,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     .run();
 
   // If this was a storefront customer order, update store_orders and settlements ledger
-  if (existing.entity_type === 'storefront_order') {
-    const storeOrder = await env.DB.prepare(
-      'SELECT id, website_id, owner_id, order_number, total_inr, payment_status FROM store_orders WHERE gateway_order_id = ? LIMIT 1'
-    )
-      .bind(orderId)
-      .first<{
-        id: number;
-        website_id: string;
-        owner_id: string;
-        order_number: string;
-        total_inr: number;
-        payment_status: string;
-      }>();
-
-    if (storeOrder) {
-      await env.DB.prepare(
+  if (existing.entity_type === 'storefront_order' && storeOrder) {
+    await env.DB.prepare(
         `UPDATE store_orders
          SET payment_status = 'paid',
              payment_method = 'cashfree_online',
@@ -294,7 +362,6 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           JSON.stringify({ cfPaymentId, notice: 'Pending Cashfree Split Settlement activation.' })
         )
         .run();
-    }
 
     return json({
       verified: true,

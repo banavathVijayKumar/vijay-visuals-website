@@ -130,6 +130,22 @@ export async function onRequestPatch(
     return jsonResponse({ error: 'Unsupported payment status.' }, 400);
   }
 
+  // UNPAID ONLINE ORDER FULFILLMENT RESTRICTION
+  const RESTRICTED_FULFILLMENT_STATUSES = ['ready_for_pickup', 'out_for_delivery', 'delivered'];
+  if (
+    existing.payment_method === 'cashfree_online' &&
+    existing.payment_status !== 'paid' &&
+    nextPaymentStatus !== 'paid' &&
+    RESTRICTED_FULFILLMENT_STATUSES.includes(nextOrderStatus)
+  ) {
+    return jsonResponse(
+      {
+        error: `Cannot transition unpaid online order to "${nextOrderStatus}". Payment must be verified before fulfillment.`,
+      },
+      409
+    );
+  }
+
   // CRITICAL SECURITY ENFORCEMENT: Financial immutability
   // total_inr, subtotal_inr, gst_inr, discount_inr, items_json CANNOT be modified.
   await env.DB.prepare(

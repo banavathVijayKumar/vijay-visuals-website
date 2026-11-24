@@ -76,12 +76,12 @@ const DEFAULT_PLANS = [
     active: true,
     featuresJson: JSON.stringify([
       'Full e-commerce storefront with categories, variants, stock alerts & coupons',
-      'Cart, wishlist, COD/UPI & Razorpay checkout, GST invoices & order tracking',
+      'Cart, wishlist, COD/UPI & Cashfree checkout, GST invoices & order tracking',
       'Wholesale B2B tiers, customer reviews, sales reports & refund tracking',
       'Includes all Business Website SEO, custom domain DNS & CRM capabilities',
     ]),
     thirdPartyDisclosure:
-      'Razorpay transaction MDR, custom domain registration/renewal, courier shipping charges, and WhatsApp/SMS API conversation fees apply directly from third-party providers.',
+      'Cashfree transaction MDR, custom domain registration/renewal, courier shipping charges, and WhatsApp/SMS API conversation fees apply directly from third-party providers.',
   },
   {
     id: 4,
@@ -132,7 +132,7 @@ const DEFAULT_PLANS = [
     featuresJson: JSON.stringify([
       'Bespoke UX architecture & custom ERP / POS integrations',
       'Dedicated multi-branch inventory & wholesale B2B pricing tiers',
-      'Custom WhatsApp Business Cloud API & Razorpay webhook deployment',
+      'Custom WhatsApp Business Cloud API & Cashfree webhook deployment',
       'Priority engineering SLA with Vijay Visuals',
     ]),
     thirdPartyDisclosure:
@@ -197,7 +197,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
             active: Boolean(r.is_active),
             featuresJson: r.features_json || '[]',
             thirdPartyDisclosure:
-              'Third-party domain, Razorpay gateway MDR, WhatsApp Cloud API, and external courier fees are billed separately by their providers.',
+              'Third-party domain, Cashfree gateway MDR, WhatsApp Cloud API, and external courier fees are billed separately by their providers.',
           };
         });
         return jsonResponse({ plans });

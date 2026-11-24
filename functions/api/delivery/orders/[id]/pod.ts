@@ -44,6 +44,23 @@ export async function onRequestPatch(
   const codCollected = Boolean(body?.codCollected);
 
   try {
+    const existingOrder = await env.DB.prepare(
+      'SELECT id, payment_method, payment_status FROM store_orders WHERE id = ? LIMIT 1'
+    )
+      .bind(orderId)
+      .first<{ id: number; payment_method: string; payment_status: string }>();
+
+    if (!existingOrder) {
+      return jsonResponse({ error: 'Order not found.' }, 404);
+    }
+
+    if (existingOrder.payment_method === 'cashfree_online' && existingOrder.payment_status !== 'paid') {
+      return jsonResponse(
+        { error: 'Cannot record proof of delivery for an unpaid online order. Payment must be verified before delivery.' },
+        409
+      );
+    }
+
     const paymentUpdate = codCollected ? `, payment_status = 'paid'` : '';
     await env.DB.prepare(
       `UPDATE store_orders
