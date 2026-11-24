@@ -328,17 +328,16 @@ export async function writeAuditLog(
   if (!env.DB) return;
   try {
     await env.DB.prepare(
-      `INSERT INTO vv_audit_log (id, actor_user_id, actor_role, action, resource_type, resource_id, metadata_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+      `INSERT INTO vv_audit_log (id, actor_user_id, action, entity_type, entity_id, metadata_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
     )
       .bind(
         `aud_${randomHex(10)}`,
         entry.actorId,
-        entry.actorRole,
         entry.action,
         entry.targetType,
         entry.targetId,
-        JSON.stringify(entry.details || {})
+        JSON.stringify({ ...(entry.details || {}), actorRole: entry.actorRole })
       )
       .run();
   } catch {

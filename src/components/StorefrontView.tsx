@@ -1924,35 +1924,71 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
               {confirmedOrder ? (
-                <div className="rounded-xl border border-emerald-500/35 bg-emerald-950/20 p-5 space-y-3 text-xs">
-                  <p className="text-sm font-semibold text-emerald-300">Order Confirmed</p>
-                  <p className="text-[#D4D4E0]">
-                    Tracking ID: <strong className="font-mono-tabular text-white">{confirmedOrder.orderNumber}</strong>
-                  </p>
-                  <p className="text-[#D4D4E0]">
-                    Total Paid / Due: <strong className="font-mono-tabular text-[#ECC86A]">₹{confirmedOrder.total.toLocaleString('en-IN')}</strong>
-                  </p>
-                  <div className="flex gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => onOpenInvoice(confirmedOrder, tenant.name)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-gold-gradient text-[#08080A] font-semibold"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>GST Invoice</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setConfirmedOrder(null);
-                        setCartOpen(false);
-                      }}
-                      className="px-3.5 py-2 rounded-md border border-[#2C2C3C] text-white"
-                    >
-                      Continue Shopping
-                    </button>
+                confirmedOrder.paymentStatus === 'paid' || confirmedOrder.status === 'confirmed' || confirmedOrder.paymentMethod === 'cod' || confirmedOrder.paymentMethod === 'pay_on_delivery' ? (
+                  <div className="rounded-xl border border-emerald-500/35 bg-emerald-950/20 p-5 space-y-3 text-xs">
+                    <p className="text-sm font-semibold text-emerald-300">Order Confirmed</p>
+                    <p className="text-[#D4D4E0]">
+                      Tracking ID: <strong className="font-mono-tabular text-white">{confirmedOrder.orderNumber}</strong>
+                    </p>
+                    <p className="text-[#D4D4E0]">
+                      Total Paid: <strong className="font-mono-tabular text-[#ECC86A]">₹{confirmedOrder.total.toLocaleString('en-IN')}</strong>
+                    </p>
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => onOpenInvoice(confirmedOrder, tenant.name)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-gold-gradient text-[#08080A] font-semibold"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>GST Invoice</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmedOrder(null);
+                          setCartOpen(false);
+                        }}
+                        className="px-3.5 py-2 rounded-md border border-[#2C2C3C] text-white"
+                      >
+                        Continue Shopping
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="rounded-xl border border-amber-500/35 bg-amber-950/20 p-5 space-y-3 text-xs">
+                    <p className="text-sm font-semibold text-amber-300">Payment Incomplete — Order Saved as Pending</p>
+                    <p className="text-[#D4D4E0]">
+                      Tracking ID: <strong className="font-mono-tabular text-white">{confirmedOrder.orderNumber}</strong>
+                    </p>
+                    <p className="text-[#D4D4E0]">
+                      Total Due: <strong className="font-mono-tabular text-[#ECC86A]">₹{confirmedOrder.total.toLocaleString('en-IN')}</strong>
+                    </p>
+                    <p className="text-xs text-amber-200/80">
+                      Payment was not completed. Your order has been securely saved as pending payment. You can retry payment anytime.
+                    </p>
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmedOrder(null);
+                        }}
+                        className="px-3.5 py-2 rounded-md bg-gold-gradient text-[#08080A] font-semibold"
+                      >
+                        Retry Payment
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmedOrder(null);
+                          setCartOpen(false);
+                        }}
+                        className="px-3.5 py-2 rounded-md border border-[#2C2C3C] text-white"
+                      >
+                        Continue Shopping
+                      </button>
+                    </div>
+                  </div>
+                )
               ) : cart.length === 0 ? (
                 <p className="text-sm text-[#8E8EA2] text-center py-12">Your shopping cart is empty.</p>
               ) : (
