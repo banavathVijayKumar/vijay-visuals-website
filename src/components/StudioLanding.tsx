@@ -39,6 +39,7 @@ import { AppView, PlatformPlanRecord, TenantRecord } from '../types/platform';
 import { VijayVisualsLogo } from './VijayVisualsLogo';
 import { PWAInstallButton } from './PWAControls';
 import { GlobalGrowthHub } from './GlobalGrowthHub';
+import { CinematicHero } from './CinematicHero';
 import heroStudioImg from '../assets/images/hero_vijay_studio_1795055804014.jpg';
 import fashionStoreImg from '../assets/images/store_fashion_royal_1795055802960.jpg';
 import electronicsStoreImg from '../assets/images/store_electronics_audio_1795055804216.jpg';
@@ -473,78 +474,19 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
         </div>
       </div>
 
-      {/* Hero Section */}
-      <section className="py-16 md:py-24 border-b border-[#1D1D26]">
+      {/* Cinematic 3D Studio Hero Section */}
+      <CinematicHero
+        onNavigate={onNavigate}
+        onOpenQuote={() => {
+          const el = document.getElementById('pricing');
+          if (el) el.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
+
+      {/* Grounded Studio Metrics Row */}
+      <section className="py-8 border-b border-[#1C1C26] bg-[#070913]">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-stretch">
-            <div className="lg:col-span-6 flex flex-col justify-center">
-              <p className="text-xs font-medium text-[#D4AF37] tracking-wide mb-4">
-                {t.heroKicker}
-              </p>
-              <h1 className="font-luxury text-4xl sm:text-5xl font-bold text-white leading-[1.12] tracking-tight text-balance mb-6">
-                {t.heroTitle}
-              </h1>
-              <p className="text-base text-[#A5A5B8] leading-relaxed max-w-xl mb-8">
-                {t.heroSubtitle}
-              </p>
-              <div className="flex flex-wrap items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => onNavigate('demo')}
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-gold-gradient text-[#08080A] text-sm font-semibold hover:opacity-95 transition-opacity whitespace-nowrap shrink-0 shadow-lg shadow-[#D4AF37]/20"
-                >
-                  <Eye className="w-4 h-4" />
-                  <span>Try Interactive Live Demo</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('builder')}
-                  className="inline-flex items-center gap-2 px-5 py-3 rounded-md border border-[#D4AF37]/50 text-sm font-medium text-white hover:border-[#D4AF37] hover:bg-[#D4AF37]/10 transition-colors whitespace-nowrap shrink-0"
-                >
-                  <span>{t.ctaLaunchBuilder}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('marketplace')}
-                  className="inline-flex items-center gap-2 px-4 py-3 rounded-md border border-[#2C2C3C] text-sm font-medium text-[#A5A5B8] hover:text-white hover:border-[#3E3E50] transition-colors whitespace-nowrap shrink-0"
-                >
-                  <Globe className="w-4 h-4 text-[#D4AF37]" />
-                  <span>{t.ctaExploreStores}</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="lg:col-span-6">
-              <div className="h-full min-h-[320px] rounded-xl border border-[#242432] overflow-hidden relative bg-[#111118]">
-                <img
-                  src={heroStudioImg}
-                  alt="Vijay Visuals Web Engineering and Cinema Studio"
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#08080A]/90 via-transparent to-transparent" />
-                <div className="absolute bottom-5 left-5 right-5 flex flex-wrap items-end justify-between gap-4">
-                  <div>
-                    <p className="font-luxury text-lg font-semibold text-white">Vijay Visuals Unified Core</p>
-                    <p className="text-xs text-[#C6C6D4]">
-                      Website Builder · E-Commerce · Delivery Fleet · Gemini AI · Optional PWA
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('ai')}
-                    className="px-3.5 py-2 rounded-md bg-[#0E0E14]/90 border border-[#D4AF37]/50 text-xs font-medium text-[#ECC86A] hover:bg-[#191924]"
-                  >
-                    Open AI Automation Center
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Grounded Studio Metrics Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mt-12 pt-8 border-t border-[#1C1C26]">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             <div>
               <p className="font-mono-tabular text-2xl font-semibold text-white">36 Templates</p>
               <p className="text-xs text-[#8E8EA2] mt-1">16 core industries · 36 templates ready to customize</p>
@@ -566,7 +508,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       </section>
 
       {/* About Vijay Visuals & Complete E-Commerce Architecture */}
-      <section id="about" className="py-16 md:py-20 border-b border-[#1D1D26] bg-[#0B0B10]">
+      <section id="about" className="py-16 md:py-20 border-b border-[#1D1D26] bg-[#0B0B10] scroll-mt-16">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
             <div className="lg:col-span-5 space-y-4">
@@ -631,7 +573,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       </section>
 
       {/* Core Platform Capabilities (01-04 Editorial List) */}
-      <section id="services" className="py-16 md:py-24 border-b border-[#1D1D26]">
+      <section id="services" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-16">
         <div className="max-w-7xl mx-auto px-6">
           <div className="max-w-2xl mb-12">
             <p className="text-xs font-medium text-[#D4AF37] mb-2">Platform Architecture & Studio Services</p>
@@ -670,7 +612,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       {renderMarketplaceSection()}
 
       {/* Portfolio & Testimonials */}
-      <section id="portfolio" className="py-16 md:py-24 border-b border-[#1D1D26]">
+      <section id="portfolio" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-16">
         <div className="max-w-7xl mx-auto px-6">
           <div className="mb-12">
             <p className="text-xs font-medium text-[#D4AF37] mb-2">Case Studies & Client Evidence</p>
@@ -713,7 +655,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
             ))}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div id="testimonials" className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 scroll-mt-20">
             {TESTIMONIALS_DATA.map((rev) => (
               <blockquote
                 key={rev.id}
@@ -733,7 +675,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       </section>
 
       {/* Transparent Pricing & Interactive Estimator (Module 11) */}
-      <section id="pricing" className="py-16 md:py-24 border-b border-[#1D1D26]">
+      <section id="pricing" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-16">
         <div className="max-w-7xl mx-auto px-6">
           <div className="max-w-3xl mb-12">
             <p className="text-xs font-medium text-[#D4AF37] mb-2">
@@ -1024,7 +966,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       <GlobalGrowthHub lang={lang} onNavigate={onNavigate} onNotify={onNotify} />
 
       {/* FAQs & Contact Form */}
-      <section id="contact" className="py-16 md:py-24 border-b border-[#1D1D26]">
+      <section id="contact" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-16">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-12 gap-12">
           <div className="lg:col-span-6 space-y-6">
             <div>

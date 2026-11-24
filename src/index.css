@@ -54,6 +54,98 @@
   background: rgba(16, 16, 22, 0.85);
 }
 
+.font-script {
+  font-family: 'Great Vibes', cursive, 'Brush Script MT', serif;
+}
+
+/* Cinematic 3D Typography */
+.text-3d-gold {
+  background: linear-gradient(180deg, #FFFDF0 0%, #FFE27D 22%, #D4AF37 50%, #B88915 78%, #785304 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 0 #AA7C11)
+          drop-shadow(0 4px 0 #7C5606)
+          drop-shadow(0 6px 0 #332100)
+          drop-shadow(0 10px 16px rgba(0, 0, 0, 0.9))
+          drop-shadow(0 0 25px rgba(212, 175, 55, 0.45));
+}
+
+.text-3d-chrome {
+  background: linear-gradient(180deg, #FFFFFF 0%, #EEF2F7 25%, #C8CFDC 50%, #E6EAF2 60%, #8D95A5 85%, #4C5260 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 0 #CBD1DB)
+          drop-shadow(0 4px 0 #878E9D)
+          drop-shadow(0 6px 0 #2F333B)
+          drop-shadow(0 10px 16px rgba(0, 0, 0, 0.95))
+          drop-shadow(0 0 25px rgba(220, 235, 255, 0.35));
+}
+
+/* Golden Satin 3D Ribbon */
+.gold-ribbon-3d {
+  position: relative;
+  background: linear-gradient(135deg, #FFF1BC 0%, #F5D061 22%, #D4AF37 50%, #B88915 80%, #7A5503 100%);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.7), 0 0 20px rgba(212, 175, 55, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.6);
+}
+
+.gold-ribbon-3d::before,
+.gold-ribbon-3d::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  background: inherit;
+  z-index: -1;
+}
+
+.gold-ribbon-3d::before {
+  left: -12px;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%, 35% 50%, 0 0);
+  filter: brightness(0.75);
+}
+
+.gold-ribbon-3d::after {
+  right: -12px;
+  clip-path: polygon(0 0, 0 100%, 100% 100%, 65% 50%, 100% 0);
+  filter: brightness(0.75);
+}
+
+/* Floating Animations */
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(0.5deg);
+  }
+}
+
+@keyframes particleDrift {
+  0% {
+    transform: translateY(0) translateX(0);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translateY(-25px) translateX(12px);
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-50px) translateX(-8px);
+    opacity: 0.2;
+  }
+}
+
+.animate-float-slow {
+  animation: floatSlow 6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-slow {
+    animation: none !important;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
