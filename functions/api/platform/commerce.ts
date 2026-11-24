@@ -614,6 +614,39 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }
     }
 
+    const storeOrder = await env.DB.prepare(
+      'SELECT id, website_id, payment_method, payment_status, order_status FROM store_orders WHERE id = ? LIMIT 1'
+    )
+      .bind(assignment.order_id)
+      .first<{
+        id: number;
+        website_id: string;
+        payment_method: string;
+        payment_status: string;
+        order_status: string;
+      }>();
+
+    if (!storeOrder) {
+      return errorJson('Associated store order not found.', 404);
+    }
+
+    // UNPAID ONLINE ORDER FULFILLMENT RESTRICTION
+    // Block transitions to out_for_delivery or delivered unless payment is verified as paid.
+    // COD orders proceed without online payment restriction.
+    const RESTRICTED_FULFILLMENT_STATUSES = ['picked_up', 'in_transit', 'delivered', 'ready_for_pickup', 'out_for_delivery'];
+    const isOnlinePayment = storeOrder.payment_method === 'cashfree_online' || storeOrder.payment_method !== 'cod';
+    if (
+      isOnlinePayment &&
+      storeOrder.payment_status !== 'paid' &&
+      RESTRICTED_FULFILLMENT_STATUSES.includes(nextStatus)
+    ) {
+      const targetLabel = nextStatus === 'delivered' ? 'delivered' : 'out_for_delivery';
+      return errorJson(
+        `Cannot transition unpaid online order to "${targetLabel}". Payment must be verified before fulfillment.`,
+        409
+      );
+    }
+
     const codCollected = body.codCollected ? 1 : 0;
     const podNote = sanitizeText(body.proofOfDeliveryNote || '', 300);
     const podUrl = sanitizeText(body.proofOfDeliveryUrl || '', 500);

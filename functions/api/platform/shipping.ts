@@ -254,11 +254,21 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       );
     }
 
-    await env.DB.prepare(
-      `UPDATE shipments SET status = ?, verified_delivery_source = ?, updated_at = datetime('now') WHERE order_id = ? AND website_id = ?`
+    const storeOrder = await env.DB.prepare(
+      'SELECT id, website_id, payment_method, payment_status, order_status FROM store_orders WHERE id = ? AND website_id = ? LIMIT 1'
     )
-      .bind(nextStatus, verifiedSource, orderId, websiteId)
-      .run();
+      .bind(orderId, websiteId)
+      .first<{
+        id: number;
+        website_id: string;
+        payment_method: string;
+        payment_status: string;
+        order_status: string;
+      }>();
+
+    if (!storeOrder) {
+      return errorJson('Store order not found for this website.', 404);
+    }
 
     const mappedOrderStatus =
       nextStatus === 'delivered'
@@ -270,6 +280,29 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
             : nextStatus === 'returned'
               ? 'returned'
               : null;
+
+    // UNPAID ONLINE ORDER FULFILLMENT RESTRICTION
+    // Block transitions to out_for_delivery or delivered unless payment is verified as paid.
+    // COD orders proceed without online payment restriction.
+    const RESTRICTED_FULFILLMENT_STATUSES = ['ready_for_pickup', 'out_for_delivery', 'delivered'];
+    const isOnlinePayment = storeOrder.payment_method === 'cashfree_online' || storeOrder.payment_method !== 'cod';
+    if (
+      isOnlinePayment &&
+      storeOrder.payment_status !== 'paid' &&
+      mappedOrderStatus &&
+      RESTRICTED_FULFILLMENT_STATUSES.includes(mappedOrderStatus)
+    ) {
+      return errorJson(
+        `Cannot transition unpaid online order to "${mappedOrderStatus}". Payment must be verified before fulfillment.`,
+        409
+      );
+    }
+
+    await env.DB.prepare(
+      `UPDATE shipments SET status = ?, verified_delivery_source = ?, updated_at = datetime('now') WHERE order_id = ? AND website_id = ?`
+    )
+      .bind(nextStatus, verifiedSource, orderId, websiteId)
+      .run();
 
     if (mappedOrderStatus) {
       await env.DB.prepare(

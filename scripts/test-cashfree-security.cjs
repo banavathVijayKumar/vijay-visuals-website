@@ -55,6 +55,8 @@ function createMockDatabase() {
   const cashfreePayments = new Map();
   const storeOrders = new Map();
   const webhookEvents = new Set();
+  const deliveryAssignments = new Map();
+  const shipments = new Map();
 
   cashfreePayments.set('vv_order_1001', {
     order_id: 'vv_order_1001',
@@ -74,6 +76,7 @@ function createMockDatabase() {
 
   storeOrders.set(2001, {
     id: 2001,
+    website_id: 'site_vijay',
     gateway_order_id: 'vv_store_order_2001',
     order_number: 'VV-STORE-2001',
     payment_method: 'cashfree_online',
@@ -82,8 +85,20 @@ function createMockDatabase() {
     total_inr: 2500,
   });
 
+  storeOrders.set(2002, {
+    id: 2002,
+    website_id: 'site_vijay',
+    gateway_order_id: 'vv_store_order_2002',
+    order_number: 'VV-STORE-2002',
+    payment_method: 'cashfree_online',
+    payment_status: 'failed',
+    order_status: 'placed',
+    total_inr: 1800,
+  });
+
   storeOrders.set(3001, {
     id: 3001,
+    website_id: 'site_vijay',
     gateway_order_id: 'cod_order_3001',
     order_number: 'COD-3001',
     payment_method: 'cod',
@@ -94,6 +109,7 @@ function createMockDatabase() {
 
   storeOrders.set(4001, {
     id: 4001,
+    website_id: 'site_vijay',
     gateway_order_id: 'vv_paid_4001',
     order_number: 'PAID-4001',
     payment_method: 'cashfree_online',
@@ -102,7 +118,39 @@ function createMockDatabase() {
     total_inr: 3500,
   });
 
-  return { cashfreePayments, storeOrders, webhookEvents };
+  deliveryAssignments.set(101, {
+    id: 101,
+    website_id: 'site_vijay',
+    order_id: 2001,
+    delivery_partner_user_id: 'user_dp_1',
+    status: 'assigned',
+  });
+
+  deliveryAssignments.set(102, {
+    id: 102,
+    website_id: 'site_vijay',
+    order_id: 2002,
+    delivery_partner_user_id: 'user_dp_1',
+    status: 'assigned',
+  });
+
+  deliveryAssignments.set(103, {
+    id: 103,
+    website_id: 'site_vijay',
+    order_id: 3001,
+    delivery_partner_user_id: 'user_dp_1',
+    status: 'assigned',
+  });
+
+  deliveryAssignments.set(104, {
+    id: 104,
+    website_id: 'site_vijay',
+    order_id: 4001,
+    delivery_partner_user_id: 'user_dp_1',
+    status: 'assigned',
+  });
+
+  return { cashfreePayments, storeOrders, webhookEvents, deliveryAssignments, shipments };
 }
 
 // ----------------------------------------------------------------------------
@@ -275,11 +323,107 @@ function simulateDeliveryStatusUpdate({ db, orderId, nextStatus }) {
 }
 
 // ----------------------------------------------------------------------------
+// Mock Platform Commerce Delivery Status Simulation (functions/api/platform/commerce.ts)
+// ----------------------------------------------------------------------------
+function simulateCommerceDeliveryStatusUpdate({ db, assignmentId, nextStatus, requestingUserId = 'user_dp_1', userRole = 'delivery_partner' }) {
+  const assignment = db.deliveryAssignments.get(assignmentId);
+  if (!assignment) {
+    return { status: 404, body: { error: 'Delivery assignment not found.' } };
+  }
+
+  const isAssigned = assignment.delivery_partner_user_id === requestingUserId;
+  const isAuthorized = isAssigned || userRole === 'super_admin' || userRole === 'business_owner';
+  if (!isAuthorized) {
+    return { status: 403, body: { error: 'Forbidden: only the assigned delivery partner or business manager can update this delivery.' } };
+  }
+
+  const storeOrder = db.storeOrders.get(assignment.order_id);
+  if (!storeOrder) {
+    return { status: 404, body: { error: 'Associated store order not found.' } };
+  }
+
+  const RESTRICTED_FULFILLMENT_STATUSES = ['picked_up', 'in_transit', 'delivered', 'ready_for_pickup', 'out_for_delivery'];
+  const isOnlinePayment = storeOrder.payment_method === 'cashfree_online' || storeOrder.payment_method !== 'cod';
+  if (
+    isOnlinePayment &&
+    storeOrder.payment_status !== 'paid' &&
+    RESTRICTED_FULFILLMENT_STATUSES.includes(nextStatus)
+  ) {
+    const targetLabel = nextStatus === 'delivered' ? 'delivered' : 'out_for_delivery';
+    return {
+      status: 409,
+      body: { error: `Cannot transition unpaid online order to "${targetLabel}". Payment must be verified before fulfillment.` },
+    };
+  }
+
+  assignment.status = nextStatus;
+  if (nextStatus === 'delivered') {
+    storeOrder.order_status = 'delivered';
+    if (storeOrder.payment_method === 'cod') {
+      storeOrder.payment_status = 'paid';
+    }
+  } else if (nextStatus === 'in_transit' || nextStatus === 'picked_up') {
+    storeOrder.order_status = 'out_for_delivery';
+  }
+
+  return { status: 200, body: { updated: true, status: nextStatus } };
+}
+
+// ----------------------------------------------------------------------------
+// Mock Platform Shipping Status Simulation (functions/api/platform/shipping.ts)
+// ----------------------------------------------------------------------------
+function simulateShippingStatusUpdate({ db, orderId, websiteId, nextStatus, verifiedSource = 'BlueDart Carrier AWB: 12345678' }) {
+  const storeOrder = db.storeOrders.get(orderId);
+  if (!storeOrder || storeOrder.website_id !== websiteId) {
+    return { status: 404, body: { error: 'Store order not found for this website.' } };
+  }
+
+  if (nextStatus === 'delivered' && !verifiedSource) {
+    return { status: 400, body: { error: 'Orders cannot be marked delivered without a verified delivery source.' } };
+  }
+
+  const mappedOrderStatus =
+    nextStatus === 'delivered'
+      ? 'delivered'
+      : nextStatus === 'out_for_delivery' || nextStatus === 'in_transit'
+        ? 'out_for_delivery'
+        : nextStatus === 'cancelled'
+          ? 'cancelled'
+          : nextStatus === 'returned'
+            ? 'returned'
+            : null;
+
+  const RESTRICTED_FULFILLMENT_STATUSES = ['ready_for_pickup', 'out_for_delivery', 'delivered'];
+  const isOnlinePayment = storeOrder.payment_method === 'cashfree_online' || storeOrder.payment_method !== 'cod';
+  if (
+    isOnlinePayment &&
+    storeOrder.payment_status !== 'paid' &&
+    mappedOrderStatus &&
+    RESTRICTED_FULFILLMENT_STATUSES.includes(mappedOrderStatus)
+  ) {
+    return {
+      status: 409,
+      body: { error: `Cannot transition unpaid online order to "${mappedOrderStatus}". Payment must be verified before fulfillment.` },
+    };
+  }
+
+  const shipment = db.shipments.get(orderId) || { order_id: orderId, website_id: websiteId };
+  shipment.status = nextStatus;
+  db.shipments.set(orderId, shipment);
+
+  if (mappedOrderStatus) {
+    storeOrder.order_status = mappedOrderStatus;
+  }
+
+  return { status: 200, body: { updated: true, status: nextStatus } };
+}
+
+// ----------------------------------------------------------------------------
 // Test Execution
 // ----------------------------------------------------------------------------
 async function runTests() {
   console.log('====================================================================');
-  console.log('VIJAY VISUALS — CASHFREE REMEDIATION SECURITY TEST SUITE (22 TESTS)');
+  console.log('VIJAY VISUALS — CASHFREE REMEDIATION SECURITY TEST SUITE (30 TESTS)');
   console.log('====================================================================\n');
 
   let passed = 0;
@@ -626,11 +770,124 @@ async function runTests() {
     assert.strictEqual(serialized.includes('CASHFREE_WEBHOOK_SECRET'), false);
   });
 
+  // Test 23: Unpaid online order cannot become "out_for_delivery" via platform commerce route
+  test('23: Unpaid online order cannot become "out_for_delivery" via platform commerce route', () => {
+    const db = createMockDatabase();
+    const res1 = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 101, nextStatus: 'in_transit' });
+    assert.strictEqual(res1.status, 409);
+    assert.match(res1.body.error, /Cannot transition unpaid online order to "out_for_delivery"/i);
+    const res2 = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 101, nextStatus: 'picked_up' });
+    assert.strictEqual(res2.status, 409);
+    assert.match(res2.body.error, /Cannot transition unpaid online order to "out_for_delivery"/i);
+    assert.strictEqual(db.storeOrders.get(2001).order_status, 'placed');
+  });
+
+  // Test 24: Unpaid online order cannot become "delivered" via platform commerce route
+  test('24: Unpaid online order cannot become "delivered" via platform commerce route', () => {
+    const db = createMockDatabase();
+    const res = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 101, nextStatus: 'delivered' });
+    assert.strictEqual(res.status, 409);
+    assert.match(res.body.error, /Cannot transition unpaid online order to "delivered"/i);
+    assert.strictEqual(db.storeOrders.get(2001).order_status, 'placed');
+    assert.strictEqual(db.deliveryAssignments.get(101).status, 'assigned');
+  });
+
+  // Test 25: Unpaid online order cannot become "out_for_delivery" via platform shipping route
+  test('25: Unpaid online order cannot become "out_for_delivery" via platform shipping route', () => {
+    const db = createMockDatabase();
+    const res1 = simulateShippingStatusUpdate({ db, orderId: 2001, websiteId: 'site_vijay', nextStatus: 'in_transit' });
+    assert.strictEqual(res1.status, 409);
+    assert.match(res1.body.error, /Cannot transition unpaid online order to "out_for_delivery"/i);
+    const res2 = simulateShippingStatusUpdate({ db, orderId: 2001, websiteId: 'site_vijay', nextStatus: 'out_for_delivery' });
+    assert.strictEqual(res2.status, 409);
+    assert.match(res2.body.error, /Cannot transition unpaid online order to "out_for_delivery"/i);
+    assert.strictEqual(db.storeOrders.get(2001).order_status, 'placed');
+  });
+
+  // Test 26: Unpaid online order cannot become "delivered" via platform shipping route
+  test('26: Unpaid online order cannot become "delivered" via platform shipping route', () => {
+    const db = createMockDatabase();
+    const res = simulateShippingStatusUpdate({ db, orderId: 2001, websiteId: 'site_vijay', nextStatus: 'delivered' });
+    assert.strictEqual(res.status, 409);
+    assert.match(res.body.error, /Cannot transition unpaid online order to "delivered"/i);
+    assert.strictEqual(db.storeOrders.get(2001).order_status, 'placed');
+    assert.strictEqual(db.shipments.has(2001), false);
+  });
+
+  // Test 27: Pending and failed online payments are blocked with HTTP 409 across platform routes
+  test('27: Pending and failed online payments are blocked with HTTP 409 across platform routes', () => {
+    const db = createMockDatabase();
+    // Order 2001 is pending
+    const resPending1 = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 101, nextStatus: 'delivered' });
+    assert.strictEqual(resPending1.status, 409);
+    const resPending2 = simulateShippingStatusUpdate({ db, orderId: 2001, websiteId: 'site_vijay', nextStatus: 'delivered' });
+    assert.strictEqual(resPending2.status, 409);
+
+    // Order 2002 is failed
+    const resFailed1 = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 102, nextStatus: 'delivered' });
+    assert.strictEqual(resFailed1.status, 409);
+    const resFailed2 = simulateShippingStatusUpdate({ db, orderId: 2002, websiteId: 'site_vijay', nextStatus: 'delivered' });
+    assert.strictEqual(resFailed2.status, 409);
+  });
+
+  // Test 28: Paid online order can proceed through platform delivery and shipping workflows
+  test('28: Paid online order can proceed through platform delivery and shipping workflows', () => {
+    const db = createMockDatabase();
+    // Order 4001 is paid online
+    const resCommerceTransit = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 104, nextStatus: 'in_transit' });
+    assert.strictEqual(resCommerceTransit.status, 200);
+    assert.strictEqual(db.storeOrders.get(4001).order_status, 'out_for_delivery');
+
+    const resCommerceDelivered = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 104, nextStatus: 'delivered' });
+    assert.strictEqual(resCommerceDelivered.status, 200);
+    assert.strictEqual(db.storeOrders.get(4001).order_status, 'delivered');
+
+    // Shipping workflow for paid order
+    const resShipping = simulateShippingStatusUpdate({ db, orderId: 4001, websiteId: 'site_vijay', nextStatus: 'delivered' });
+    assert.strictEqual(resShipping.status, 200);
+    assert.strictEqual(db.storeOrders.get(4001).order_status, 'delivered');
+  });
+
+  // Test 29: COD order fulfillment remains functional across platform delivery and shipping routes
+  test('29: COD order fulfillment remains functional across platform delivery and shipping routes', () => {
+    const db = createMockDatabase();
+    // Order 3001 is COD
+    const resCommerce = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 103, nextStatus: 'in_transit' });
+    assert.strictEqual(resCommerce.status, 200);
+    assert.strictEqual(db.storeOrders.get(3001).order_status, 'out_for_delivery');
+
+    const resShipping = simulateShippingStatusUpdate({ db, orderId: 3001, websiteId: 'site_vijay', nextStatus: 'out_for_delivery' });
+    assert.strictEqual(resShipping.status, 200);
+
+    const resDelivered = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 103, nextStatus: 'delivered' });
+    assert.strictEqual(resDelivered.status, 200);
+    assert.strictEqual(db.storeOrders.get(3001).order_status, 'delivered');
+    assert.strictEqual(db.storeOrders.get(3001).payment_status, 'paid');
+  });
+
+  // Test 30: Rejected transitions do not modify database order status or shipments, and tenant isolation holds
+  test('30: Rejected transitions do not modify database order status or shipments, and tenant isolation holds', () => {
+    const db = createMockDatabase();
+    // Attempt rejected delivery update on order 2001
+    const resBlocked = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 101, nextStatus: 'delivered' });
+    assert.strictEqual(resBlocked.status, 409);
+    assert.strictEqual(db.storeOrders.get(2001).order_status, 'placed');
+    assert.strictEqual(db.deliveryAssignments.get(101).status, 'assigned');
+
+    // Tenant isolation: order from another website returns 404
+    const resForeignWebsite = simulateShippingStatusUpdate({ db, orderId: 2001, websiteId: 'wrong_tenant_site', nextStatus: 'delivered' });
+    assert.strictEqual(resForeignWebsite.status, 404);
+
+    // Authorization: unauthorized user cannot update delivery
+    const resUnauthorized = simulateCommerceDeliveryStatusUpdate({ db, assignmentId: 101, nextStatus: 'delivered', requestingUserId: 'unauthorized_hacker', userRole: 'customer' });
+    assert.strictEqual(resUnauthorized.status, 403);
+  });
+
   console.log('\n====================================================================');
-  console.log(`TEST SUMMARY: ${passed} PASSED, ${22 - passed} FAILED (TOTAL: 22)`);
+  console.log(`TEST SUMMARY: ${passed} PASSED, ${30 - passed} FAILED (TOTAL: 30)`);
   console.log('====================================================================');
 
-  if (passed !== 22) {
+  if (passed !== 30) {
     process.exit(1);
   }
 }
