@@ -105,14 +105,7 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
           }}
         />
 
-        {/* Camera Operator Silhouette in Blue Atmospheric Studio Light */}
-        <div className="absolute right-0 top-16 md:top-20 h-[380px] w-[260px] opacity-25 lg:opacity-40 hidden sm:block">
-          <img
-            src="/cinematic_operator.png"
-            alt="Studio Camera Operator"
-            className="w-full h-full object-contain object-right"
-          />
-        </div>
+
 
         {/* 3D Curved Film-Strip Ribbon Across Background */}
         <svg
