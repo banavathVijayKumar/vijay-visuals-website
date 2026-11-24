@@ -200,32 +200,33 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
           {/* LEFT: AUTHENTIC FOUNDER PORTRAIT                           */}
           {/* ---------------------------------------------------------- */}
           <div className="lg:col-span-5 flex flex-col items-center lg:items-start justify-end relative order-2 lg:order-1 pt-4 lg:pt-0">
-            <div className="relative w-full max-w-[340px] sm:max-w-[380px] lg:max-w-[430px] group">
+            <div className="relative w-full max-w-[340px] sm:max-w-[380px] lg:max-w-[430px] flex flex-col items-center lg:items-start group">
               
               {/* Golden rim light glow behind founder */}
               <div className="absolute -inset-2 bg-gradient-to-tr from-[#D4AF37]/20 via-transparent to-[#F5D061]/25 rounded-3xl blur-2xl opacity-60 group-hover:opacity-85 transition-opacity" />
 
               {/* Founder Cutout Image */}
-              <div className="relative rounded-2xl overflow-hidden drop-shadow-[0_20px_35px_rgba(0,0,0,0.9)]">
+              <div className="relative w-full rounded-2xl overflow-hidden drop-shadow-[0_20px_35px_rgba(0,0,0,0.9)]">
                 <img
                   src="/founder_hero_portrait.png"
                   alt="Vijay Kumar — Founder & Digital Architect, Vijay Visuals"
                   className="w-full h-auto object-cover object-bottom select-none transition-transform duration-500 ease-out group-hover:scale-[1.02]"
                 />
+                {/* Base dark blend */}
+                <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-[#060812] to-transparent pointer-events-none" />
               </div>
 
-              {/* Cursive Signature & Name Tag Overlay */}
-              <div className="absolute bottom-3 left-3 sm:bottom-4 sm:left-4 z-20 pointer-events-none">
-                <p className="font-script text-2xl sm:text-3xl text-[#FFEBB0] drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] drop-shadow-[0_0_12px_rgba(212,175,55,0.7)] tracking-wide">
-                  Vijay Kumar
-                </p>
-                <p className="text-[10px] sm:text-[11px] font-semibold text-[#ECC86A] tracking-wider uppercase font-luxury drop-shadow-md">
-                  Founder &amp; Digital Architect
-                </p>
+              {/* Professional Website Founder Label (Clearly Below Portrait, NOT on Shirt) */}
+              <div className="mt-3 sm:mt-4 text-center lg:text-left z-10 w-full">
+                <div className="inline-flex flex-col items-center lg:items-start bg-[#090D1A]/85 border border-[#D4AF37]/35 rounded-xl py-2 px-4 shadow-[0_4px_20px_rgba(0,0,0,0.6)] backdrop-blur-sm">
+                  <p className="font-luxury font-bold text-lg sm:text-xl text-white tracking-wide bg-gradient-to-r from-[#FFF5D0] via-[#ECC86A] to-[#C29729] bg-clip-text text-transparent">
+                    Vijay Kumar
+                  </p>
+                  <p className="text-[10px] sm:text-[11px] font-semibold text-[#D4AF37] uppercase tracking-[0.16em] font-sans-clean mt-0.5">
+                    Founder &amp; Digital Architect
+                  </p>
+                </div>
               </div>
-
-              {/* Founder Plinth dark blend at the bottom */}
-              <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-[#060812] to-transparent pointer-events-none" />
             </div>
           </div>
 
@@ -292,15 +293,6 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
                 <span>Explore Services</span>
                 <ArrowRight className="w-4 h-4 text-[#ECC86A] group-hover:translate-x-1 transition-transform" />
               </button>
-            </div>
-
-            {/* Bottom-Right Foreground Camera Gear Accent */}
-            <div className="hidden lg:block absolute -right-6 -bottom-8 w-56 xl:w-64 opacity-90 pointer-events-none drop-shadow-[0_15px_30px_rgba(0,0,0,0.9)] animate-float-slow">
-              <img
-                src="/cinematic_camera_gear.png"
-                alt="Cinema DSLR Camera Body, Lens and Film Reel"
-                className="w-full h-auto object-contain"
-              />
             </div>
           </div>
         </div>
