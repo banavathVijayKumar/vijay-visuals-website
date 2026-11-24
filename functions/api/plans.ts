@@ -195,7 +195,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
             priceInr: Number(r.monthly_price_inr || 0),
             includesPwa: r.code === 'website-plus-pwa' || r.code.includes('pwa'),
             active: Boolean(r.is_active),
-            featuresJson: r.features_json || '[]',
+            featuresJson: (r.features_json || '[]').replace(/Razorpay/gi, 'Cashfree'),
             thirdPartyDisclosure:
               'Third-party domain, Cashfree gateway MDR, WhatsApp Cloud API, and external courier fees are billed separately by their providers.',
           };
