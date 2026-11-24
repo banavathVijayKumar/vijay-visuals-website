@@ -483,25 +483,25 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
         }}
       />
 
-      {/* Grounded Studio Metrics Row */}
+      {/* Grounded Studio Core Capabilities Row */}
       <section className="py-8 border-b border-[#1C1C26] bg-[#070913]">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             <div>
-              <p className="font-mono-tabular text-2xl font-semibold text-white">36 Templates</p>
+              <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">36 Templates</p>
               <p className="text-xs text-[#8E8EA2] mt-1">16 core industries · 36 templates ready to customize</p>
             </div>
             <div>
-              <p className="font-mono-tabular text-2xl font-semibold text-white">{CONTACT_INFO.projectsCompleted}</p>
-              <p className="text-xs text-[#8E8EA2] mt-1">Web & cinematic commissions delivered</p>
+              <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">Custom Web Design</p>
+              <p className="text-xs text-[#8E8EA2] mt-1">Responsive storefronts, custom domains &amp; PWAs</p>
             </div>
             <div>
-              <p className="font-mono-tabular text-2xl font-semibold text-white">{CONTACT_INFO.experienceYears}</p>
-              <p className="text-xs text-[#8E8EA2] mt-1">Digital engineering & film production craft</p>
+              <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">Cinematic Media</p>
+              <p className="text-xs text-[#8E8EA2] mt-1">Professional video editing, photography &amp; branding</p>
             </div>
             <div>
-              <p className="font-mono-tabular text-2xl font-semibold text-white">4 Role Portals</p>
-              <p className="text-xs text-[#8E8EA2] mt-1">Owner, Customer, Delivery & Super Admin</p>
+              <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">4 Role Portals</p>
+              <p className="text-xs text-[#8E8EA2] mt-1">Owner, Customer, Delivery &amp; Super Admin</p>
             </div>
           </div>
         </div>

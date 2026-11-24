@@ -148,7 +148,7 @@ export const ProposalManager: React.FC<ProposalManagerProps> = ({ onNotify, onOp
   // 9 Default Editable Features
   const [features, setFeatures] = useState([
     { id: 'feat-1', name: 'Premium Website Design', individualValueInr: 2000, whatItDoes: 'Custom responsive design, branded visual identity, mobile-first layouts', customerBenefit: 'Converts visitors into paying clients', packageStatus: 'included' },
-    { id: 'feat-2', name: 'Mobile Responsive Design', individualValueInr: 800, whatItDoes: 'Fluid adaptation across smartphones, tablets, and desktops', customerBenefit: 'Smooth experience for 85%+ mobile users', packageStatus: 'included' },
+    { id: 'feat-2', name: 'Mobile Responsive Design', individualValueInr: 800, whatItDoes: 'Fluid adaptation across smartphones, tablets, and desktops', customerBenefit: 'Smooth, optimized experience for all mobile and smartphone users', packageStatus: 'included' },
     { id: 'feat-3', name: 'Product Catalog and Categories', individualValueInr: 1000, whatItDoes: 'Organized product showcase with prices, variants, photos, descriptions', customerBenefit: 'Clear offerings and menu pricing', packageStatus: 'included' },
     { id: 'feat-4', name: 'Shopping Cart and Checkout', individualValueInr: 1000, whatItDoes: 'Real-time item additions, instant quantity updates, promo coupons', customerBenefit: 'Minimizes abandoned carts and purchase friction', packageStatus: 'included' },
     { id: 'feat-5', name: 'Cashfree Payment Integration', individualValueInr: 1000, whatItDoes: 'UPI (GPay/PhonePe/Paytm), Dynamic QR, Cards, Net Banking', customerBenefit: 'Direct payments to your merchant account', packageStatus: 'included' },

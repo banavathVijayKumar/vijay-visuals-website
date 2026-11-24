@@ -657,7 +657,7 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
                 https://master.vijay-visuals-site.pages.dev/site/&lt;your-slug&gt;
               </code>
               <p className="text-[11px] text-[#7E7E92]">
-                Guaranteed to work 100% immediately upon clicking Publish. No DNS waiting or registrar setup required.
+                Active immediately upon clicking Publish. No DNS waiting or registrar setup required.
               </p>
             </div>
 

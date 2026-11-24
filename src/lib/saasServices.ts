@@ -697,7 +697,7 @@ export const subscriptionService = {
       expires_at: '2027-01-01T00:00:00Z',
       auto_renew: false,
       features: [
-        '36+ Templates & Custom Visuals',
+        '36 Industry Templates & Custom Visuals',
         'Products & Catalog Management',
         'Customer Orders & Database',
         'Photo & Banner Gallery Uploads',
@@ -728,7 +728,7 @@ export const subscriptionService = {
       expires_at: new Date(Date.now() + (cycle === 'yearly' ? 365 : 30) * 86400000).toISOString(),
       auto_renew: false,
       features: [
-        '36+ Templates & Custom Visuals',
+        '36 Industry Templates & Custom Visuals',
         'Products & Catalog Management',
         'Customer Orders & Database',
         'Photo & Banner Gallery Uploads',

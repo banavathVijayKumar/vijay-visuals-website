@@ -115,9 +115,9 @@ export const CONTACT_INFO = {
   instagramUrl: 'https://instagram.com/vijay_visuals_1',
   whatsappUrl: 'https://wa.me/919381362201',
   location: 'Hyderabad, India · Serving Businesses Worldwide',
-  experienceYears: '6+ Years',
-  projectsCompleted: '150+',
-  satisfactionRate: '99.8%',
+  experienceYears: 'Full-Stack Studio',
+  projectsCompleted: 'Custom Solutions',
+  satisfactionRate: 'Client First',
 };
 
 export const BUSINESS_CATEGORIES = [
@@ -230,7 +230,7 @@ export const PORTFOLIO_DATA = [
     id: 'deccan-couture',
     title: 'Deccan Royal Couture Flagship',
     category: 'E-Commerce & Branded PWA',
-    metric: '+165% Online Orders in 90 Days',
+    metric: 'Multi-Variant Catalog & Direct Checkout',
     client: 'Deccan Royal Couture, Hyderabad',
     summary:
       'Multi-variant bridal couture storefront with wholesale B2B pricing, live delivery tracking, and optional installable customer PWA.',
@@ -241,7 +241,7 @@ export const PORTFOLIO_DATA = [
     id: 'nocturne-audio',
     title: 'Nocturne Audio & Creator Hardware',
     category: 'Electronics Storefront & AI Center',
-    metric: '42% Faster Support Resolution',
+    metric: 'Automated Invoicing & Inventory Alerts',
     client: 'Nocturne Audio Systems, HITEC City',
     summary:
       'Precision electronics catalog powered by Gemini AI customer support, low-stock inventory alerts, and automated GST invoice generation.',
@@ -252,7 +252,7 @@ export const PORTFOLIO_DATA = [
     id: 'nizam-kitchen',
     title: 'Nizam Heritage Kitchen Direct',
     category: 'Restaurant Ordering & Delivery Fleet',
-    metric: '35-Min Average Doorstep Delivery',
+    metric: 'Direct Ordering & Live Delivery Tracking',
     client: 'Nizam Heritage Kitchen, Jubilee Hills',
     summary:
       'Zero-commission direct restaurant ordering with owner-controlled delivery partner assignment, thermal courier tracking, and coupon campaigns.',
@@ -269,7 +269,7 @@ export const TESTIMONIALS_DATA = [
     company: 'Singhania Real Estate & Landholdings',
     location: 'Hyderabad',
     quote:
-      'Vijay transformed our digital presence completely. The black and gold aesthetic radiates authority, and our qualified client inquiries doubled within the first month.',
+      'Vijay transformed our digital presence completely. The black and gold aesthetic radiates authority and significantly strengthened our digital presence and client engagement.',
   },
   {
     id: 't-2',
