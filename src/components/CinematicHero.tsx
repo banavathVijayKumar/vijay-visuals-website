@@ -209,7 +209,7 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
               <div className="relative w-full rounded-2xl overflow-hidden drop-shadow-[0_20px_35px_rgba(0,0,0,0.9)]">
                 <img
                   src="/founder_hero_portrait.png"
-                  alt="Vijay Kumar — Founder & Digital Architect, Vijay Visuals"
+                  alt="Vijay Kumar — Founder & Creative Director, VIJAY VISUALS"
                   className="w-full h-auto object-cover object-bottom select-none transition-transform duration-500 ease-out group-hover:scale-[1.02]"
                 />
                 {/* Base dark blend */}
@@ -223,7 +223,10 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
                     Vijay Kumar
                   </p>
                   <p className="text-[10px] sm:text-[11px] font-semibold text-[#D4AF37] uppercase tracking-[0.16em] font-sans-clean mt-0.5">
-                    Founder &amp; Digital Architect
+                    Founder &amp; Creative Director
+                  </p>
+                  <p className="text-[9px] sm:text-[10px] font-black text-[#A5A5BA] uppercase tracking-[0.2em] font-luxury mt-0.5">
+                    VIJAY VISUALS
                   </p>
                 </div>
               </div>
