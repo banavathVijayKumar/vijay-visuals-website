@@ -59,7 +59,7 @@ const FALLBACK_BLOG_POSTS: BlogPostItem[] = [
     excerpt:
       'Step-by-step checklist for Indian shop owners: mobile-first catalog, COD + UPI readiness, GST invoicing, and keeping 100% domain ownership.',
     content_markdown:
-      'Every shop owner in India deserves an independent digital storefront without paying high marketplace commissions. Start by picking your industry template, adding clear product photos with alt text, configuring Cash on Delivery and verified Razorpay seller settlement, and connecting your own .in or .com domain via DNS TXT verification.',
+      'Every shop owner in India deserves an independent digital storefront without paying high marketplace commissions. Start by picking your industry template, adding clear product photos with alt text, configuring Cash on Delivery and verified Cashfree seller settlement, and connecting your own .in or .com domain via DNS TXT verification.',
     category: 'E-Commerce Guide',
     language: 'en',
     author_name: 'Vijay Visuals Editorial',
@@ -105,7 +105,7 @@ const POLICY_DOCS: Record<PolicyDocKey, { title: string; points: string[] }> = {
     title: 'Terms of Service & 100% Ownership',
     points: [
       'Merchants retain 100% ownership of their custom domains, brand assets, product catalogs, and customer data.',
-      'Third-party infrastructure fees (domain registration/renewal, Razorpay MDR, WhatsApp Business Cloud API, external courier fees) are billed separately by their respective providers.',
+      'Third-party infrastructure fees (domain registration/renewal, Cashfree MDR, WhatsApp Business Cloud API, external courier fees) are billed separately by their respective providers.',
       'Optional Progressive Web Apps (PWAs) are browser-installable web apps, not Google Play Store or Apple App Store native binaries.',
     ],
   },
@@ -120,8 +120,8 @@ const POLICY_DOCS: Record<PolicyDocKey, { title: string; points: string[] }> = {
   security: {
     title: 'Payment Separation & Platform Security',
     points: [
-      'Platform website packages settle strictly to the Vijay Visuals merchant account after server-side Razorpay HMAC-SHA256 signature verification.',
-      'Merchant customer store payments are architected separately (seller settlement / Razorpay Route subject to approval) and never automatically route to the platform owner personal account.',
+      'Platform website packages settle strictly to the Vijay Visuals official merchant account after server-side Cashfree HMAC-SHA256 signature verification.',
+      'Merchant customer store payments are architected separately (seller settlement / Cashfree split settlement subject to approval) and never automatically route to the platform owner personal account.',
       'All API secrets remain server-side in Cloudflare Pages Secrets and are never embedded in client JavaScript bundles.',
     ],
   },

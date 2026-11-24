@@ -685,7 +685,7 @@ export const GrowthWorkspace: React.FC<GrowthWorkspaceProps> = ({ tenant, active
             <ul className="space-y-1.5 text-[#B8B8C8]">
               <li>• <strong>Domain Registration & Annual Renewal:</strong> Paid directly to your registrar (Cloudflare, GoDaddy, Namecheap) in your own ownership.</li>
               <li>• <strong>Hosting & SSL/HTTPS:</strong> Cloudflare Pages edge hosting & SSL; enterprise custom server hosting billed per actual usage.</li>
-              <li>• <strong>Payment Gateway MDR:</strong> Standard Razorpay / UPI / Card transaction charges deducted directly by the gateway.</li>
+              <li>• <strong>Payment Gateway MDR:</strong> Standard Cashfree / UPI / Card transaction charges deducted directly by the gateway.</li>
               <li>• <strong>AI Credits, Storage & Messaging:</strong> Gemini AI credit top-ups, extra R2 storage, and Meta WhatsApp Business API / SMS charges are metered transparently.</li>
             </ul>
           </div>

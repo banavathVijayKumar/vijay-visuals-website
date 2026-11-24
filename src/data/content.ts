@@ -184,7 +184,7 @@ export const SERVICES_DATA = [
     deliverables: [
       'Instant /site/your-brand URL, 12-language SEO metadata & custom domain DNS wizard',
       'Product variants, coupons, bulk wholesale pricing, wishlists & verified-purchase reviews',
-      'Dual Razorpay Platform + Seller settlement separation & COD reconciliation',
+      'Dual Cashfree Platform + Seller settlement separation & COD reconciliation',
     ],
   },
   {
@@ -298,7 +298,7 @@ export const FAQS = [
   },
   {
     q: 'How are Vijay Visuals platform payments separated from seller store sales?',
-    a: 'Platform packages (websites, PWA, AI credits, storage) settle to the Vijay Visuals Razorpay merchant account only after server-side HMAC signature verification. Business owner store sales use a separate seller settlement architecture so customer funds never automatically route to the platform owner personal account.',
+    a: 'Platform packages (websites, PWA, AI credits, storage) settle to the Vijay Visuals Cashfree merchant account only after server-side HMAC signature verification. Business owner store sales use a separate seller settlement architecture so customer funds never automatically route to the platform owner personal account.',
   },
   {
     q: 'Is the optional PWA a Google Play Store native app?',
@@ -306,7 +306,7 @@ export const FAQS = [
   },
   {
     q: 'Are third-party services like domain, WhatsApp API, or payment gateway free forever?',
-    a: 'No. We transparently disclose all third-party charges: custom domain renewals, payment gateway transaction fees (Razorpay/Route), WhatsApp Business Cloud API messaging charges, and external cloud/email hosting are billed separately by their providers.',
+    a: 'No. We transparently disclose all third-party charges: custom domain renewals, payment gateway transaction fees (Cashfree Payments), WhatsApp Business Cloud API messaging charges, and external cloud/email hosting are billed separately by their providers.',
   },
 ];
 

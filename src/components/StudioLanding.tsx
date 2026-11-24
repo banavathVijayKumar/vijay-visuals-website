@@ -606,7 +606,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                 },
                 {
                   title: 'Persistent Cart & Verified Checkout',
-                  desc: 'Add to Cart or Buy Now with server-verified stock, coupon discounts, delivery fees, city/pincode address capture, COD, UPI, Razorpay, and WhatsApp.',
+                  desc: 'Add to Cart or Buy Now with server-verified stock, coupon discounts, delivery fees, city/pincode address capture, COD, UPI, Cashfree Payments, and WhatsApp.',
                 },
                 {
                   title: 'Business Gallery & Media Albums',
@@ -937,7 +937,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
 
                 <p className="text-[10px] text-[#858599] mt-2 leading-relaxed">
                   {serverCalc?.thirdPartyNote ||
-                    'Excludes third-party domain registration/renewal, Razorpay MDR, WhatsApp Business API, and external hosting renewals.'}
+                    'Excludes third-party domain registration/renewal, Cashfree MDR, WhatsApp Business API, and external hosting renewals.'}
                 </p>
               </div>
 
@@ -1229,7 +1229,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               <h2 className="font-luxury text-lg font-bold text-white">Review Order Summary &amp; Checkout</h2>
             </div>
             <p className="text-[#9E9EB2] text-[11px] mb-4">
-              Secure Vijay Visuals Platform Purchase · Server-Side Verified by Razorpay
+              Secure Vijay Visuals Platform Purchase · Server-Side Verified by Cashfree Payments
             </p>
 
             {/* Selected Package Details */}
@@ -1305,7 +1305,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               <p className="font-semibold text-amber-300">Important Package Boundaries:</p>
               <p>• <strong>Custom Domain:</strong> Customer provides and owns their own domain (e.g. from Cloudflare or GoDaddy). Domain registration &amp; renewal fees are paid directly to your registrar.</p>
               <p>• <strong>Hosting:</strong> Platform edge hosting is included under the verified hosting arrangement.</p>
-              <p>• <strong>Payment Gateway:</strong> Seller receives customer payments through the seller's separately configured Razorpay / UPI gateway. Gateway MDR charges apply directly.</p>
+              <p>• <strong>Payment Gateway:</strong> Seller receives customer payments through the seller's separately configured Cashfree / UPI gateway. Gateway MDR charges apply directly.</p>
             </div>
 
             {/* Customer Prefill Summary */}

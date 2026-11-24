@@ -700,7 +700,7 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
             Select Your Package &amp; Get Your Custom Store in Minutes
           </h2>
           <p className="text-xs sm:text-sm text-[#A6A6BC] max-w-xl mx-auto">
-            Includes multi-lingual storefront (12 Indian languages), integrated inventory, simulated &amp; live Razorpay payments, customer support, and automatic pre-change website backups.
+            Includes multi-lingual storefront (12 Indian languages), integrated inventory, official Cashfree payments, customer support, and automatic pre-change website backups.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
