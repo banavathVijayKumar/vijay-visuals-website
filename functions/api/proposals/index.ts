@@ -117,29 +117,60 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     // Calculate revenue & status summary
     let totalProposedInr = 0;
     let approvedInr = 0;
+    let paidInr = 0;
     let pendingInr = 0;
     let approvedCount = 0;
+    let paidCount = 0;
+    let expiredCount = 0;
+    let declinedCount = 0;
 
-    for (const p of proposals) {
+    const now = Date.now();
+    const enrichedProposals = proposals.map((p) => {
+      const isPaid = p.status === 'paid' || p.delivery_status === 'paid';
+      const isApproved = p.status === 'accepted_locked' || p.delivery_status === 'approved';
+      const isDeclined = p.status === 'declined' || p.delivery_status === 'rejected';
+      const isExpired = !isPaid && !isApproved && Boolean(p.expires_at && new Date(p.expires_at).getTime() < now);
+
       const amt = Number(p.grand_total_inr || p.development_fee_inr || 0);
       totalProposedInr += amt;
-      if (p.status === 'accepted_locked' || p.status === 'paid' || p.delivery_status === 'approved') {
+
+      if (isPaid) {
+        paidInr += amt;
+        paidCount++;
         approvedInr += amt;
         approvedCount++;
+      } else if (isApproved) {
+        approvedInr += amt;
+        approvedCount++;
+      } else if (isDeclined) {
+        declinedCount++;
+        pendingInr += amt;
+      } else if (isExpired) {
+        expiredCount++;
+        pendingInr += amt;
       } else {
         pendingInr += amt;
       }
-    }
+
+      return {
+        ...p,
+        isExpired,
+      };
+    });
 
     return json({
-      proposals,
+      proposals: enrichedProposals,
       defaultFeatures: DEFAULT_STARTER_FEATURES,
       summary: {
         totalCount: proposals.length,
         totalProposedInr,
         approvedInr,
+        paidInr,
         pendingInr,
         approvedCount,
+        paidCount,
+        expiredCount,
+        declinedCount,
         conversionRatePct: proposals.length > 0 ? Math.round((approvedCount / proposals.length) * 100) : 0,
       },
     });

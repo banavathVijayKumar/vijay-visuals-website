@@ -1,9 +1,15 @@
 // ============================================================================
 // POST /api/proposals/:id/checkout — Cashfree Payment Handoff for Approved Proposal
+// Security Enforcements:
+// 1. Mandatory Secure Token Validation (Reject missing, invalid, or mismatched tokens)
+// 2. Server-Side Proposal Expiry Guard (HTTP 410)
+// 3. Strict Precondition State Validation (Requires proposal.status === 'accepted_locked')
+// 4. Authoritative Pricing (Amounts derived strictly from verified D1 records)
+// 5. Rejection of Draft, Sent, Viewed, Declined, and Already-Paid proposals
 // ============================================================================
 
 import { createEdgeCashfreeOrder, getEdgeCashfreeStatus } from '../../payments/_cashfree';
-import { PagesContext, errorJson, handleOptions, json, parseJsonBody, sanitizeText } from '../../_shared';
+import { PagesContext, errorJson, handleOptions, json, parseJsonBody } from '../../_shared';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -14,27 +20,67 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
   const id = Number(params?.id);
-  if (!id) return errorJson('Invalid proposal ID.', 400);
+  if (!id || !Number.isInteger(id) || id <= 0) {
+    return errorJson('Invalid proposal ID.', 400);
+  }
 
   const body = await parseJsonBody<{ token?: string }>(request);
 
-  const proposal = await env.DB.prepare('SELECT * FROM platform_proposals WHERE id = ?').bind(id).first<Record<string, any>>();
-  if (!proposal) return errorJson('Proposal not found.', 404);
-
-  // Security: token match if supplied
-  if (body?.token && proposal.secure_token && body.token !== proposal.secure_token) {
-    return errorJson('Invalid security token.', 403);
+  // 1. Mandatory Secure Token Validation
+  const suppliedToken = typeof body?.token === 'string' ? body.token.trim() : '';
+  if (!suppliedToken || suppliedToken.length < 8) {
+    return errorJson('Invalid or missing proposal security token.', 403);
   }
 
+  // Fetch proposal from D1
+  const proposal = await env.DB.prepare(
+    'SELECT * FROM platform_proposals WHERE id = ? LIMIT 1'
+  )
+    .bind(id)
+    .first<Record<string, any>>();
+
+  // Safe authorization error preventing ID enumeration
+  if (!proposal || !proposal.secure_token || proposal.secure_token !== suppliedToken) {
+    return errorJson('Proposal not found or access denied.', 403);
+  }
+
+  // 2. Server-Side Proposal Expiry Enforcement
+  if (proposal.expires_at) {
+    const expiryTime = new Date(proposal.expires_at).getTime();
+    if (!isNaN(expiryTime) && expiryTime < Date.now()) {
+      return errorJson('This proposal has expired. Please contact Vijay Visuals for an updated proposal.', 410);
+    }
+  }
+
+  // 3. Precondition State Validation
+  if (proposal.status === 'paid' || proposal.delivery_status === 'paid') {
+    return errorJson('This proposal has already been paid.', 409);
+  }
+
+  if (proposal.status === 'declined' || proposal.delivery_status === 'rejected') {
+    return errorJson('Declined proposals cannot be checked out.', 409);
+  }
+
+  if (proposal.status !== 'accepted_locked') {
+    return errorJson('Proposal must be approved by the customer before payment can be initiated.', 400);
+  }
+
+  // 4. Verify Cashfree Server Configuration
   const cfStatus = getEdgeCashfreeStatus(env);
   if (!cfStatus.configured) {
     return errorJson('Cashfree Payment Gateway is not configured in environment variables.', 503);
   }
 
+  // 5. Authoritative Pricing Calculation (Never trusting client-supplied amounts)
   const baseAmountInr = Number(proposal.development_fee_inr) || 7999;
   const hasConfirmedGst = Boolean(Number(proposal.gst_percent) > 0 && Number(proposal.gst_inr) > 0);
   const gstAmountInr = hasConfirmedGst ? Number(proposal.gst_inr) : 0;
-  const amountInr = Math.max(1, hasConfirmedGst ? (Number(proposal.grand_total_inr) || (baseAmountInr + gstAmountInr)) : (Number(proposal.grand_total_inr) || baseAmountInr));
+  const amountInr = Math.max(
+    1,
+    hasConfirmedGst
+      ? (Number(proposal.grand_total_inr) || (baseAmountInr + gstAmountInr))
+      : (Number(proposal.grand_total_inr) || baseAmountInr)
+  );
 
   const cfOrderId = `vv_prop_${proposal.proposal_number.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}_${Date.now().toString().slice(-4)}`;
   const returnUrl = `https://master.vijay-visuals-site.pages.dev/proposal/${proposal.secure_token}?order_id=${encodeURIComponent(cfOrderId)}&status=return`;
@@ -45,8 +91,8 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       amountInr,
       currency: 'INR',
       customerDetails: {
-        customerId: `prop_cust_${proposal.id}_${proposal.customer_phone.replace(/[^0-9]/g, '') || 'client'}`,
-        customerName: proposal.customer_name,
+        customerId: `prop_cust_${proposal.id}_${(proposal.customer_phone || '').replace(/[^0-9]/g, '') || 'client'}`,
+        customerName: proposal.customer_name || 'Customer',
         customerEmail: proposal.customer_email || 'vk66278@gmail.com',
         customerPhone: proposal.customer_phone || '9381362201',
       },
@@ -67,7 +113,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       throw new Error('Cashfree did not return a valid payment_session_id.');
     }
 
-    // Insert cashfree_payments tracking record
+    // Insert or replace cashfree_payments tracking record
     await env.DB.prepare(
       `INSERT OR REPLACE INTO cashfree_payments (
         order_id, cf_order_id, payment_session_id, entity_type, reference_id,
@@ -121,7 +167,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       businessName: proposal.business_name,
     });
   } catch (err) {
-    console.error('Failed to create Cashfree proposal order:', err);
+    console.error('Failed to create Cashfree proposal order:', err instanceof Error ? err.message : String(err));
     return errorJson(err instanceof Error ? err.message : 'Cashfree order creation failed.', 500);
   }
 }

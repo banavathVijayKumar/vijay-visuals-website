@@ -39,6 +39,62 @@ interface ProposalManagerProps {
   onOpenCustomerView?: (token: string) => void;
 }
 
+export function getProposalStatusBadge(p: any): { label: string; className: string } {
+  const isPaid = p.status === 'paid' || p.delivery_status === 'paid';
+  if (isPaid) {
+    return {
+      label: 'Paid',
+      className: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+    };
+  }
+
+  const isApproved = p.status === 'accepted_locked' || p.delivery_status === 'approved';
+  if (isApproved) {
+    return {
+      label: 'Approved',
+      className: 'bg-amber-400/20 text-amber-300 border-amber-400/40',
+    };
+  }
+
+  const isDeclined = p.status === 'declined' || p.delivery_status === 'rejected';
+  if (isDeclined) {
+    return {
+      label: 'Declined',
+      className: 'bg-red-500/20 text-red-300 border-red-500/40',
+    };
+  }
+
+  const isExpired = Boolean(
+    p.isExpired ||
+    (p.expires_at && new Date(p.expires_at).getTime() < Date.now())
+  );
+  if (isExpired) {
+    return {
+      label: 'Expired',
+      className: 'bg-zinc-800 text-zinc-400 border-zinc-700',
+    };
+  }
+
+  if (p.delivery_status === 'viewed' || (Number(p.view_count) > 0)) {
+    return {
+      label: 'Viewed',
+      className: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+    };
+  }
+
+  if (p.delivery_status === 'shared' || p.delivery_status === 'email_sent' || p.status === 'sent') {
+    return {
+      label: 'Sent',
+      className: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    };
+  }
+
+  return {
+    label: 'Draft',
+    className: 'bg-[#181824] text-[#8E8EA2] border-[#2B2B40]',
+  };
+}
+
 export const ProposalManager: React.FC<ProposalManagerProps> = ({ onNotify, onOpenCustomerView }) => {
   const [proposals, setProposals] = useState<ProposalRecord[]>([]);
   const [summary, setSummary] = useState<{
@@ -378,8 +434,7 @@ export const ProposalManager: React.FC<ProposalManagerProps> = ({ onNotify, onOp
               </thead>
               <tbody className="divide-y divide-[#181826]">
                 {filteredProposals.map((p) => {
-                  const isApproved = p.status === 'accepted_locked' || p.delivery_status === 'approved';
-                  const isDeclined = p.status === 'declined' || p.delivery_status === 'rejected';
+                  const statusInfo = getProposalStatusBadge(p);
 
                   return (
                     <tr key={p.id} className="hover:bg-[#12121D] transition-colors">
@@ -404,17 +459,9 @@ export const ProposalManager: React.FC<ProposalManagerProps> = ({ onNotify, onOp
                       </td>
                       <td className="py-3 px-3 text-center">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                            isApproved
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : isDeclined
-                              ? 'bg-red-500/20 text-red-300 border-red-500/40'
-                              : p.delivery_status === 'viewed'
-                              ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
-                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                          }`}
+                          className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${statusInfo.className}`}
                         >
-                          {isApproved ? 'Approved' : isDeclined ? 'Declined' : p.delivery_status || 'Draft'}
+                          {statusInfo.label}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right">

@@ -43,6 +43,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [selectedTier, setSelectedTier] = useState<'STARTER' | 'GOLD' | 'PREMIUM'>('STARTER');
   const [approving, setApproving] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   // Decline modal state
   const [declineModalOpen, setDeclineModalOpen] = useState(false);
@@ -80,8 +81,64 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
     if (token) loadProposal();
   }, [token]);
 
+  const handlePaymentCheckout = async (targetProposal?: any) => {
+    const p = targetProposal || proposal;
+    if (!p || paying) return;
+
+    const proposalExpired = Boolean(
+      p.isExpired ||
+      (p.expires_at && new Date(p.expires_at).getTime() < Date.now())
+    );
+    if (proposalExpired) {
+      onNotify('This proposal has expired. Please contact Vijay Visuals to renew.');
+      return;
+    }
+
+    setPaying(true);
+    try {
+      const checkoutRes = await apiFetch<{
+        paymentSessionId: string;
+        orderId: string;
+        environment: 'sandbox' | 'production';
+        amountInr: number;
+      }>(`/api/proposals/${p.id}/checkout`, {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      });
+
+      if (checkoutRes.paymentSessionId && checkoutRes.orderId) {
+        await initiateCashfreeStorefrontCheckout({
+          paymentSessionId: checkoutRes.paymentSessionId,
+          orderId: checkoutRes.orderId,
+          environment: checkoutRes.environment,
+          onSuccess: () => {
+            onNotify('Payment authorized and verified! Onboarding kickoff initiated.');
+            loadProposal();
+          },
+          onError: (payErr) => {
+            onNotify(`Payment notice: ${payErr.message}`);
+          },
+        });
+      }
+    } catch (checkErr: any) {
+      onNotify(`Payment checkout notice: ${checkErr.message}`);
+    } finally {
+      setPaying(false);
+    }
+  };
+
   const handleApprove = async () => {
-    if (!proposal) return;
+    if (!proposal || approving) return;
+
+    const proposalExpired = Boolean(
+      proposal.isExpired ||
+      (proposal.expires_at && new Date(proposal.expires_at).getTime() < Date.now())
+    );
+    if (proposalExpired) {
+      onNotify('This proposal has expired and cannot be approved. Please contact Vijay Visuals.');
+      return;
+    }
+
     setApproving(true);
     try {
       const res = await apiFetch<{
@@ -103,34 +160,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
       onNotify(`Proposal approved for the ${selectedTier} Package! Launching Cashfree Checkout...`);
 
       // Initiate Cashfree checkout handoff
-      try {
-        const checkoutRes = await apiFetch<{
-          paymentSessionId: string;
-          orderId: string;
-          environment: 'sandbox' | 'production';
-          amountInr: number;
-        }>(`/api/proposals/${proposal.id}/checkout`, {
-          method: 'POST',
-          body: JSON.stringify({ token }),
-        });
-
-        if (checkoutRes.paymentSessionId && checkoutRes.orderId) {
-          await initiateCashfreeStorefrontCheckout({
-            paymentSessionId: checkoutRes.paymentSessionId,
-            orderId: checkoutRes.orderId,
-            environment: checkoutRes.environment,
-            onSuccess: (verifiedResult) => {
-              onNotify('Payment authorized and verified! Onboarding kickoff initiated.');
-              loadProposal();
-            },
-            onError: (payErr) => {
-              onNotify(`Payment notice: ${payErr.message}`);
-            },
-          });
-        }
-      } catch (checkErr: any) {
-        onNotify(`Payment checkout notice: ${checkErr.message}`);
-      }
+      await handlePaymentCheckout(res.proposal);
     } catch (err: any) {
       onNotify(err?.message || 'Failed to approve proposal.');
     } finally {
@@ -139,7 +169,18 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
   };
 
   const handleDecline = async () => {
-    if (!proposal) return;
+    if (!proposal || declining) return;
+
+    const proposalExpired = Boolean(
+      proposal.isExpired ||
+      (proposal.expires_at && new Date(proposal.expires_at).getTime() < Date.now())
+    );
+    if (proposalExpired) {
+      onNotify('This proposal has expired. Decline is no longer applicable.');
+      setDeclineModalOpen(false);
+      return;
+    }
+
     setDeclining(true);
     try {
       const res = await apiFetch<{ success: boolean; proposal: any }>(`/api/proposals/${proposal.id}/approve`, {
@@ -193,6 +234,10 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
   const isApproved = proposal.status === 'accepted_locked' || proposal.delivery_status === 'approved';
   const isDeclined = proposal.status === 'declined' || proposal.delivery_status === 'rejected';
   const isPaid = proposal.status === 'paid';
+  const isExpired = Boolean(
+    proposal.isExpired ||
+    (proposal.expires_at && new Date(proposal.expires_at).getTime() < Date.now())
+  );
 
   const hasConfirmedGst = Boolean(
     proposal.gst_percent &&
@@ -262,31 +307,46 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
               <span>Download PDF (A4)</span>
             </button>
 
-            {!isApproved && !isDeclined && (
+            {isExpired ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700 text-xs font-semibold">
+                <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                <span>Proposal Expired</span>
+              </span>
+            ) : isPaid ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Proposal Paid & Active</span>
+              </span>
+            ) : isApproved ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400/20 text-amber-300 border border-amber-400/30 text-xs font-bold">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Proposal Approved</span>
+              </span>
+            ) : isDeclined ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-bold">
+                <XCircle className="w-3.5 h-3.5" />
+                <span>Proposal Declined</span>
+              </span>
+            ) : (
               <>
                 <button
                   type="button"
+                  disabled={approving || declining}
                   onClick={() => setDeclineModalOpen(true)}
-                  className="px-3 py-1.5 rounded-lg border border-red-500/40 text-red-300 hover:bg-red-950/20 text-xs font-semibold transition-colors"
+                  className="px-3 py-1.5 rounded-lg border border-red-500/40 text-red-300 hover:bg-red-950/20 text-xs font-semibold transition-colors disabled:opacity-50"
                 >
                   Decline
                 </button>
                 <button
                   type="button"
+                  disabled={approving || declining}
                   onClick={() => setApproveModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#D4AF37] hover:bg-amber-400 text-black text-xs font-bold shadow-lg transition-colors"
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#D4AF37] hover:bg-amber-400 text-black text-xs font-bold shadow-lg transition-colors disabled:opacity-50"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>Approve Proposal</span>
                 </button>
               </>
-            )}
-
-            {isApproved && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Proposal Approved</span>
-              </span>
             )}
           </div>
         </div>
@@ -318,17 +378,42 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
           </div>
 
           {/* Quick Notice Status */}
-          {isApproved ? (
+          {isExpired ? (
+            <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700/70 text-zinc-300 text-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <strong className="text-white flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-zinc-400" />
+                  Proposal Validity Expired
+                </strong>
+                <p className="text-[#9A9AB0] text-[11px]">
+                  This website proposal expired on {proposal.expires_at ? new Date(proposal.expires_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'its scheduled date'}. Pricing, scope commitments, and delivery schedules may have been revised. Please contact Vijay Visuals directly to renew this proposal.
+                </p>
+              </div>
+              <a
+                href="tel:+919381362201"
+                className="px-3.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-amber-300 border border-amber-500/30 text-xs font-semibold shrink-0 transition-colors"
+              >
+                Contact to Renew: +91 9381362201
+              </a>
+            </div>
+          ) : isPaid ? (
             <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-emerald-200 text-xs flex items-center justify-between gap-3">
               <div>
-                <strong>✓ Approved & Price Locked:</strong> This proposal has been accepted. Development and onboarding are underway.
+                <strong>✓ Paid & Active:</strong> Payment for this website architecture has been received and verified. Architecture onboarding is in progress.
+              </div>
+            </div>
+          ) : isApproved ? (
+            <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-emerald-200 text-xs flex items-center justify-between gap-3">
+              <div>
+                <strong>✓ Approved & Price Locked:</strong> This proposal has been accepted. You may proceed to authorize your development fee.
               </div>
               <button
                 type="button"
-                onClick={() => setApproveModalOpen(true)}
-                className="px-3 py-1.5 rounded-lg bg-emerald-500 text-black text-xs font-bold shrink-0"
+                disabled={paying}
+                onClick={() => handlePaymentCheckout()}
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold shrink-0 transition-colors disabled:opacity-50"
               >
-                Pay via Cashfree
+                {paying ? 'Launching Cashfree...' : 'Pay via Cashfree'}
               </button>
             </div>
           ) : isDeclined ? (
@@ -605,14 +690,36 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                   <div className="text-2xl font-extrabold text-[#ECC86A]">₹{totalPayable.toLocaleString('en-IN')}</div>
                   <div className="text-[10px] text-emerald-400 mt-1">✓ Lifetime Self-Editing Included</div>
                 </div>
-                {!isApproved && (
+                {isExpired ? (
+                  <div className="w-full mt-4 py-2.5 px-3 rounded-lg bg-zinc-900 border border-zinc-700/60 text-zinc-400 text-xs text-center font-medium">
+                    Proposal expired on {proposal.expires_at ? new Date(proposal.expires_at).toLocaleDateString('en-IN') : 'validity date'}. Contact +91 9381362201 to renew.
+                  </div>
+                ) : isPaid ? (
+                  <div className="w-full mt-4 py-2.5 px-3 rounded-lg bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs text-center font-semibold">
+                    ✓ Package Paid & Active
+                  </div>
+                ) : isApproved ? (
                   <button
                     type="button"
+                    disabled={paying}
+                    onClick={() => handlePaymentCheckout()}
+                    className="w-full mt-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold transition-colors disabled:opacity-50"
+                  >
+                    {paying ? 'Launching Cashfree...' : `Pay via Cashfree (₹${totalPayable.toLocaleString('en-IN')})`}
+                  </button>
+                ) : isDeclined ? (
+                  <div className="w-full mt-4 py-2.5 px-3 rounded-lg bg-red-950/40 border border-red-500/40 text-red-300 text-xs text-center font-medium">
+                    Proposal Declined
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={approving || declining}
                     onClick={() => {
                       setSelectedTier('STARTER');
                       setApproveModalOpen(true);
                     }}
-                    className="w-full mt-4 py-2.5 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:bg-amber-400 transition-colors"
+                    className="w-full mt-4 py-2.5 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:bg-amber-400 transition-colors disabled:opacity-50"
                   >
                     Approve Package (₹{totalPayable.toLocaleString('en-IN')})
                   </button>
@@ -766,11 +873,18 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
               </button>
               <button
                 type="button"
-                disabled={approving}
+                disabled={approving || paying || isExpired}
                 onClick={handleApprove}
-                className="flex-1 py-2.5 rounded-lg bg-[#D4AF37] hover:bg-amber-400 text-black text-xs font-bold disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-lg bg-[#D4AF37] hover:bg-amber-400 text-black text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
-                {approving ? 'Authorizing...' : 'Confirm & Proceed to Payment'}
+                {approving ? (
+                  <>
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-black border-t-transparent animate-spin" />
+                    <span>Authorizing...</span>
+                  </>
+                ) : (
+                  <span>Confirm & Proceed to Payment</span>
+                )}
               </button>
             </div>
           </div>
@@ -816,11 +930,18 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
               </button>
               <button
                 type="button"
-                disabled={declining}
+                disabled={declining || isExpired}
                 onClick={handleDecline}
-                className="flex-1 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
-                {declining ? 'Submitting...' : 'Submit Decline'}
+                {declining ? (
+                  <>
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    <span>Submitting...</span>
+                  </>
+                ) : (
+                  <span>Submit Decline</span>
+                )}
               </button>
             </div>
           </div>
