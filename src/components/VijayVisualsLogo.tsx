@@ -30,11 +30,11 @@ export const VijayVisualsLogo: React.FC<VijayVisualsLogoProps> = ({
 }) => {
   // Height and scale mappings
   const heightClasses: Record<LogoSize, { iconH: string; textH: string; gap: string }> = {
-    xs: { iconH: 'h-6 w-6', textH: 'text-xs', gap: 'gap-1.5' },
-    sm: { iconH: 'h-8 w-8', textH: 'text-sm', gap: 'gap-2' },
-    md: { iconH: 'h-10 w-10', textH: 'text-base', gap: 'gap-2.5' },
-    lg: { iconH: 'h-14 w-14', textH: 'text-xl', gap: 'gap-3.5' },
-    xl: { iconH: 'h-20 w-20', textH: 'text-2xl', gap: 'gap-4' },
+    xs: { iconH: 'h-5 w-5 sm:h-6 sm:w-6', textH: 'text-[11px] sm:text-xs tracking-[0.06em] sm:tracking-[0.1em]', gap: 'gap-1 sm:gap-1.5' },
+    sm: { iconH: 'h-7 w-7 sm:h-8 sm:w-8', textH: 'text-xs sm:text-sm tracking-[0.08em] sm:tracking-[0.14em]', gap: 'gap-1.5 sm:gap-2' },
+    md: { iconH: 'h-9 w-9 sm:h-10 sm:w-10', textH: 'text-sm sm:text-base tracking-[0.1em] sm:tracking-[0.14em]', gap: 'gap-2 sm:gap-2.5' },
+    lg: { iconH: 'h-12 w-12 sm:h-14 sm:w-14', textH: 'text-lg sm:text-xl tracking-[0.12em] sm:tracking-[0.14em]', gap: 'gap-3 sm:gap-3.5' },
+    xl: { iconH: 'h-16 w-16 sm:h-20 sm:w-20', textH: 'text-xl sm:text-2xl tracking-[0.14em]', gap: 'gap-3.5 sm:gap-4' },
   };
 
   const dim = heightClasses[size] || heightClasses.md;
@@ -180,7 +180,7 @@ export const VijayVisualsLogo: React.FC<VijayVisualsLogoProps> = ({
 
   const wordmark = (
     <div className={`flex flex-col ${variant === 'stacked' ? 'items-center text-center mt-2' : 'items-start'}`}>
-      <div className={`font-luxury font-black tracking-[0.14em] flex items-center leading-none ${dim.textH}`}>
+      <div className={`font-luxury font-black flex items-center leading-none ${dim.textH}`}>
         {/* "VIJAY" */}
         <span
           className={

@@ -336,7 +336,7 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
         <div
           className={`mx-auto transition-all duration-300 ${
             viewport === 'mobile'
-              ? 'max-w-[400px] border-[10px] border-[#1E1E2C] rounded-[42px] shadow-2xl p-2 bg-[#09090E]'
+              ? 'max-w-[400px] w-full border-4 sm:border-[10px] border-[#1E1E2C] rounded-[28px] sm:rounded-[42px] shadow-2xl p-2 bg-[#09090E]'
               : 'w-full rounded-2xl border border-[#232334] bg-[#0A0A10] shadow-xl overflow-hidden'
           }`}
         >

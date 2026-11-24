@@ -295,7 +295,7 @@ function PlatformShell() {
   };
 
   return (
-    <div className="min-h-screen bg-[#08080A] text-[#E8E8ED] flex flex-col">
+    <div className="min-h-screen bg-[#08080A] text-[#E8E8ED] flex flex-col overflow-x-hidden w-full">
       {mapsQuotaExceeded && (
         <div
           role="alert"
@@ -327,20 +327,20 @@ function PlatformShell() {
           <Navbar activeView={activeView} onNavigate={(v) => navigateTo(v)} lang={lang} />
 
           {/* Global Persistent 12-Language & Multi-Currency Utility Strip (Public Site + Dashboards) */}
-          <div className="border-b border-[#181822] bg-[#0B0B10]">
-            <div className="max-w-7xl mx-auto px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-[#A7A7BA]">
+          <div className="border-b border-[#181822] bg-[#0B0B10] w-full">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+              <div className="flex items-center gap-2 text-[#A7A7BA] text-[11px] sm:text-xs">
                 <Globe className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
-                <span>Made in India · Built for the World</span>
+                <span className="truncate">Made in India · Built for the World</span>
               </div>
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <label className="inline-flex items-center gap-1.5 text-[#8E8EA2]">
                   <span className="sr-only">Language</span>
                   <select
                     aria-label="Select platform language"
                     value={lang}
                     onChange={(e) => setLang(e.target.value as Lang)}
-                    className="rounded border border-[#252534] bg-[#0E0E15] px-2.5 py-1 text-xs text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none"
+                    className="rounded border border-[#252534] bg-[#0E0E15] px-2 py-1 text-[11px] sm:text-xs text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none max-w-[150px] sm:max-w-none"
                   >
                     {SUPPORTED_LANGUAGES.map((l) => (
                       <option key={l.code} value={l.code}>
@@ -356,7 +356,7 @@ function PlatformShell() {
                     aria-label="Select display currency"
                     value={currency}
                     onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-                    className="rounded border border-[#252534] bg-[#0E0E15] px-2.5 py-1 text-xs text-[#E8E8ED] focus:border-[#D4AF37] focus:outline-none"
+                    className="rounded border border-[#252534] bg-[#0E0E15] px-2 py-1 text-[11px] sm:text-xs text-[#E8E8ED] focus:border-[#D4AF37] focus:outline-none max-w-[110px] sm:max-w-none"
                   >
                     {GLOBAL_CURRENCIES.map((c) => (
                       <option key={c.code} value={c.code}>

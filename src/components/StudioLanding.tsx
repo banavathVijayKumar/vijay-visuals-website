@@ -441,26 +441,26 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
   return (
     <div className="bg-[#08080A] text-[#E8E8ED]">
       {/* Utility Sub-Bar (keeps Top Header strictly 3 zones) */}
-      <div className="border-b border-[#181822] bg-[#0B0B10]">
-        <div className="max-w-7xl mx-auto px-6 py-2.5 flex flex-wrap items-center justify-between gap-4 text-xs">
-          <div className="flex items-center gap-3 text-[#9D9DB0]">
-            <span>{CONTACT_INFO.location}</span>
+      <div className="border-b border-[#181822] bg-[#0B0B10] w-full">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[#9D9DB0] text-[11px] sm:text-xs">
+            <span className="truncate max-w-[200px] sm:max-w-none">{CONTACT_INFO.location}</span>
             <span aria-hidden="true">·</span>
             <button
               type="button"
               onClick={onOpenTracker}
-              className="inline-flex items-center gap-1.5 text-[#ECC86A] hover:underline"
+              className="inline-flex items-center gap-1.5 text-[#ECC86A] hover:underline shrink-0"
             >
               <Truck className="w-3.5 h-3.5" />
               <span>{t.trackOrder}</span>
             </button>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <select
               aria-label="Quick language switcher"
               value={lang}
               onChange={(e) => onChangeLang(e.target.value as Lang)}
-              className="rounded-md border border-[#252534] bg-[#0E0E15] px-2.5 py-1 text-xs text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none"
+              className="rounded-md border border-[#252534] bg-[#0E0E15] px-2 py-1 text-[11px] sm:text-xs text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none max-w-[140px] sm:max-w-none"
             >
               {SUPPORTED_LANGUAGES.map((l) => (
                 <option key={l.code} value={l.code}>

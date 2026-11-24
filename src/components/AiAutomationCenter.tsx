@@ -203,7 +203,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
   const pendingApprovals = (logs || []).filter((l) => l.status === 'awaiting_approval');
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-10 space-y-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 space-y-8">
       {/* Header & Tenant Selector */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>

@@ -856,7 +856,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     <div className="min-h-screen pb-20" style={{ backgroundColor: '#08080A' }}>
       {/* Storefront Top Strip & Section Navigation */}
       <div className="border-b border-[#1E1E2A] bg-[#0C0C12] sticky top-0 z-30 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2.5 sm:gap-4">
           <div className="flex items-center gap-3">
             <button
               type="button"
