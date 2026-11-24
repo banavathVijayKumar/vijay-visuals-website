@@ -184,7 +184,7 @@ export const SERVICES_DATA = [
     deliverables: [
       'Instant /site/your-brand URL, 12-language SEO metadata & custom domain DNS wizard',
       'Product variants, coupons, bulk wholesale pricing, wishlists & verified-purchase reviews',
-      'Dual Cashfree Platform + Seller settlement separation & COD reconciliation',
+      'Cashfree Platform Payments + segregated seller settlement ledger (automated split subject to Cashfree Easy Split activation) & COD reconciliation',
     ],
   },
   {
@@ -298,7 +298,7 @@ export const FAQS = [
   },
   {
     q: 'How are Vijay Visuals platform payments separated from seller store sales?',
-    a: 'Platform packages (websites, PWA, AI credits, storage) settle to the Vijay Visuals Cashfree merchant account only after server-side HMAC signature verification. Business owner store sales use a separate seller settlement architecture so customer funds never automatically route to the platform owner personal account.',
+    a: 'Platform packages (websites, PWA, AI credits, storage) settle to the official Vijay Visuals Cashfree merchant account only after server-side HMAC signature verification. Business owner store sales are tracked in a segregated ledger, with automated vendor payouts subject to Cashfree Easy Split activation and approval.',
   },
   {
     q: 'Is the optional PWA a Google Play Store native app?',

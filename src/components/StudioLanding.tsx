@@ -1305,7 +1305,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               <p className="font-semibold text-amber-300">Important Package Boundaries:</p>
               <p>• <strong>Custom Domain:</strong> Customer provides and owns their own domain (e.g. from Cloudflare or GoDaddy). Domain registration &amp; renewal fees are paid directly to your registrar.</p>
               <p>• <strong>Hosting:</strong> Platform edge hosting is included under the verified hosting arrangement.</p>
-              <p>• <strong>Payment Gateway:</strong> Seller receives customer payments through the seller's separately configured Cashfree / UPI gateway. Gateway MDR charges apply directly.</p>
+              <p>• <strong>Payment Gateway:</strong> Platform package purchases settle via official Cashfree Payments. Store customer split settlements are segregated in ledger, with automated vendor routing subject to Cashfree Easy Split activation and approval.</p>
             </div>
 
             {/* Customer Prefill Summary */}

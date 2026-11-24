@@ -59,7 +59,7 @@ const FALLBACK_BLOG_POSTS: BlogPostItem[] = [
     excerpt:
       'Step-by-step checklist for Indian shop owners: mobile-first catalog, COD + UPI readiness, GST invoicing, and keeping 100% domain ownership.',
     content_markdown:
-      'Every shop owner in India deserves an independent digital storefront without paying high marketplace commissions. Start by picking your industry template, adding clear product photos with alt text, configuring Cash on Delivery and verified Cashfree seller settlement, and connecting your own .in or .com domain via DNS TXT verification.',
+      'Every shop owner in India deserves an independent digital storefront without paying high marketplace commissions. Start by picking your industry template, adding clear product photos with alt text, configuring Cash on Delivery and direct UPI payments (with automated seller split settlement subject to Cashfree Easy Split activation and approval), and connecting your own .in or .com domain via DNS TXT verification.',
     category: 'E-Commerce Guide',
     language: 'en',
     author_name: 'Vijay Visuals Editorial',
@@ -121,7 +121,7 @@ const POLICY_DOCS: Record<PolicyDocKey, { title: string; points: string[] }> = {
     title: 'Payment Separation & Platform Security',
     points: [
       'Platform website packages settle strictly to the Vijay Visuals official merchant account after server-side Cashfree HMAC-SHA256 signature verification.',
-      'Merchant customer store payments are architected separately (seller settlement / Cashfree split settlement subject to approval) and never automatically route to the platform owner personal account.',
+      'Merchant customer store payments are architected with strict financial segregation. Automated seller split settlements are subject to Cashfree Easy Split activation and KYC approval, and customer funds never route to the platform owner personal account.',
       'All API secrets remain server-side in Cloudflare Pages Secrets and are never embedded in client JavaScript bundles.',
     ],
   },
