@@ -8,7 +8,7 @@
 //   Production (https://api.cashfree.com/pg) via official 2023-08-01 API.
 // ============================================================================
 
-import { CloudflareEnv, hmacSha256Base64, safeEqual } from '../_shared';
+import { CloudflareEnv, hmacSha256Base64, hmacSha256Hex, safeEqual } from '../_shared';
 
 /**
  * Resilient environment variable reader:
@@ -480,13 +480,34 @@ export async function verifyEdgeCashfreeWebhookSignature(
 ): Promise<boolean> {
   const webhookSecret = getTrimmedEnvVar(env, 'CASHFREE_WEBHOOK_SECRET');
   const clientSecret = getTrimmedEnvVar(env, 'CASHFREE_CLIENT_SECRET');
-  const secret = webhookSecret || clientSecret;
-  if (!secret || !signature || !timestamp) {
+
+  const cleanSig = (signature || '').trim();
+  const cleanTs = (timestamp || '').trim();
+  if (!cleanSig || !cleanTs || (!webhookSecret && !clientSecret)) {
     return false;
   }
 
-  // Cashfree PG HMAC-SHA256 Base64 signature formula: timestamp + rawBody
-  const message = `${timestamp}${rawBody}`;
-  const expectedSig = await hmacSha256Base64(secret, message);
-  return safeEqual(signature.trim(), expectedSig);
+  // Cashfree PG HMAC-SHA256 signature formula: timestamp + rawBody
+  const message = `${cleanTs}${rawBody}`;
+
+  // Candidate secrets configured in environment variables (CASHFREE_WEBHOOK_SECRET, CASHFREE_CLIENT_SECRET)
+  const candidateSecrets = Array.from(
+    new Set([webhookSecret, clientSecret].filter(Boolean))
+  );
+
+  for (const secret of candidateSecrets) {
+    // 1. Base64 encoding (standard for Cashfree 2023-08-01 API)
+    const expectedBase64 = await hmacSha256Base64(secret, message);
+    if (safeEqual(cleanSig, expectedBase64)) {
+      return true;
+    }
+
+    // 2. Hex encoding (supported for compatibility)
+    const expectedHex = await hmacSha256Hex(secret, message);
+    if (safeEqual(cleanSig.toLowerCase(), expectedHex.toLowerCase())) {
+      return true;
+    }
+  }
+
+  return false;
 }

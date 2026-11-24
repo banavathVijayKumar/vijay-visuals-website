@@ -79,44 +79,23 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const timestamp = (request.headers.get('x-webhook-timestamp') || '').trim();
   const rawBody = await request.text();
 
-  // 1. Handle Cashfree Dashboard Ping / Test Handshake
-  // When merchant clicks "Test Webhook" in Cashfree dashboard before completing credentials
-  const isTestOrPing =
-    rawBody.includes('"TEST"') ||
-    rawBody.includes('"test"') ||
-    rawBody.includes('LOW_BALANCE_ALERT') ||
-    rawBody.length === 0;
+  // 1. Strict Cryptographic Signature Check (Enforced for ALL POST requests)
+  // Per security requirements: Never bypass HMAC verification based on "TEST", synthetic IDs, or email.
+  if (!signature || !timestamp) {
+    return errorJson('Missing x-webhook-signature or x-webhook-timestamp header.', 401);
+  }
 
   const hasSecret = Boolean(
     getTrimmedEnvVar(env, 'CASHFREE_WEBHOOK_SECRET') || getTrimmedEnvVar(env, 'CASHFREE_CLIENT_SECRET')
   );
 
-  if (isTestOrPing && (!signature || !hasSecret)) {
-    return json({
-      ok: true,
-      message: 'Cashfree webhook test handshake acknowledged successfully.',
-      environment: getTrimmedEnvVar(env, 'CASHFREE_ENV') || 'sandbox',
-      status: 'handshake_ok',
-    });
-  }
-
-  // 2. Cryptographic signature check for live/sandbox payment events
-  if (!signature || !timestamp) {
-    return errorJson('Missing x-webhook-signature or x-webhook-timestamp header.', 401);
+  if (!hasSecret) {
+    return errorJson('Cashfree secret key is not configured in Cloudflare Pages environment variables.', 500);
   }
 
   const sigValid = await verifyEdgeCashfreeWebhookSignature(env, rawBody, signature, timestamp);
   if (!sigValid) {
-    if (!hasSecret) {
-      return json(
-        {
-          ok: false,
-          error: 'CASHFREE_CLIENT_SECRET is not configured in Cloudflare Pages environment variables.',
-        },
-        401
-      );
-    }
-    return errorJson('Invalid Cashfree webhook HMAC-SHA256 Base64 signature.', 401);
+    return errorJson('Invalid Cashfree webhook HMAC-SHA256 signature.', 401);
   }
 
   let body: CashfreeWebhookPayload;
@@ -188,7 +167,46 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }>();
 
     if (!existingPayment && !storeOrder) {
-      return errorJson('Order record not found for webhook reconciliation.', 404);
+      // Per Security Requirement 4:
+      // For a validly signed event whose order is missing in D1:
+      // - Never mark the payment as PAID.
+      // - Log and safely record the unmatched event for investigation.
+      // - Return an appropriate successful acknowledgement only after secure validation and durable recording.
+      // - Never silently discard payment events.
+      console.warn(`[Cashfree Webhook] Unmatched order received: ${orderId} (event ${eventId}). Durably recording for investigation.`);
+
+      await env.DB.prepare(
+        `INSERT INTO payment_webhook_events
+          (event_id, provider, event_type, flow_type, reference_id, signature_verified, payload_json, processed_at)
+         VALUES (?, 'cashfree', ?, 'seller_order', ?, 1, ?, datetime('now'))`
+      )
+        .bind(eventId, eventType, orderId, rawBody)
+        .run();
+
+      await writeAuditLog(env, {
+        actorId: 'cashfree_webhook',
+        actorRole: 'system',
+        action: 'cashfree_webhook_unmatched_order',
+        targetType: 'payment_webhook_events',
+        targetId: orderId,
+        details: {
+          eventId,
+          eventType,
+          orderId,
+          cfPaymentId,
+          reason: 'Valid cryptographic signature verified, but order record not found in D1 (synthetic dashboard test or external order).',
+        },
+      });
+
+      return json({
+        ok: true,
+        status: 'unmatched_order_recorded',
+        message: 'Cashfree webhook signature verified and recorded; order not present in local database.',
+        eventId,
+        eventType,
+        orderId,
+        cfPaymentId,
+      });
     }
 
     // Authoritative expected amount in integer paise
@@ -440,7 +458,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   await env.DB.prepare(
     `INSERT INTO payment_webhook_events
       (event_id, provider, event_type, flow_type, reference_id, signature_verified, payload_json, processed_at)
-     VALUES (?, 'cashfree', ?, 'cashfree_webhook', ?, 1, ?, datetime('now'))`
+     VALUES (?, 'cashfree', ?, 'seller_order', ?, 1, ?, datetime('now'))`
   )
     .bind(eventId, eventType, orderId, rawBody)
     .run();
