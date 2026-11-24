@@ -48,6 +48,111 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
+function isLocalHost(hostname) {
+  const h = (hostname || '').toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.localhost');
+}
+
+function isApprovedDomain(hostname) {
+  const h = (hostname || '').toLowerCase();
+  if (isLocalHost(h)) return true;
+  if (h === 'vijay-visuals-site.pages.dev' || h.endsWith('.vijay-visuals-site.pages.dev')) return true;
+  if (h === 'vijayvisuals.com' || h.endsWith('.vijayvisuals.com')) return true;
+  return false;
+}
+
+function getSafeRequestOrigin(request, env) {
+  const configuredOrigin = (env?.APP_BASE_URL || env?.PUBLIC_ORIGIN || '').trim();
+  if (configuredOrigin) {
+    try {
+      const parsed = new URL(configuredOrigin);
+      if (parsed.protocol === 'https:' || (parsed.protocol === 'http:' && isLocalHost(parsed.hostname))) {
+        return parsed.origin;
+      }
+    } catch {}
+  }
+
+  if (request?.url) {
+    try {
+      const reqUrl = new URL(request.url);
+      const proto = reqUrl.protocol;
+      const host = reqUrl.hostname;
+      if (proto === 'https:' || (proto === 'http:' && isLocalHost(host))) {
+        return reqUrl.origin;
+      }
+    } catch {}
+  }
+
+  const envMode = (env?.CASHFREE_ENV || 'sandbox').toLowerCase().trim();
+  if (envMode === 'production') {
+    return 'https://vijay-visuals-site.pages.dev';
+  }
+  return 'https://master.vijay-visuals-site.pages.dev';
+}
+
+function resolveSafeReturnUrl(inputUrl, fallbackPath, request, env) {
+  const safeOrigin = getSafeRequestOrigin(request, env);
+  const cleanFallbackPath = (fallbackPath || '/').startsWith('/') ? fallbackPath : `/${fallbackPath}`;
+
+  if (!inputUrl || typeof inputUrl !== 'string' || inputUrl.trim() === '') {
+    return `${safeOrigin}${cleanFallbackPath}`;
+  }
+
+  const trimmed = inputUrl.trim();
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    return `${safeOrigin}${trimmed}`;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return `${safeOrigin}${cleanFallbackPath}`;
+    }
+    const parsedOrigin = parsed.origin;
+
+    if (parsedOrigin === safeOrigin) {
+      return parsed.toString();
+    }
+
+    if (
+      isApprovedDomain(parsed.hostname) &&
+      (parsed.protocol === 'https:' || (parsed.protocol === 'http:' && isLocalHost(parsed.hostname)))
+    ) {
+      return parsed.toString();
+    }
+
+    return `${safeOrigin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return `${safeOrigin}${cleanFallbackPath}`;
+  }
+}
+
+function getSafeCashfreeNotifyUrl(request, env) {
+  const explicitWebhookUrl = (env?.CASHFREE_WEBHOOK_URL || '').trim();
+  if (explicitWebhookUrl) {
+    try {
+      const parsed = new URL(explicitWebhookUrl);
+      if (parsed.protocol === 'https:') {
+        return parsed.toString();
+      }
+    } catch {}
+  }
+
+  const safeOrigin = getSafeRequestOrigin(request, env);
+  try {
+    const parsed = new URL(safeOrigin);
+    if (parsed.protocol === 'https:' && !isLocalHost(parsed.hostname)) {
+      return `${safeOrigin}/api/webhooks/cashfree`;
+    }
+  } catch {}
+
+  const envMode = (env?.CASHFREE_ENV || 'sandbox').toLowerCase().trim();
+  if (envMode === 'production') {
+    return 'https://vijay-visuals-site.pages.dev/api/webhooks/cashfree';
+  }
+  return 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree';
+}
+
 // ----------------------------------------------------------------------------
 // Mock Test Database
 // ----------------------------------------------------------------------------
@@ -423,7 +528,7 @@ function simulateShippingStatusUpdate({ db, orderId, websiteId, nextStatus, veri
 // ----------------------------------------------------------------------------
 async function runTests() {
   console.log('====================================================================');
-  console.log('VIJAY VISUALS — CASHFREE REMEDIATION SECURITY TEST SUITE (30 TESTS)');
+  console.log('VIJAY VISUALS — CASHFREE REMEDIATION SECURITY TEST SUITE (36 TESTS)');
   console.log('====================================================================\n');
 
   let passed = 0;
@@ -883,11 +988,90 @@ async function runTests() {
     assert.strictEqual(resUnauthorized.status, 403);
   });
 
+  // Test 31: Dynamic request origin resolution for Preview and Production domains
+  test('31: Dynamic request origin resolution for Preview and Production domains', () => {
+    // 1. Preview request origin
+    const previewReq = { url: 'https://master.vijay-visuals-site.pages.dev/api/orders' };
+    const previewOrigin = getSafeRequestOrigin(previewReq, { CASHFREE_ENV: 'sandbox' });
+    assert.strictEqual(previewOrigin, 'https://master.vijay-visuals-site.pages.dev');
+
+    // 2. Production custom domain request origin
+    const prodReq = { url: 'https://vijayvisuals.com/api/orders' };
+    const prodOrigin = getSafeRequestOrigin(prodReq, { CASHFREE_ENV: 'production' });
+    assert.strictEqual(prodOrigin, 'https://vijayvisuals.com');
+
+    // 3. Fallback when request is missing
+    const defaultPreview = getSafeRequestOrigin(null, { CASHFREE_ENV: 'sandbox' });
+    assert.strictEqual(defaultPreview, 'https://master.vijay-visuals-site.pages.dev');
+    const defaultProd = getSafeRequestOrigin(null, { CASHFREE_ENV: 'production' });
+    assert.strictEqual(defaultProd, 'https://vijay-visuals-site.pages.dev');
+  });
+
+  // Test 32: Relative return URL path resolution dynamically preserves request origin
+  test('32: Relative return URL path resolution dynamically preserves request origin', () => {
+    const previewReq = { url: 'https://master.vijay-visuals-site.pages.dev/api/orders' };
+    const resolvedPreview = resolveSafeReturnUrl('/site/royal-feast?order_id=vv_123', '/site/royal-feast', previewReq, { CASHFREE_ENV: 'sandbox' });
+    assert.strictEqual(resolvedPreview, 'https://master.vijay-visuals-site.pages.dev/site/royal-feast?order_id=vv_123');
+
+    const prodReq = { url: 'https://vijayvisuals.com/api/orders' };
+    const resolvedProd = resolveSafeReturnUrl('/proposal/sec_token_99?order_id=cf_99', '/proposal/sec_token_99', prodReq, { CASHFREE_ENV: 'production' });
+    assert.strictEqual(resolvedProd, 'https://vijayvisuals.com/proposal/sec_token_99?order_id=cf_99');
+  });
+
+  // Test 33: Open Redirect prevention: untrusted external origin re-anchored to safe origin
+  test('33: Open Redirect prevention: untrusted external origin re-anchored to safe origin', () => {
+    const req = { url: 'https://master.vijay-visuals-site.pages.dev/api/payments/cashfree/create-order' };
+    // Attacker passes an external phishing URL
+    const maliciousUrl = 'https://attacker-phishing.com/steal-credentials?token=xyz';
+    const sanitized = resolveSafeReturnUrl(maliciousUrl, '/payments/cashfree/return', req, { CASHFREE_ENV: 'sandbox' });
+    // Must NOT redirect to attacker domain; must re-anchor to safe origin
+    assert.strictEqual(sanitized.startsWith('https://master.vijay-visuals-site.pages.dev'), true);
+    assert.strictEqual(sanitized.includes('attacker-phishing.com'), false);
+    assert.strictEqual(sanitized, 'https://master.vijay-visuals-site.pages.dev/steal-credentials?token=xyz');
+  });
+
+  // Test 34: Malformed or script return URLs safely fall back without open redirect
+  test('34: Malformed or script return URLs safely fall back without open redirect', () => {
+    const req = { url: 'https://master.vijay-visuals-site.pages.dev/api/orders' };
+    // Javascript pseudo-protocol injection
+    const jsUrl = 'javascript:alert(document.cookie)';
+    const safeJs = resolveSafeReturnUrl(jsUrl, '/payments/cashfree/return', req, { CASHFREE_ENV: 'sandbox' });
+    assert.strictEqual(safeJs, 'https://master.vijay-visuals-site.pages.dev/payments/cashfree/return');
+
+    // Scheme-relative URL
+    const schemeRelative = '//evil.com/phishing';
+    const safeScheme = resolveSafeReturnUrl(schemeRelative, '/site/store', req, { CASHFREE_ENV: 'sandbox' });
+    assert.strictEqual(safeScheme.includes('//evil.com'), false);
+    assert.strictEqual(safeScheme.startsWith('https://master.vijay-visuals-site.pages.dev'), true);
+  });
+
+  // Test 35: Webhook notify URL resolves to trusted public endpoint in Preview and Production
+  test('35: Webhook notify URL resolves to trusted public endpoint in Preview and Production', () => {
+    const previewReq = { url: 'https://master.vijay-visuals-site.pages.dev/api/orders' };
+    const previewNotify = getSafeCashfreeNotifyUrl(previewReq, { CASHFREE_ENV: 'sandbox' });
+    assert.strictEqual(previewNotify, 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree');
+
+    const prodReq = { url: 'https://vijayvisuals.com/api/orders' };
+    const prodNotify = getSafeCashfreeNotifyUrl(prodReq, { CASHFREE_ENV: 'production' });
+    assert.strictEqual(prodNotify, 'https://vijayvisuals.com/api/webhooks/cashfree');
+  });
+
+  // Test 36: Webhook notify URL safely falls back from localhost to public preview endpoint
+  test('36: Webhook notify URL safely falls back from localhost to public preview endpoint', () => {
+    // Localhost cannot receive webhooks from Cashfree servers on the internet
+    const localReq = { url: 'http://localhost:5173/api/orders' };
+    const localNotify = getSafeCashfreeNotifyUrl(localReq, { CASHFREE_ENV: 'sandbox' });
+    assert.strictEqual(localNotify, 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree');
+
+    const localProd = getSafeCashfreeNotifyUrl(localReq, { CASHFREE_ENV: 'production' });
+    assert.strictEqual(localProd, 'https://vijay-visuals-site.pages.dev/api/webhooks/cashfree');
+  });
+
   console.log('\n====================================================================');
-  console.log(`TEST SUMMARY: ${passed} PASSED, ${30 - passed} FAILED (TOTAL: 30)`);
+  console.log(`TEST SUMMARY: ${passed} PASSED, ${36 - passed} FAILED (TOTAL: 36)`);
   console.log('====================================================================');
 
-  if (passed !== 30) {
+  if (passed !== 36) {
     process.exit(1);
   }
 }

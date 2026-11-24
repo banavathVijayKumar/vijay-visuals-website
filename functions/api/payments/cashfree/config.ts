@@ -4,10 +4,11 @@
 // ============================================================================
 
 import { PagesContext, json } from '../../_shared';
-import { getEdgeCashfreeStatus } from '../_cashfree';
+import { getEdgeCashfreeStatus, getSafeCashfreeNotifyUrl } from '../_cashfree';
 
 export async function onRequestGet(context: PagesContext): Promise<Response> {
   const status = getEdgeCashfreeStatus(context.env);
+  const webhookUrl = getSafeCashfreeNotifyUrl(context.request, context.env);
 
   return json({
     cashfree: {
@@ -15,7 +16,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       mode: status.mode,
       webhookConfigured: status.webhookConfigured,
       apiVersion: status.apiVersion,
-      webhookUrl: 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree',
+      webhookUrl,
       message: status.message,
     },
     policy: {

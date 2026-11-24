@@ -150,6 +150,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         plan_code: plan.code,
         user_id: auth.user.id,
       },
+      request: context.request,
     });
 
     const notesObj = {

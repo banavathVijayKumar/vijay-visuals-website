@@ -8,7 +8,12 @@
 // 5. Rejection of Draft, Sent, Viewed, Declined, and Already-Paid proposals
 // ============================================================================
 
-import { createEdgeCashfreeOrder, getEdgeCashfreeStatus } from '../../payments/_cashfree';
+import {
+  createEdgeCashfreeOrder,
+  getEdgeCashfreeStatus,
+  getSafeCashfreeNotifyUrl,
+  resolveSafeReturnUrl,
+} from '../../payments/_cashfree';
 import { PagesContext, errorJson, handleOptions, json, parseJsonBody } from '../../_shared';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -83,7 +88,13 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
   );
 
   const cfOrderId = `vv_prop_${proposal.proposal_number.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}_${Date.now().toString().slice(-4)}`;
-  const returnUrl = `https://master.vijay-visuals-site.pages.dev/proposal/${proposal.secure_token}?order_id=${encodeURIComponent(cfOrderId)}&status=return`;
+  const returnUrl = resolveSafeReturnUrl(
+    `/proposal/${proposal.secure_token}?order_id=${encodeURIComponent(cfOrderId)}&status=return`,
+    `/proposal/${proposal.secure_token}`,
+    request,
+    env
+  );
+  const notifyUrl = getSafeCashfreeNotifyUrl(request, env);
 
   try {
     const cfOrder = await createEdgeCashfreeOrder(env, {
@@ -98,8 +109,9 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       },
       orderMeta: {
         returnUrl,
-        notifyUrl: 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree',
+        notifyUrl,
       },
+      request,
       orderNote: `[PROPOSAL] ${proposal.proposal_number} - ${proposal.business_name} (${proposal.package_tier || 'STARTER'})`,
       orderTags: {
         proposal_id: String(proposal.id),

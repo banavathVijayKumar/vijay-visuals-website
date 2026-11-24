@@ -94,6 +94,133 @@ export function getCashfreeHeaders(env: CloudflareEnv): HeadersInit {
   };
 }
 
+function isLocalHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.localhost');
+}
+
+export function isApprovedDomain(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  if (isLocalHost(h)) return true;
+  if (h === 'vijay-visuals-site.pages.dev' || h.endsWith('.vijay-visuals-site.pages.dev')) return true;
+  if (h === 'vijayvisuals.com' || h.endsWith('.vijayvisuals.com')) return true;
+  return false;
+}
+
+export function getSafeRequestOrigin(request?: Request | null, env?: CloudflareEnv | null): string {
+  // 1. Explicit admin override if configured in Cloudflare Pages
+  const configuredOrigin = getTrimmedEnvVar(env, 'APP_BASE_URL') || getTrimmedEnvVar(env, 'PUBLIC_ORIGIN');
+  if (configuredOrigin) {
+    try {
+      const parsed = new URL(configuredOrigin);
+      if (parsed.protocol === 'https:' || (parsed.protocol === 'http:' && isLocalHost(parsed.hostname))) {
+        return parsed.origin;
+      }
+    } catch {}
+  }
+
+  // 2. Derive dynamically from incoming Request URL
+  if (request && request.url) {
+    try {
+      const reqUrl = new URL(request.url);
+      const proto = reqUrl.protocol;
+      const host = reqUrl.hostname;
+
+      if (proto === 'https:' || (proto === 'http:' && isLocalHost(host))) {
+        return reqUrl.origin;
+      }
+    } catch {}
+  }
+
+  // 3. Fallback based on CASHFREE_ENV mode
+  const envMode = (getTrimmedEnvVar(env, 'CASHFREE_ENV') || 'sandbox').toLowerCase();
+  if (envMode === 'production') {
+    return 'https://vijay-visuals-site.pages.dev';
+  }
+  return 'https://master.vijay-visuals-site.pages.dev';
+}
+
+export function resolveSafeReturnUrl(
+  inputUrl: string | undefined | null,
+  fallbackPath: string,
+  request?: Request | null,
+  env?: CloudflareEnv | null
+): string {
+  const safeOrigin = getSafeRequestOrigin(request, env);
+  const cleanFallbackPath = fallbackPath.startsWith('/') ? fallbackPath : `/${fallbackPath}`;
+
+  if (!inputUrl || typeof inputUrl !== 'string' || inputUrl.trim() === '') {
+    return `${safeOrigin}${cleanFallbackPath}`;
+  }
+
+  const trimmed = inputUrl.trim();
+
+  // If input is a relative path (e.g. "/site/store?order_id=123")
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
+    return `${safeOrigin}${trimmed}`;
+  }
+
+  // If input is an absolute URL
+  try {
+    const parsed = new URL(trimmed);
+    // Reject non-http(s) protocols such as javascript:, data:, file:, etc.
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return `${safeOrigin}${cleanFallbackPath}`;
+    }
+
+    const parsedOrigin = parsed.origin;
+
+    // Check if origin matches current safe request origin
+    if (parsedOrigin === safeOrigin) {
+      return parsed.toString();
+    }
+
+    // Check if both are allowed approved Vijay Visuals domains
+    if (
+      isApprovedDomain(parsed.hostname) &&
+      (parsed.protocol === 'https:' || (parsed.protocol === 'http:' && isLocalHost(parsed.hostname)))
+    ) {
+      return parsed.toString();
+    }
+
+    // Defend against Open Redirect: re-anchor to safeOrigin with path & query
+    const safePath = parsed.pathname.startsWith('/') ? parsed.pathname : `/${parsed.pathname}`;
+    return `${safeOrigin}${safePath}${parsed.search}${parsed.hash}`;
+  } catch {
+    return `${safeOrigin}${cleanFallbackPath}`;
+  }
+}
+
+export function getSafeCashfreeNotifyUrl(request?: Request | null, env?: CloudflareEnv | null): string {
+  // 1. Explicit admin override if configured in Cloudflare Pages
+  const explicitWebhookUrl = getTrimmedEnvVar(env, 'CASHFREE_WEBHOOK_URL');
+  if (explicitWebhookUrl) {
+    try {
+      const parsed = new URL(explicitWebhookUrl);
+      if (parsed.protocol === 'https:') {
+        return parsed.toString();
+      }
+    } catch {}
+  }
+
+  // 2. Safe request origin
+  const safeOrigin = getSafeRequestOrigin(request, env);
+  try {
+    const parsed = new URL(safeOrigin);
+    // Public HTTPS domains reachable by Cashfree PG servers
+    if (parsed.protocol === 'https:' && !isLocalHost(parsed.hostname)) {
+      return `${safeOrigin}/api/webhooks/cashfree`;
+    }
+  } catch {}
+
+  // 3. Fallback for localhost / local testing to public preview/production endpoint
+  const envMode = (getTrimmedEnvVar(env, 'CASHFREE_ENV') || 'sandbox').toLowerCase();
+  if (envMode === 'production') {
+    return 'https://vijay-visuals-site.pages.dev/api/webhooks/cashfree';
+  }
+  return 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree';
+}
+
 export interface CreateCashfreeOrderInput {
   orderId: string;
   amountInr: number;
@@ -111,6 +238,7 @@ export interface CreateCashfreeOrderInput {
   };
   orderNote?: string;
   orderTags?: Record<string, string>;
+  request?: Request;
 }
 
 export interface EdgeCashfreeOrderResponse {
@@ -181,14 +309,15 @@ export async function createEdgeCashfreeOrder(
       customer_phone: phone,
     },
     order_meta: {
-      return_url:
-        input.orderMeta?.returnUrl ||
-        `https://master.vijay-visuals-site.pages.dev/payments/cashfree/return?order_id=${encodeURIComponent(
-          input.orderId
-        )}`,
+      return_url: resolveSafeReturnUrl(
+        input.orderMeta?.returnUrl,
+        `/payments/cashfree/return?order_id=${encodeURIComponent(input.orderId)}`,
+        input.request,
+        env
+      ),
       notify_url:
         input.orderMeta?.notifyUrl ||
-        'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree',
+        getSafeCashfreeNotifyUrl(input.request, env),
       payment_methods: input.orderMeta?.paymentMethods || 'cc,dc,upi,nb,app',
     },
     order_note: (input.orderNote || 'Vijay Visuals Website Service').slice(0, 200),

@@ -24,7 +24,12 @@ import {
   mapOrderRowToUi,
   parseProductMeta,
 } from './_tenantAccess';
-import { createEdgeCashfreeOrder, getEdgeCashfreeStatus } from './payments/_cashfree';
+import {
+  createEdgeCashfreeOrder,
+  getEdgeCashfreeStatus,
+  getSafeCashfreeNotifyUrl,
+  resolveSafeReturnUrl,
+} from './payments/_cashfree';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -297,9 +302,13 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       cfOrderId = isSandboxTestOrder
         ? `test_vv_store_${orderNumber}_${randomHex(2)}`
         : `vv_store_${orderNumber}_${randomHex(2)}`;
-      const returnUrl = `https://master.vijay-visuals-site.pages.dev/site/${pub.public_slug}?order_id=${encodeURIComponent(
-        cfOrderId
-      )}`;
+      const returnUrl = resolveSafeReturnUrl(
+        `/site/${pub.public_slug}?order_id=${encodeURIComponent(cfOrderId)}`,
+        `/site/${pub.public_slug}`,
+        request,
+        env
+      );
+      const notifyUrl = getSafeCashfreeNotifyUrl(request, env);
 
       const cfRes = await createEdgeCashfreeOrder(env, {
         orderId: cfOrderId,
@@ -311,7 +320,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           customerEmail: customerEmail || 'vk66278@gmail.com',
           customerPhone: customerPhone || '9381362201',
         },
-        orderMeta: { returnUrl },
+        orderMeta: { returnUrl, notifyUrl },
+        request,
         orderNote: isSandboxTestOrder
           ? `[SANDBOX TEST ORDER] Cashfree PG Sandbox Test (₹${total})`
           : `Store Order #${orderNumber} (${pub.public_slug || 'Store'})`,

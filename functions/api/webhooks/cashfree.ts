@@ -12,6 +12,7 @@ import { PagesContext, errorJson, handleOptions, json, sanitizeText, writeAuditL
 import {
   fetchEdgeCashfreeOrder,
   fetchEdgeCashfreeOrderPayments,
+  getSafeCashfreeNotifyUrl,
   getTrimmedEnvVar,
   verifyEdgeCashfreeWebhookSignature,
 } from '../payments/_cashfree';
@@ -59,12 +60,13 @@ export async function onRequestOptions(): Promise<Response> {
 }
 
 export async function onRequestGet(context: PagesContext): Promise<Response> {
+  const endpoint = getSafeCashfreeNotifyUrl(context.request, context.env);
   return json({
     ok: true,
     status: 'active',
     gateway: 'Cashfree Payment Gateway',
     apiVersion: '2023-08-01',
-    endpoint: 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree',
+    endpoint,
     message: 'Cashfree webhook endpoint is ready and accepting requests.',
   });
 }

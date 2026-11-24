@@ -5,10 +5,11 @@
 // ============================================================================
 
 import { PagesContext, json } from '../_shared';
-import { getEdgeCashfreeStatus } from './_cashfree';
+import { getEdgeCashfreeStatus, getSafeCashfreeNotifyUrl } from './_cashfree';
 
 export async function onRequestGet(context: PagesContext): Promise<Response> {
   const cfStatus = getEdgeCashfreeStatus(context.env);
+  const webhookUrl = getSafeCashfreeNotifyUrl(context.request, context.env);
 
   return json({
     gateway: 'Cashfree Payments',
@@ -17,7 +18,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       mode: cfStatus.mode,
       webhookConfigured: cfStatus.webhookConfigured,
       apiVersion: cfStatus.apiVersion,
-      webhookUrl: 'https://master.vijay-visuals-site.pages.dev/api/webhooks/cashfree',
+      webhookUrl,
       message: cfStatus.message,
     },
     settlementPolicy: {

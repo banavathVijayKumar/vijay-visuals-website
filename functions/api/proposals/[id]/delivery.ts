@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { requireUser } from '../../_auth';
+import { getSafeRequestOrigin } from '../../payments/_cashfree';
 import { PagesContext, errorJson, handleOptions, json, parseJsonBody, sanitizeText } from '../../_shared';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -31,7 +32,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
   const proposal = await env.DB.prepare('SELECT * FROM platform_proposals WHERE id = ?').bind(id).first<Record<string, any>>();
   if (!proposal) return errorJson('Proposal not found.', 404);
 
-  const baseUrl = 'https://master.vijay-visuals-site.pages.dev';
+  const baseUrl = getSafeRequestOrigin(request, env);
   const proposalUrl = `${baseUrl}/proposal/${proposal.secure_token}`;
   const amountFormatted = `₹${(proposal.grand_total_inr || proposal.development_fee_inr || 7999).toLocaleString('en-IN')}`;
   const hasConfirmedGst = Boolean(proposal.gst_confirmed || (proposal.gst_percent && Number(proposal.gst_percent) > 0 && proposal.gst_status === 'confirmed'));
