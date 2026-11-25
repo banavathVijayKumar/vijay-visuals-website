@@ -31,8 +31,9 @@ There is no separate purchased-credit/top-up table in the current schema. “Pur
 
 ## Failure behavior
 
-- Missing D1 binding, missing ledger table/column, or any ledger write error fails closed with `503 AI_LEDGER_UNAVAILABLE` before the provider call.
-- There is no best-effort or unmetered fallback when the reservation system is unavailable.
+- All five HTTP AI endpoints (`/api/ai/generate`, `/api/ai/content-studio`, `/api/ai/seo-assistant`, `/api/platform/ai-assistant`, `/api/owner/tenants/:tenantId/ai-assistant`) call `requireAuthorizedAiTenant()` before the credit meter. That gate requires D1, so HTTP requests fail closed when D1 is unavailable, before any provider call or reservation is attempted.
+- On the HTTP path, a missing ledger table/column or any ledger write error also fails closed with `503 AI_LEDGER_UNAVAILABLE` before the provider call. There is no best-effort or unmetered fallback on that path.
+- **Legacy internal library fallback:** `executeWithAiCreditDeduction()` itself still contains a pre-existing branch for a direct library invocation with no `env.DB` binding. In that branch it calls `executeAiCall()` and returns synthetic quota values (`allowance: 100`, `used: 1`, `remaining: 99`) with no D1 reservation. This fallback is not reachable through the five audited HTTP endpoints because the authorization gate rejects the request first. It is not correct to claim that every internal library invocation fails closed without D1.
 - Retrying the same request ID after a provider failure returns `409 AI_REQUEST_ALREADY_USED`; use a new request ID to retry.
 
 ## Honest limitations
@@ -40,3 +41,4 @@ There is no separate purchased-credit/top-up table in the current schema. “Pur
 - `tenant_ai_usage.request_id` is globally unique. A request ID used by one tenant cannot be reused by another; collisions return `409`. This prevents cross-tenant replay but means clients should generate sufficiently unique IDs.
 - Successful idempotent responses are cached only in the current isolate. If the cache entry is absent, a replay still does not call the provider or charge credits, but it returns a neutral “already processed” notice instead of the original text.
 - `getTenantAiQuota()` and `_aiTenantAccess` perform advisory preflight reads. They improve UX but are not the enforcement boundary.
+- **Reservation timeout / quota overrun window (inherited, not fixed by Priority Fix 14):** a reservation counts toward usage only while its `created_at` is within the last two minutes; older `reserved` rows are marked `failed` with `credits_deducted = 0`. If a provider request lasts longer than that two-minute window, its reservation can be expired by the cleanup, and another request can then consume the released allowance. That creates a potential quota overrun window. This behavior predates Priority Fix 14 and is not eliminated by the atomic reservation statement, which closes only the read-then-write race at reservation time.
