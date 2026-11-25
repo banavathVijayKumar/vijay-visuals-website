@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bell, CreditCard, ShieldCheck, Wallet } from 'lucide-react';
+import { Bell, CreditCard, ShieldCheck, Wallet, Mail, MessageSquare } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import {
   PlatformAnnouncementRecord,
@@ -25,6 +25,22 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
   const [transfers, setTransfers] = useState<SellerTransferRecord[]>([]);
   const [announcements, setAnnouncements] = useState<PlatformAnnouncementRecord[]>([]);
   const [webhookCount, setWebhookCount] = useState(0);
+  const [notificationLogs, setNotificationLogs] = useState<
+    Array<{
+      id: number;
+      recipient: string;
+      channel: string;
+      eventType: string;
+      subject: string;
+      status: string;
+      providerMessageId: string;
+      errorDetail: string;
+      createdAt: string;
+      fallbackAvailable: boolean;
+    }>
+  >([]);
+  const [emailConfigured, setEmailConfigured] = useState(false);
+  const [whatsappConfigured, setWhatsappConfigured] = useState(false);
 
   // Announcement form
   const [annTitle, setAnnTitle] = useState('');
@@ -46,6 +62,9 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
         sellerTransfers: SellerTransferRecord[];
         announcements: PlatformAnnouncementRecord[];
         webhookEvents: Array<{ id: number }>;
+        notificationLogs?: Array<any>;
+        emailConfigured?: boolean;
+        whatsappConfigured?: boolean;
       }>('/api/admin/ecosystem');
       setCashfree(res.cashfree || res.razorpay || null);
       setPayments(res.platformPayments);
@@ -53,6 +72,9 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
       setTransfers(res.sellerTransfers);
       setAnnouncements(res.announcements);
       setWebhookCount(res.webhookEvents.length);
+      setNotificationLogs(res.notificationLogs || []);
+      setEmailConfigured(Boolean(res.emailConfigured));
+      setWhatsappConfigured(Boolean(res.whatsappConfigured));
       const rDrafts: Record<number, string> = {};
       const cDrafts: Record<number, number> = {};
       res.sellerAccounts.forEach((s) => {
@@ -309,6 +331,98 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* 5. TRANSACTIONAL NOTIFICATIONS MONITOR (RESEND & WHATSAPP) */}
+      <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#1E1E2B]">
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <Mail className="w-4 h-4 text-[#DFBA5A]" />
+              <span>Transactional Notifications Ledger</span>
+            </h3>
+            <p className="text-[11px] text-[#8E8EA2]">
+              Real-time audit log of customer registration OTPs, order confirmations, payment receipts, and delivery notifications.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                emailConfigured
+                  ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-300'
+                  : 'bg-amber-950/60 border border-amber-500/40 text-amber-300'
+              }`}
+            >
+              Email: {emailConfigured ? 'Resend Ready' : 'Setup Required'}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                whatsappConfigured
+                  ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-300'
+                  : 'bg-amber-950/60 border border-amber-500/40 text-amber-300'
+              }`}
+            >
+              WhatsApp: {whatsappConfigured ? 'Cloud API' : 'Click-to-Chat Fallback'}
+            </span>
+          </div>
+        </div>
+
+        {notificationLogs.length === 0 ? (
+          <p className="text-[#8E8EA2] text-center py-4">No notification events recorded yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-[#1E1E2B] text-[#8E8EA2]">
+                  <th className="pb-2 font-medium">Channel</th>
+                  <th className="pb-2 font-medium">Event</th>
+                  <th className="pb-2 font-medium">Recipient</th>
+                  <th className="pb-2 font-medium">Status</th>
+                  <th className="pb-2 font-medium">Provider Ref ID</th>
+                  <th className="pb-2 font-medium">Timestamp</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#171722]">
+                {notificationLogs.map((log) => (
+                  <tr key={log.id} className="text-[#CCCCCC]">
+                    <td className="py-2.5">
+                      <span className="inline-flex items-center gap-1 font-semibold uppercase text-[10px] text-white">
+                        {log.channel === 'whatsapp' ? (
+                          <>
+                            <MessageSquare className="w-3 h-3 text-emerald-400" /> WhatsApp
+                          </>
+                        ) : (
+                          <>
+                            <Mail className="w-3 h-3 text-[#DFBA5A]" /> Email
+                          </>
+                        )}
+                      </span>
+                    </td>
+                    <td className="py-2.5 font-mono text-[11px] text-[#E0C068]">{log.eventType}</td>
+                    <td className="py-2.5 font-mono text-[11px] text-white">{log.recipient}</td>
+                    <td className="py-2.5">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          log.status === 'delivered' || log.status === 'sent'
+                            ? 'bg-emerald-950/50 text-emerald-300 border border-emerald-500/30'
+                            : log.status === 'setup_required'
+                              ? 'bg-amber-950/50 text-amber-300 border border-amber-500/30'
+                              : 'bg-rose-950/50 text-rose-300 border border-rose-500/30'
+                        }`}
+                      >
+                        {log.status}
+                      </span>
+                    </td>
+                    <td className="py-2.5 font-mono text-[10px] text-[#8E8EA2]">
+                      {log.providerMessageId || '—'}
+                    </td>
+                    <td className="py-2.5 text-[11px] text-[#707085]">{log.createdAt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

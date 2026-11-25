@@ -8,6 +8,8 @@
 // ============================================================================
 
 import { requireUser } from './_auth';
+import { sendTransactionalEmail, buildOrderConfirmationEmailHtml } from './_email';
+import { sendWhatsAppNotification } from './_whatsapp';
 import {
   PagesContext,
   checkRateLimit,
@@ -417,6 +419,61 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       : await env.DB.prepare('SELECT * FROM store_orders WHERE order_number = ? LIMIT 1')
           .bind(orderNumber)
           .first<Record<string, any>>();
+
+    // Dispatch Order Received Notifications (Resend Email & WhatsApp)
+    const formattedAmount = `₹${(total || 0).toLocaleString('en-IN')}`;
+    const storeName = pub.business_name || 'Vijay Visuals Store';
+    if (customerEmail && customerEmail.includes('@')) {
+      try {
+        const orderEmailHtml = buildOrderConfirmationEmailHtml({
+          customerName,
+          orderNumber,
+          packageName: `${storeName} Order`,
+          amountFormatted: formattedAmount,
+          dashboardUrl: 'https://vijay-visuals-site.pages.dev/dashboard',
+        });
+        await sendTransactionalEmail(env, {
+          to: customerEmail,
+          subject: `Order Confirmed: #${orderNumber}`,
+          html: orderEmailHtml,
+          text: `Your order #${orderNumber} for ${formattedAmount} has been placed.`,
+          eventType: 'order_received',
+          websiteId: pub.website_id,
+          idempotencyKey: `ord_em_${orderNumber}`,
+        });
+      } catch (err) {
+        console.error('Failed to dispatch order email notification:', err);
+      }
+    }
+
+    if (customerPhone) {
+      try {
+        const waMsg = [
+          `🛍 *${storeName} — Order Confirmed* 🛍`,
+          ``,
+          `Hello ${customerName},`,
+          `Your order *#${orderNumber}* has been successfully placed.`,
+          ``,
+          `💰 *Total Amount:* ${formattedAmount}`,
+          `📦 *Items:* ${orderLines.length} item(s)`,
+          `📍 *Delivery Address:* ${streetAddress}, ${city}`,
+          ``,
+          `Track your order status: https://vijay-visuals-site.pages.dev/dashboard`,
+          ``,
+          `Thank you for shopping with us!`,
+        ].join('\n');
+
+        await sendWhatsAppNotification(env, {
+          toPhone: customerPhone,
+          messageText: waMsg,
+          eventType: 'order_received',
+          websiteId: pub.website_id,
+          idempotencyKey: `ord_wa_${orderNumber}`,
+        });
+      } catch (err) {
+        console.error('Failed to dispatch order WhatsApp notification:', err);
+      }
+    }
 
     return jsonResponse(
       {

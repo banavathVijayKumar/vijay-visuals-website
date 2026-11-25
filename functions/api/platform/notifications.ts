@@ -7,6 +7,8 @@
 // ============================================================================
 
 import { requireUser, requireWebsiteAccess } from '../_auth';
+import { sendTransactionalEmail } from '../_email';
+import { sendWhatsAppNotification } from '../_whatsapp';
 import {
   PagesContext,
   errorJson,
@@ -120,60 +122,33 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   let errorDetail = '';
 
   if (channel === 'whatsapp') {
-    const token = (env.WHATSAPP_CLOUD_API_TOKEN || '').trim();
-    const phoneNumberId = (env.WHATSAPP_PHONE_NUMBER_ID || '').trim();
-    if (!token || !phoneNumberId) {
-      deliveryStatus = 'setup_required';
-      errorDetail =
-        'Integration Required: Configure WHATSAPP_CLOUD_API_TOKEN and WHATSAPP_PHONE_NUMBER_ID in Cloudflare Pages Secrets.';
-    } else {
-      const cleanPhone = recipientContact.replace(/[^\d]/g, '');
-      if (cleanPhone.length < 10) {
-        return errorJson('Valid WhatsApp recipient phone number with country code is required.', 400);
-      }
-      try {
-        const waRes = await fetch(
-          `https://graph.facebook.com/v20.0/${encodeURIComponent(phoneNumberId)}/messages`,
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              messaging_product: 'whatsapp',
-              to: cleanPhone,
-              type: 'text',
-              text: { body: message },
-            }),
-          }
-        );
-        const waData = (await waRes.json().catch(() => ({}))) as {
-          messages?: Array<{ id?: string }>;
-          error?: { message?: string };
-        };
-        if (waRes.ok && waData.messages?.[0]?.id) {
-          deliveryStatus = 'sent';
-          providerMessageId = waData.messages[0].id;
-        } else {
-          deliveryStatus = 'failed';
-          errorDetail = waData.error?.message || `WhatsApp Cloud API returned HTTP ${waRes.status}`;
-        }
-      } catch (err) {
-        deliveryStatus = 'failed';
-        errorDetail = err instanceof Error ? err.message : 'WhatsApp Cloud API network error';
-      }
-    }
+    const waResult = await sendWhatsAppNotification(env, {
+      toPhone: recipientContact,
+      messageText: message,
+      eventType,
+      websiteId,
+      recipientUserId: body.recipientUserId || null,
+    });
+    deliveryStatus = waResult.status === 'setup_required' ? 'setup_required' : waResult.ok ? 'sent' : 'failed';
+    providerMessageId = waResult.providerMessageId || '';
+    errorDetail = waResult.error || waResult.notice || '';
   } else if (channel === 'email') {
-    if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
-      deliveryStatus = 'setup_required';
-      errorDetail =
-        'Integration Required: Configure SMTP_HOST, SMTP_USER, SMTP_PASS, and SMTP_FROM (or HTTP Email API like Resend/MailChannels) in Cloudflare Pages Secrets.';
-    } else {
-      deliveryStatus = 'setup_required';
-      errorDetail =
-        'Note: Cloudflare Pages Edge does not open raw TCP SMTP sockets natively; wire an HTTPS email relay (e.g., Resend/Postmark/SendGrid) using your configured email credentials.';
-    }
+    const emailResult = await sendTransactionalEmail(env, {
+      to: recipientContact,
+      subject,
+      html: `<div style="font-family:sans-serif;background:#0A0A0F;color:#FFF;padding:24px;border-radius:8px;border:1px solid #DFBA5A;">
+        <h2 style="color:#DFBA5A;margin-top:0;">VIJAY VISUALS</h2>
+        <div style="font-size:14px;line-height:1.6;color:#CCC;">${message.replace(/\n/g, '<br/>')}</div>
+        <p style="font-size:11px;color:#888;margin-top:24px;border-top:1px solid #222;padding-top:12px;">Vijay Visuals Digital Architecture · Hyderabad, Telangana</p>
+      </div>`,
+      text: message,
+      eventType,
+      websiteId,
+      recipientUserId: body.recipientUserId || null,
+    });
+    deliveryStatus = emailResult.status === 'setup_required' ? 'setup_required' : emailResult.ok ? 'sent' : 'failed';
+    providerMessageId = emailResult.providerMessageId || '';
+    errorDetail = emailResult.error || emailResult.notice || '';
   } else if (channel === 'sms') {
     if (!env.SMS_PROVIDER_API_KEY) {
       deliveryStatus = 'setup_required';

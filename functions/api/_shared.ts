@@ -347,13 +347,18 @@ export async function writeAuditLog(
 
 export function getNotificationChannelStatus(env: CloudflareEnv): {
   in_app: 'delivered';
-  email: 'configured' | 'setup_required_smtp';
+  email: 'configured' | 'setup_required_email';
   whatsapp: 'configured' | 'setup_required_whatsapp';
   sms: 'configured' | 'setup_required_sms';
 } {
+  const emailConfigured = Boolean(
+    (env.RESEND_API_KEY && env.RESEND_API_KEY.trim()) ||
+    (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS)
+  );
+
   return {
     in_app: 'delivered',
-    email: env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS ? 'configured' : 'setup_required_smtp',
+    email: emailConfigured ? 'configured' : 'setup_required_email',
     whatsapp:
       env.WHATSAPP_CLOUD_API_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID
         ? 'configured'

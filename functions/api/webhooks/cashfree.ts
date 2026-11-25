@@ -9,6 +9,8 @@
 // ============================================================================
 
 import { PagesContext, errorJson, handleOptions, json, sanitizeText, writeAuditLog } from '../_shared';
+import { sendTransactionalEmail, buildPaymentReceiptEmailHtml } from '../_email';
+import { sendWhatsAppNotification } from '../_whatsapp';
 import {
   fetchEdgeCashfreeOrder,
   fetchEdgeCashfreeOrderPayments,
@@ -414,6 +416,65 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           })
         )
         .run();
+    }
+
+    // 6. Trigger Verified Payment Notifications (Resend Email & WhatsApp)
+    const customerEmail =
+      existingPayment?.user_email || storeOrder?.customer_email || body.data?.customer_details?.customer_email || '';
+    const customerPhone =
+      existingPayment?.user_phone || storeOrder?.customer_phone || body.data?.customer_details?.customer_phone || '';
+    const customerName = storeOrder?.customer_name || body.data?.customer_details?.customer_name || 'Customer';
+    const formattedPaid = `₹${(paymentPaise / 100).toLocaleString('en-IN')}`;
+
+    if (customerEmail && customerEmail.includes('@')) {
+      try {
+        const paymentReceiptHtml = buildPaymentReceiptEmailHtml({
+          customerName,
+          orderNumber: orderId,
+          paymentId: cfPaymentId,
+          amountFormatted: formattedPaid,
+          paymentTime: paymentData?.payment_time || new Date().toISOString(),
+          dashboardUrl: 'https://vijay-visuals-site.pages.dev/dashboard',
+        });
+        await sendTransactionalEmail(env, {
+          to: customerEmail,
+          subject: `Payment Confirmed: Order #${orderId}`,
+          html: paymentReceiptHtml,
+          text: `Payment confirmed for Order #${orderId}. Amount: ${formattedPaid}. Payment ID: ${cfPaymentId}.`,
+          eventType: 'payment_confirmed',
+          idempotencyKey: `pay_em_${orderId}_${cfPaymentId}`,
+        });
+      } catch (notifyErr) {
+        console.error('Failed to dispatch payment confirmed email:', notifyErr);
+      }
+    }
+
+    if (customerPhone) {
+      try {
+        const waText = [
+          `🌟 *VIJAY VISUALS — Payment Confirmed* 🌟`,
+          ``,
+          `Dear ${customerName},`,
+          `Your payment of *${formattedPaid}* for Order *#${orderId}* has been verified successfully.`,
+          ``,
+          `💳 *Transaction ID:* ${cfPaymentId}`,
+          `📋 *Status:* Confirmed & Scheduled for Development`,
+          `⏱ *Timeline:* 3–5 Business Days`,
+          `🔍 *Track Order:* https://vijay-visuals-site.pages.dev/dashboard`,
+          ``,
+          `Thank you for choosing Vijay Visuals!`,
+          `Official Mobile: +91 93610 24823`,
+        ].join('\n');
+
+        await sendWhatsAppNotification(env, {
+          toPhone: customerPhone,
+          messageText: waText,
+          eventType: 'payment_confirmed',
+          idempotencyKey: `pay_wa_${orderId}_${cfPaymentId}`,
+        });
+      } catch (notifyErr) {
+        console.error('Failed to dispatch payment confirmed WhatsApp:', notifyErr);
+      }
     }
   } else if (eventType === 'PAYMENT_FAILED_WEBHOOK' || eventType === 'PAYMENT_USER_DROPPED_WEBHOOK') {
     // Record failed state

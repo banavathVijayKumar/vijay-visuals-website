@@ -40,6 +40,10 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   const hasClaudeKey = Boolean(env.CLAUDE_API_KEY || env.ANTHROPIC_API_KEY);
   const nowIso = new Date().toISOString();
 
+  const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
+  const hasResend = Boolean(env.RESEND_API_KEY);
+  const hasWhatsApp = Boolean(env.WHATSAPP_CLOUD_API_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID);
+
   return jsonResponse({
     status: 'online',
     runtime: 'cloudflare-pages-edge',
@@ -55,8 +59,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     hasSupabaseAuth,
     hasCloudflareApi: Boolean(env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID),
     hasRegistrarApi: Boolean(env.DOMAIN_REGISTRAR_PROVIDER && env.DOMAIN_REGISTRAR_API_KEY),
-    hasSmtp: Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS),
-    hasWhatsApp: Boolean(env.WHATSAPP_CLOUD_API_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID),
+    hasSmtp,
+    hasResend,
+    hasWhatsApp,
     hasGoogleMaps: Boolean(env.GOOGLE_MAPS_API_KEY || env.VITE_GOOGLE_MAPS_API_KEY),
     integrations: {
       supabaseAuth: hasSupabaseAuth,
@@ -66,10 +71,12 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       cashfree: cashfreeConfigured,
       cashfreeGateway: cashfreeConfigured,
       googleMaps: Boolean(env.GOOGLE_MAPS_API_KEY || env.VITE_GOOGLE_MAPS_API_KEY),
-      whatsapp: Boolean(env.WHATSAPP_CLOUD_API_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID),
-      whatsappCloudApi: Boolean(env.WHATSAPP_CLOUD_API_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID),
-      smtp: Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS),
-      smtpEmail: Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS),
+      whatsapp: hasWhatsApp,
+      whatsappCloudApi: hasWhatsApp,
+      smtp: hasSmtp,
+      smtpEmail: hasSmtp,
+      resend: hasResend,
+      resendEmail: hasResend,
     },
     serverTime: nowIso,
     timestamp: nowIso,

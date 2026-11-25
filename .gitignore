@@ -12,3 +12,5 @@ coverage/
 firebase-applet-config.json
 .backup_pre_implementation/
 *.sql
+scratch/
+

@@ -168,6 +168,32 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         });
       }
     } catch {}
+
+    // 6. Transactional Notifications (Email & WhatsApp visibility)
+    const notificationLogs: Array<Record<string, unknown>> = [];
+    try {
+      const notifRes = await env.DB.prepare(
+        `SELECT id, recipient_contact, channel, event_type, subject,
+                delivery_status, provider_message_id, error_detail, created_at
+         FROM notification_logs
+         ORDER BY created_at DESC LIMIT 50`
+      ).all<Record<string, any>>();
+
+      for (const n of notifRes.results || []) {
+        notificationLogs.push({
+          id: Number(n.id || 0),
+          recipient: String(n.recipient_contact || ''),
+          channel: String(n.channel || 'in_app'),
+          eventType: String(n.event_type || ''),
+          subject: String(n.subject || ''),
+          status: String(n.delivery_status || 'unknown'),
+          providerMessageId: String(n.provider_message_id || ''),
+          errorDetail: String(n.error_detail || ''),
+          createdAt: String(n.created_at || ''),
+          fallbackAvailable: n.channel === 'whatsapp',
+        });
+      }
+    } catch {}
   }
 
   const razorpayCompat = {
@@ -180,10 +206,13 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   return jsonResponse({
     razorpay: razorpayCompat,
     cashfree: cfStatus,
+    emailConfigured: Boolean(env.RESEND_API_KEY),
+    whatsappConfigured: Boolean(env.WHATSAPP_CLOUD_API_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID),
     platformPayments,
     sellerAccounts,
     sellerTransfers,
     announcements,
     webhookEvents,
+    notificationLogs,
   });
 }

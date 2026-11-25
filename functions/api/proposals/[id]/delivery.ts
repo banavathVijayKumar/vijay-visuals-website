@@ -1,12 +1,15 @@
 // ============================================================================
 // POST /api/proposals/:id/delivery — Multi-Channel Delivery (WhatsApp & Email)
-// Formats personalized messages, integrates transactional email providers,
-// builds WhatsApp click-to-chat links, and logs delivery audit records.
+// Formats personalized messages, integrates Resend transactional email,
+// integrates Meta WhatsApp Business Cloud API with click-to-chat fallback,
+// and logs delivery audit records.
 // ============================================================================
 
 import { requireUser } from '../../_auth';
 import { getSafeRequestOrigin } from '../../payments/_cashfree';
 import { PagesContext, errorJson, handleOptions, json, parseJsonBody, sanitizeText } from '../../_shared';
+import { sendTransactionalEmail } from '../../_email';
+import { sendWhatsAppNotification } from '../../_whatsapp';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -62,14 +65,21 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       ``,
       `Warm regards,`,
       `Vijay Visuals — Digital Agency`,
-      `Official Mobile: +91 9381362201`,
+      `Official Mobile: +91 93610 24823`,
       `Official Email: vk66278@gmail.com`,
       `Hyderabad, Telangana`,
     ].join('\n');
 
-    const clickToChatUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText)}`;
+    // Attempt Meta WhatsApp Business Cloud API notification (falls back safely to click-to-chat)
+    const waResult = await sendWhatsAppNotification(env, {
+      toPhone: cleanPhone,
+      messageText,
+      eventType: 'proposal_shared',
+      websiteId: proposal.website_id,
+      idempotencyKey: `prop_wa_${id}_${Date.now()}`,
+    });
 
-    // Update counts & status
+    // Update counts & status in proposal ledger
     await env.DB.prepare(
       `UPDATE platform_proposals
        SET whatsapp_share_count = whatsapp_share_count + 1,
@@ -80,23 +90,17 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       .bind(id)
       .run();
 
-    // Log notification
-    await env.DB.prepare(
-      `INSERT INTO notification_logs (
-        website_id, recipient_contact, channel, event_type, subject,
-        message_preview, consent_verified, delivery_status, created_at
-      ) VALUES (?, ?, 'whatsapp', 'proposal_shared', 'Website Proposal WhatsApp Dispatch', ?, 1, 'sent', datetime('now'))`
-    )
-      .bind(proposal.website_id, cleanPhone, messageText.slice(0, 200))
-      .run();
-
     return json({
       channel: 'whatsapp',
       recipientPhone: cleanPhone,
       messageText,
-      clickToChatUrl,
-      deliveryStatus: 'shared',
-      message: 'WhatsApp message prepared with prefilled proposal details.',
+      clickToChatUrl: waResult.clickToChatUrl,
+      deliveryStatus: waResult.status,
+      providerMessageId: waResult.providerMessageId || null,
+      providerNotice: waResult.notice || null,
+      message: waResult.ok
+        ? `WhatsApp message automated dispatch sent to ${cleanPhone}.`
+        : `WhatsApp message prepared. Click-to-chat link ready for direct dispatch.`,
     });
   }
 
@@ -137,64 +141,25 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
 
         <div style="border-top: 1px solid #222230; padding-top: 20px; font-size: 11px; color: #717182; text-align: center;">
           <p style="margin: 0; color: #D4AF37; font-weight: bold;">VIJAY VISUALS · Digital Architecture</p>
-          <p style="margin: 4px 0;">Official Mobile: <a href="tel:+919381362201" style="color: #ECC86A; text-decoration: none;">+91 9381362201</a> · Official Email: <a href="mailto:vk66278@gmail.com" style="color: #ECC86A; text-decoration: none;">vk66278@gmail.com</a></p>
+          <p style="margin: 4px 0;">Official Mobile: <a href="tel:+919361024823" style="color: #ECC86A; text-decoration: none;">+91 93610 24823</a> · Official Email: <a href="mailto:vk66278@gmail.com" style="color: #ECC86A; text-decoration: none;">vk66278@gmail.com</a></p>
           <p style="margin: 4px 0;">Customer Ownership of Domain & Payment Gateway Guaranteed · Hyderabad, Telangana</p>
         </div>
       </div>
     `;
 
-    // Check if transactional email provider API key is present in Cloudflare Pages env
-    const resendApiKey = (env as any)?.RESEND_API_KEY;
-    const sendgridApiKey = (env as any)?.SENDGRID_API_KEY;
+    // Dispatch transactional email via Resend
+    const emailResult = await sendTransactionalEmail(env, {
+      to: recipientEmail,
+      subject,
+      html: htmlBody,
+      eventType: 'proposal_email_sent',
+      websiteId: proposal.website_id,
+      idempotencyKey: `prop_em_${id}_${Date.now()}`,
+    });
 
-    let emailSent = false;
-    let providerNotice = '';
+    const emailSent = emailResult.ok;
 
-    if (resendApiKey) {
-      try {
-        const emailRes = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${resendApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: 'Vijay Visuals <proposals@vijayvisuals.com>',
-            to: recipientEmail,
-            subject,
-            html: htmlBody,
-          }),
-        });
-        if (emailRes.ok) emailSent = true;
-      } catch (e) {
-        console.error('Resend email error:', e);
-      }
-    } else if (sendgridApiKey) {
-      try {
-        const emailRes = await fetch('https://api.sendgrid.com/v3/mail/send', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${sendgridApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            personalizations: [{ to: [{ email: recipientEmail }] }],
-            from: { email: 'proposals@vijayvisuals.com', name: 'Vijay Visuals' },
-            subject,
-            content: [{ type: 'text/html', value: htmlBody }],
-          }),
-        });
-        if (emailRes.status === 202) emailSent = true;
-      } catch (e) {
-        console.error('SendGrid email error:', e);
-      }
-    }
-
-    if (!resendApiKey && !sendgridApiKey) {
-      providerNotice = 'Transactional email provider (RESEND_API_KEY / SENDGRID_API_KEY) is not yet configured in Cloudflare Pages. Template generated and ready for direct send.';
-    }
-
-    // Update counts & status (only mark email_sent if provider actually dispatched)
+    // Update counts & status in proposal ledger
     await env.DB.prepare(
       `UPDATE platform_proposals
        SET email_sent_count = CASE WHEN ? = 1 THEN email_sent_count + 1 ELSE email_sent_count END,
@@ -205,34 +170,19 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       .bind(emailSent ? 1 : 0, emailSent ? 1 : 0, id)
       .run();
 
-    // Log in notification_logs
-    await env.DB.prepare(
-      `INSERT INTO notification_logs (
-        website_id, recipient_contact, channel, event_type, subject,
-        message_preview, consent_verified, delivery_status, created_at
-      ) VALUES (?, ?, 'email', 'proposal_email_sent', ?, ?, 1, ?, datetime('now'))`
-    )
-      .bind(
-        proposal.website_id,
-        recipientEmail,
-        subject,
-        `Proposal #${proposal.proposal_number} prepared for ${recipientEmail}`,
-        emailSent ? 'delivered' : 'setup_required'
-      )
-      .run();
-
     return json({
       channel: 'email',
       recipientEmail,
       subject,
       emailSent,
-      providerConfigured: Boolean(resendApiKey || sendgridApiKey),
-      providerNotice,
+      providerConfigured: emailResult.status !== 'setup_required',
+      providerNotice: emailResult.notice || null,
+      providerMessageId: emailResult.providerMessageId || null,
       htmlPreview: htmlBody,
       deliveryStatus: emailSent ? 'email_sent' : (proposal.delivery_status || 'ready'),
       message: emailSent
         ? `Proposal email successfully dispatched to ${recipientEmail}.`
-        : `Email template prepared for ${recipientEmail}. ${providerNotice}`,
+        : `Email template prepared for ${recipientEmail}. ${emailResult.notice || ''}`,
     });
   }
 
