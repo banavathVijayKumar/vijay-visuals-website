@@ -143,12 +143,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     );
   }
 
-  // 5. Success: Mark OTP as consumed
-  await env.DB.prepare('UPDATE auth_email_otps SET consumed_at = datetime(\'now\') WHERE id = ?')
-    .bind(record.id)
-    .run();
-
-  // 6. Extract Metadata and Synchronize with D1 users table
+  // 5. Extract Metadata and Synchronize with canonical D1 vv_users table
   let metadata: Record<string, any> = {};
   try {
     metadata = JSON.parse(record.metadata_json || '{}');
@@ -157,22 +152,66 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const fullName = sanitizeText(metadata.fullName || '', 100);
   const phone = sanitizeText(metadata.phone || '', 20);
   const requestedRole = sanitizeText(metadata.requestedRole || 'customer', 40);
+  const resolvedName = fullName.trim() || cleanEmail.split('@')[0];
+
+  let effectiveUserId: string;
+  let effectiveRole: string = 'customer';
 
   try {
-    // Generate deterministic or random user UID
-    const userUid = `usr_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2)}`;
-    await env.DB.prepare(
-      `INSERT INTO users (uid, email, name, role, created_at, updated_at)
-       VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
-       ON CONFLICT(email) DO UPDATE SET
-         name = CASE WHEN users.name IS NULL OR users.name = '' THEN excluded.name ELSE users.name END,
-         updated_at = datetime('now')`
+    // Check for existing profile in canonical vv_users
+    const existingUser = await env.DB.prepare(
+      `SELECT id, auth_provider, auth_subject, email, full_name, role, status
+       FROM vv_users
+       WHERE LOWER(email) = LOWER(?) OR auth_subject = ?
+       LIMIT 1`
     )
-      .bind(userUid, cleanEmail, fullName || cleanEmail.split('@')[0], requestedRole)
-      .run();
-  } catch (syncErr) {
-    console.error('Failed to sync verified user with D1 users table:', syncErr);
+      .bind(cleanEmail, cleanEmail)
+      .first<{
+        id: string;
+        auth_provider: string;
+        auth_subject: string;
+        email: string;
+        full_name: string;
+        role: string;
+        status: string;
+      }>();
+
+    if (existingUser) {
+      effectiveUserId = existingUser.id;
+      // Rule: Never overwrite an existing owner/admin role with customer
+      const isExistingAdmin = existingUser.role === 'admin';
+      effectiveRole = isExistingAdmin ? 'admin' : (requestedRole === 'admin' ? 'admin' : 'customer');
+      const targetName = (existingUser.full_name && existingUser.full_name.trim()) ? existingUser.full_name : resolvedName;
+
+      await env.DB.prepare(
+        `UPDATE vv_users
+         SET full_name = ?,
+             role = CASE WHEN role = 'admin' THEN 'admin' ELSE ? END,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`
+      )
+        .bind(targetName, effectiveRole, existingUser.id)
+        .run();
+    } else {
+      effectiveUserId = crypto.randomUUID ? crypto.randomUUID() : `usr_${Date.now()}`;
+      effectiveRole = requestedRole === 'admin' ? 'admin' : 'customer';
+
+      await env.DB.prepare(
+        `INSERT INTO vv_users (id, auth_provider, auth_subject, email, full_name, role, status, created_at, updated_at)
+         VALUES (?, 'email_otp', ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+      )
+        .bind(effectiveUserId, effectiveUserId, cleanEmail, resolvedName, effectiveRole)
+        .run();
+    }
+  } catch (syncErr: any) {
+    console.error('Failed to sync verified user with D1 vv_users table:', syncErr);
+    return errorJson('Failed to persist customer profile. Please try again.', 500);
   }
+
+  // 6. Success: Mark OTP as consumed (only after profile persistence succeeds)
+  await env.DB.prepare('UPDATE auth_email_otps SET consumed_at = datetime(\'now\') WHERE id = ?')
+    .bind(record.id)
+    .run();
 
   return json({
     ok: true,
@@ -181,10 +220,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     email: cleanEmail,
     purpose,
     profile: {
+      id: effectiveUserId,
       email: cleanEmail,
-      fullName,
+      fullName: resolvedName,
       phone,
-      role: requestedRole,
+      role: effectiveRole,
       emailVerified: true,
     },
   });
