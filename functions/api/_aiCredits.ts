@@ -48,6 +48,93 @@ export function getCurrentBillingPeriod(date = new Date()): string {
   return `${y}-${m}`;
 }
 
+/**
+ * Authoritative reservation statement.
+ *
+ * The quota check and ledger write are one SQLite statement: the WHERE clause
+ * recomputes current usage and the active subscription allowance at execution
+ * time. D1 serializes writes, so concurrent callers cannot both observe the
+ * same remaining allowance and then reserve it.
+ *
+ * Placeholders:
+ *  1-12  ledger row values (status/created_at are SQL literals)
+ *  13-15 tenant usage lookup (websiteId, tenantRowId, billingPeriod)
+ *  16    credits being reserved
+ *  17    subscription lookup websiteId
+ *  18    fallback allowance when no active, unexpired subscription exists
+ */
+const RESERVE_AI_CREDIT_SQL = `
+  INSERT INTO tenant_ai_usage (
+    id, website_id, tenant_rowid, user_id, service_slug, request_id,
+    provider, model, credits_deducted, billing_period, status, prompt_snippet,
+    idempotency_scope, created_at
+  )
+  SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?, datetime('now')
+  WHERE (
+    SELECT COALESCE(SUM(credits_deducted), 0)
+    FROM tenant_ai_usage
+    WHERE (website_id = ? OR (tenant_rowid IS NOT NULL AND tenant_rowid = ?))
+      AND billing_period = ?
+      AND (status = 'success' OR (status = 'reserved' AND created_at >= datetime('now', '-2 minutes')))
+  ) + ? <= COALESCE((
+    SELECT CASE WHEN sp.monthly_ai_credits > 0 THEN sp.monthly_ai_credits END
+    FROM tenant_subscriptions ts
+    INNER JOIN subscription_plans sp ON sp.code = ts.plan_code
+    WHERE ts.website_id = ?
+      AND ts.status = 'active'
+      AND ts.current_period_end > datetime('now')
+    ORDER BY ts.id DESC
+    LIMIT 1
+  ), ?)
+`;
+
+function countD1Changes(result: { meta?: { changes?: number }; changes?: number } | undefined): number {
+  const metaChanges = Number(result?.meta?.changes);
+  if (Number.isFinite(metaChanges)) return metaChanges;
+  const directChanges = Number(result?.changes);
+  return Number.isFinite(directChanges) ? directChanges : 0;
+}
+
+async function expireStaleAiReservations(db: any): Promise<void> {
+  try {
+    await db
+      .prepare(
+        `UPDATE tenant_ai_usage
+         SET status = 'failed', credits_deducted = 0,
+             error_message = 'Reservation timed out or aborted'
+         WHERE status = 'reserved' AND created_at < datetime('now', '-2 minutes')`
+      )
+      .run();
+  } catch {
+    // The authoritative conditional INSERT below fails closed if the ledger
+    // table or required columns are unavailable.
+  }
+}
+
+async function reservationWasStored(
+  db: any,
+  usageRecordId: string,
+  requestId: string,
+  idempotencyScope: string,
+  websiteId: string,
+  userId: string
+): Promise<boolean> {
+  try {
+    const row = (await db
+      .prepare(
+        `SELECT id FROM tenant_ai_usage
+         WHERE id = ? AND request_id = ? AND idempotency_scope = ?
+           AND website_id = ? AND user_id = ?
+         LIMIT 1`
+      )
+      .bind(usageRecordId, requestId, idempotencyScope, websiteId, userId)
+      .first()) as { id: string } | null;
+    return Boolean(row);
+  } catch {
+    return false;
+  }
+}
+
 // Short-lived, in-isolate cache for idempotent responses. It never authorizes
 // a second generation: it only returns the output already produced for a
 // server-scoped idempotency key. A cache miss fails closed with a neutral
@@ -125,8 +212,10 @@ export interface TenantQuotaStatus {
 }
 
 /**
- * Reads verified allowance from D1 subscription_plans and used credits from tenant_ai_usage.
- * Never trusts client-supplied plan names.
+ * Reads verified allowance and used credits for dashboards and preflight checks.
+ * This is advisory; the authoritative quota enforcement is the conditional
+ * reservation statement in executeWithAiCreditDeduction(). Never trusts
+ * client-supplied plan names.
  */
 export async function getTenantAiQuota(
   env: CloudflareEnv,
@@ -313,28 +402,16 @@ export async function executeWithAiCreditDeduction(
     throw err;
   }
 
-  // 2. Check Quota Before Execution
-  const quota = await getTenantAiQuota(env, params.websiteId, params.tenantRowId, params.fallbackPlanTier);
-  if (quota.used + creditsNeeded > quota.allowance) {
-    const err = new Error(
-      `Monthly AI credits limit reached for your plan (${quota.used}/${quota.allowance} credits used). Please upgrade your plan or purchase an AI credit top-up to continue.`
-    );
-    (err as any).status = 403;
-    (err as any).code = 'AI_QUOTA_EXHAUSTED';
-    (err as any).quota = quota;
-    throw err;
-  }
-
-  // 3. Atomically reserve credits. Any ledger write failure fails closed; the
-  // provider call is never made without a durable reservation.
+  // 2. Atomically validate allowance AND reserve credits in one D1 statement.
+  // The quota subquery is evaluated inside the INSERT, so no application-level
+  // SELECT result is used to authorize the reservation. A rejected write means
+  // no reservation, no provider call, and no charge.
+  await expireStaleAiReservations(env.DB);
+  const fallbackAllowance = getPackageMonthlyAiCredits(params.fallbackPlanTier);
   const usageRecordId = `usage_${Date.now()}_${randomHex(6)}`;
+  let reservationResult: { meta?: { changes?: number }; changes?: number } | undefined;
   try {
-    await env.DB.prepare(
-      `INSERT INTO tenant_ai_usage (
-        id, website_id, tenant_rowid, user_id, service_slug, request_id,
-        provider, model, credits_deducted, billing_period, status, prompt_snippet, idempotency_scope
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?)`
-    )
+    reservationResult = await env.DB.prepare(RESERVE_AI_CREDIT_SQL)
       .bind(
         usageRecordId,
         params.websiteId,
@@ -347,7 +424,13 @@ export async function executeWithAiCreditDeduction(
         creditsNeeded,
         billingPeriod,
         cleanSnippet,
-        idempotencyScope
+        idempotencyScope,
+        params.websiteId,
+        params.tenantRowId || -1,
+        billingPeriod,
+        creditsNeeded,
+        params.websiteId,
+        fallbackAllowance
       )
       .run();
   } catch (err: any) {
@@ -360,11 +443,34 @@ export async function executeWithAiCreditDeduction(
     throw error;
   }
 
-  // 4. Execute the Actual Generation Call
+  // Some local/mock D1 bindings omit meta.changes. Confirming the exact row is
+  // a result check only; it is never used to decide whether quota is available.
+  const reserved =
+    countD1Changes(reservationResult) > 0 ||
+    (await reservationWasStored(
+      env.DB,
+      usageRecordId,
+      requestId,
+      idempotencyScope,
+      params.websiteId,
+      params.userId
+    ));
+  if (!reserved) {
+    const quota = await getTenantAiQuota(env, params.websiteId, params.tenantRowId, params.fallbackPlanTier);
+    const err = new Error(
+      `Monthly AI credits limit reached for your plan (${quota.used}/${quota.allowance} credits used). Please upgrade your plan or purchase an AI credit top-up to continue.`
+    );
+    (err as any).status = 403;
+    (err as any).code = 'AI_QUOTA_EXHAUSTED';
+    (err as any).quota = quota;
+    throw err;
+  }
+
+  // 3. Execute the Actual Generation Call
   try {
     const output = await params.executeAiCall();
 
-    // 5. Success: Commit the deduction in the ledger before reporting usage.
+    // 4. Success: Commit the deduction in the ledger before reporting usage.
     await env.DB.prepare(
       `UPDATE tenant_ai_usage
        SET status = 'success', credits_deducted = ?
@@ -374,23 +480,20 @@ export async function executeWithAiCreditDeduction(
       .run();
     rememberIdempotentResponse(idempotencyKey, output);
 
-    const updatedRemaining = Math.max(0, quota.allowance - (quota.used + creditsNeeded));
+    // Recompute after the committed ledger update so the response reflects the
+    // authoritative state rather than a stale preflight snapshot.
+    const quota = await getTenantAiQuota(env, params.websiteId, params.tenantRowId, params.fallbackPlanTier);
 
     return {
       output,
       creditsUsed: creditsNeeded,
-      creditsRemaining: updatedRemaining,
+      creditsRemaining: quota.remaining,
       isDuplicate: false,
-      quota: {
-        ...quota,
-        used: quota.used + creditsNeeded,
-        remaining: updatedRemaining,
-        isExhausted: updatedRemaining <= 0,
-      },
+      quota,
     };
   } catch (aiErr: any) {
     idempotentResponseCache.delete(idempotencyKey);
-    // 6. Failure: Mark as failed and set credits_deducted to 0 so customer is NOT charged
+    // 5. Failure: Mark as failed and set credits_deducted to 0 so customer is NOT charged
     const safeErrorMsg = redactSecretsAndPii(aiErr?.message || 'Upstream generation error');
     try {
       await env.DB.prepare(

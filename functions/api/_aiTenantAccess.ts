@@ -111,6 +111,8 @@ export async function requireAuthorizedAiTenant(
     };
   }
 
+  // Advisory preflight only. The authoritative, concurrency-safe quota check
+  // happens inside the atomic reservation statement in executeWithAiCreditDeduction().
   const quota = await getTenantAiQuota(
     env,
     access.row.website_id,
