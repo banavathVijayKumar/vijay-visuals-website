@@ -64,7 +64,72 @@ function toIntegerPaise(amount: unknown): number {
   return Math.round(num * 100);
 }
 
+const SAFE_ORDER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{2,119}$/;
+
+function normalizeStatus(value: unknown, fallback = 'UNKNOWN'): string {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  return normalized || fallback;
+}
+
+/**
+ * Maps provider state to the CHECK-constrained ledger status columns.
+ * `platform_payments.status` only accepts created|paid|failed|refunded, so an
+ * unpaid Cashfree order must stay `created` there while the Cashfree ledger
+ * may safely track PENDING/FAILED/CANCELLED/REFUNDED.
+ */
+function mapUnpaidStatus(orderStatus: unknown, payments: unknown) {
+  const providerStatus = normalizeStatus(orderStatus);
+  const paymentStatuses = Array.isArray(payments)
+    ? payments.map((p: any) => normalizeStatus(p?.payment_status, ''))
+    : [];
+
+  if (providerStatus === 'REFUNDED') {
+    return {
+      providerStatus,
+      cashfreeStatus: 'REFUNDED' as const,
+      platformStatus: 'refunded' as const,
+      message: `Payment status is ${providerStatus}. It is refunded and was never verified as a new payment.`,
+    };
+  }
+
+  if (
+    providerStatus === 'FAILED' ||
+    providerStatus === 'CANCELLED' ||
+    paymentStatuses.some((s) => s === 'FAILED' || s === 'CANCELLED' || s === 'USER_DROPPED')
+  ) {
+    const cashfreeStatus =
+      providerStatus === 'CANCELLED' ||
+      paymentStatuses.some((s) => s === 'CANCELLED' || s === 'USER_DROPPED')
+        ? ('CANCELLED' as const)
+        : ('FAILED' as const);
+    return {
+      providerStatus,
+      cashfreeStatus,
+      platformStatus: 'failed' as const,
+      message: `Payment status is ${providerStatus}. It was not completed successfully.`,
+    };
+  }
+
+  return {
+    providerStatus,
+    cashfreeStatus: 'PENDING' as const,
+    platformStatus: 'created' as const,
+    message: `Payment status is ${providerStatus}. It has not been completed.`,
+  };
+}
+
 export async function onRequestPost(context: PagesContext): Promise<Response> {
+  try {
+    return await handleVerification(context);
+  } catch {
+    // Never leak stack traces or provider secrets through a Cloudflare 1101 page.
+    return errorJson('Cashfree verification could not be completed safely.', 500, {
+      code: 'CASHFREE_VERIFY_EXCEPTION',
+    });
+  }
+}
+
+async function handleVerification(context: PagesContext): Promise<Response> {
   const { request, env } = context;
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
@@ -79,6 +144,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   if (!orderId) {
     return errorJson('orderId is required for Cashfree payment verification.', 400);
+  }
+
+  if (!SAFE_ORDER_ID_PATTERN.test(orderId)) {
+    return errorJson('Invalid Cashfree order ID format.', 400);
   }
 
   // 1. Look up existing payment record from Cloudflare D1
@@ -162,11 +231,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const isPaid = cfOrder.order_status === 'PAID' || Boolean(successfulPayment);
 
   if (!isPaid) {
-    const failedPayment = cfPayments.find(
-      (p) => p.payment_status === 'FAILED' || p.payment_status === 'CANCELLED'
-    );
-    const newStatus = failedPayment ? 'FAILED' : 'PENDING';
+    const statusMap = mapUnpaidStatus(cfOrder.order_status, cfPayments);
 
+    // Keep the Cashfree ledger and the mirror platform ledger within their
+    // schema CHECK constraints. An unpaid order must remain non-entitling.
     await env.DB.prepare(
       `UPDATE cashfree_payments
        SET status = ?,
@@ -174,7 +242,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
            updated_at = datetime('now')
        WHERE order_id = ?`
     )
-      .bind(newStatus, JSON.stringify({ cfOrder, cfPayments }), orderId)
+      .bind(statusMap.cashfreeStatus, JSON.stringify({ cfOrder, cfPayments }), orderId)
       .run();
 
     await env.DB.prepare(
@@ -183,13 +251,15 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
            updated_at = datetime('now')
        WHERE razorpay_order_id = ?`
     )
-      .bind(newStatus.toLowerCase(), `cf_${orderId}`)
+      .bind(statusMap.platformStatus, `cf_${orderId}`)
       .run();
 
     return json({
       verified: false,
-      status: cfOrder.order_status,
-      message: `Payment status is ${cfOrder.order_status}. It has not been completed.`,
+      paymentCompleted: false,
+      entitlementGranted: false,
+      status: statusMap.providerStatus,
+      message: statusMap.message,
       order: cfOrder,
       payments: cfPayments,
     });

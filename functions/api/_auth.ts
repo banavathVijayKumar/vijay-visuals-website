@@ -62,7 +62,7 @@ export interface WebsiteAccessSuccess {
 
 export type WebsiteAccessResult = WebsiteAccessSuccess | AuthFailure;
 
-function getSupabaseConfig(env: CloudflareEnv): { url: string; anonKey: string } | null {
+export function getSupabaseConfig(env: CloudflareEnv): { url: string; anonKey: string } | null {
   const rawUrl = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').trim();
   let url = rawUrl.replace(/\/+$/, '');
   try {
@@ -86,17 +86,21 @@ function mapSupabaseRoleToPlatformRole(rawRole: string): PlatformRole {
   return 'end_customer';
 }
 
-export async function requireUser(request: Request, env: CloudflareEnv): Promise<AuthResult> {
+export function getBearerToken(request: Request): string {
   const authHeader = request.headers.get('Authorization') || '';
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match || !match[1]) {
+  return match?.[1]?.trim() || '';
+}
+
+export async function requireUser(request: Request, env: CloudflareEnv): Promise<AuthResult> {
+  const token = getBearerToken(request);
+  if (!token) {
     return {
       ok: false,
       response: errorJson('Authentication required. Provide a valid Supabase Bearer token.', 401),
     };
   }
 
-  const token = match[1].trim();
   const supa = getSupabaseConfig(env);
   if (!supa) {
     return {
