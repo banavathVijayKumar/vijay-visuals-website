@@ -20,6 +20,7 @@ import {
   resolveVerifiedTenantSender,
 } from '../_email';
 import { sendWhatsAppNotification } from '../_whatsapp';
+import { resolveTenantPublicUrl } from '../_tenantUrl';
 import {
   fetchEdgeCashfreeOrder,
   fetchEdgeCashfreeOrderPayments,
@@ -473,16 +474,16 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     if (storeOrder) {
       storeOrderNumber = storeOrder.order_number || orderId;
       const publication = await env.DB.prepare(
-        `SELECT public_slug, business_name
+        `SELECT website_id, public_slug, business_name
          FROM customer_website_publications
          WHERE website_id = ?
          LIMIT 1`
       )
         .bind(storeOrder.website_id)
-        .first<{ public_slug: string; business_name: string }>();
-      storeName = publication?.business_name || 'Your Store';
-      storeUrl = publication?.public_slug
-        ? `https://vijay-visuals-site.pages.dev/site/${encodeURIComponent(publication.public_slug)}`
+        .first<{ website_id: string; public_slug: string; business_name: string }>();
+      storeName = sanitizeText(publication?.business_name || '', 80) || 'Your Store';
+      storeUrl = publication
+        ? (await resolveTenantPublicUrl(env, publication)).url
         : '';
     }
     const verifiedTenantSender = storeOrder

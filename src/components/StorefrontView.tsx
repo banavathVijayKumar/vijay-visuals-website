@@ -39,6 +39,7 @@ import {
 import { apiFetch } from '../lib/api';
 import { initiateCashfreeStorefrontCheckout } from '../lib/cashfreeClient';
 import { requestSingleGpsPosition, reverseGeocodeViaProxy } from '../lib/mapsClient';
+import { applyStorefrontMetadata } from '../lib/storefrontMetadata';
 import { useAuth } from '../hooks/useAuth';
 import { Lang } from '../data/content';
 import {
@@ -344,87 +345,30 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     };
   }, [slug, lang]);
 
-  // Stage 3 Module 4: Dynamic Tenant SEO Meta Tags & Schema.org LocalBusiness / Product / BreadcrumbList JSON-LD
+  // Stage 3 Module 4: Tenant-owned SEO metadata on every storefront route,
+  // including /site/{slug} on the unchanged platform host.
   useEffect(() => {
     if (!tenant) return;
-    const prevTitle = document.title;
-    const computedTitle = tenant.seoTitle || `${tenant.name} — ${tenant.tagline || tenant.category}`;
-    document.title = computedTitle;
-
-    const descEl = document.querySelector<HTMLMetaElement>('meta[name="description"]');
-    const prevDesc = descEl?.content || '';
-    if (descEl) {
-      descEl.content = tenant.seoDescription || tenant.description || tenant.tagline;
-    }
-
-    const robotsEl = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
-    const prevRobots = robotsEl?.content || 'index, follow';
-    if (robotsEl && seoConfig?.robotsDirectives) {
-      robotsEl.content = seoConfig.robotsDirectives;
-    }
-
-    const canonEl = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
-    const prevCanon = canonEl?.href || '';
-    const storeUrl = seoConfig?.canonicalUrl || `${window.location.origin}/site/${tenant.slug}`;
-    if (canonEl) canonEl.href = storeUrl;
-
-    let gscMeta: HTMLMetaElement | null = null;
-    if (seoConfig?.googleSiteVerification) {
-      gscMeta = document.createElement('meta');
-      gscMeta.name = 'google-site-verification';
-      gscMeta.content = seoConfig.googleSiteVerification;
-      document.head.appendChild(gscMeta);
-    }
-
-    const jsonLdGraph: Array<Record<string, unknown>> = [
-      {
-        '@type': seoConfig?.localBusinessType || 'LocalBusiness',
-        name: tenant.name,
-        description: tenant.seoDescription || tenant.description,
-        url: storeUrl,
-        telephone: tenant.phone,
-        address: {
-          '@type': 'PostalAddress',
-          streetAddress: tenant.address,
-          addressCountry: 'IN',
-        },
-        ...(seoConfig?.googleMapsUrl ? { hasMap: seoConfig.googleMapsUrl } : {}),
-      },
-      {
-        '@type': 'BreadcrumbList',
-        itemListElement: [
-          { '@type': 'ListItem', position: 1, name: tenant.name, item: window.location.origin },
-          { '@type': 'ListItem', position: 2, name: tenant.name, item: storeUrl },
-        ],
-      },
-      ...products.slice(0, 12).map((p) => ({
-        '@type': 'Product',
-        name: p.name,
-        description: p.description,
-        image: p.imageUrl || tenant.bannerImage,
-        offers: {
-          '@type': 'Offer',
-          priceCurrency: tenant.currency || 'INR',
-          price: p.price,
-          availability: p.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-        },
-      })),
-    ];
-
-    const script = document.createElement('script');
-    script.id = 'vv-storefront-jsonld';
-    script.type = 'application/ld+json';
-    script.textContent = JSON.stringify({ '@context': 'https://schema.org', '@graph': jsonLdGraph });
-    document.head.appendChild(script);
-
-    return () => {
-      document.title = prevTitle;
-      if (descEl) descEl.content = prevDesc;
-      if (robotsEl) robotsEl.content = prevRobots;
-      if (canonEl && prevCanon) canonEl.href = prevCanon;
-      if (gscMeta) gscMeta.remove();
-      script.remove();
-    };
+    return applyStorefrontMetadata(document, {
+      name: tenant.name,
+      slug: tenant.slug,
+      tagline: tenant.tagline,
+      category: tenant.category,
+      description: tenant.description,
+      seoTitle: tenant.seoTitle,
+      seoDescription: tenant.seoDescription,
+      phone: tenant.phone,
+      address: tenant.address,
+      bannerImage: tenant.bannerImage,
+      primaryColor: tenant.primaryColor,
+      currency: tenant.currency,
+      canonicalUrl: seoConfig?.canonicalUrl || `${window.location.origin}/site/${tenant.slug}`,
+      robotsDirectives: seoConfig?.robotsDirectives,
+      googleSiteVerification: seoConfig?.googleSiteVerification,
+      googleMapsUrl: seoConfig?.googleMapsUrl,
+      localBusinessType: seoConfig?.localBusinessType,
+      products,
+    });
   }, [tenant, products, seoConfig]);
 
   // Persist cart to localStorage across refreshes

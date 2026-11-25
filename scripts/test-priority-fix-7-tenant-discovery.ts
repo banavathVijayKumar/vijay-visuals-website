@@ -77,7 +77,8 @@ class MockD1DB {
         owner_id TEXT,
         plan_code TEXT,
         plan_id TEXT,
-        status TEXT DEFAULT 'active'
+        status TEXT DEFAULT 'active',
+        current_period_end TEXT DEFAULT (datetime('now', '+30 days'))
       );
 
       CREATE TABLE IF NOT EXISTS tenant_ai_usage (
@@ -117,8 +118,8 @@ class MockD1DB {
       VALUES ('prev_site_svs', '85272889-cd3b-45fe-86de-f503be8193fc', 'cutybs932@gmail.com', 'VIJAY KUMAR BANAVATH', 'business_owner', 'active');
 
       -- Tenant subscription for SVS
-      INSERT INTO tenant_subscriptions (website_id, owner_id, plan_code, status)
-      VALUES ('prev_site_svs', '85272889-cd3b-45fe-86de-f503be8193fc', 'business-website', 'active');
+      INSERT INTO tenant_subscriptions (website_id, owner_id, plan_code, status, current_period_end)
+      VALUES ('prev_site_svs', '85272889-cd3b-45fe-86de-f503be8193fc', 'business-website', 'active', datetime('now', '+30 days'));
     `);
   }
 

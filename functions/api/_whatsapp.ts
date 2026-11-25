@@ -4,6 +4,7 @@
 // Enforces consent, idempotency, durable D1 logging, and zero token exposure.
 // ============================================================================
 
+import { redactSensitiveLogText } from './_email';
 import { CloudflareEnv, sanitizeText } from './_shared';
 
 export interface WhatsAppSendOptions {
@@ -124,8 +125,8 @@ export async function sendWhatsAppNotification(
             recipientUserId || null,
             cleanPhone,
             eventType,
-            messageText.slice(0, 240),
-            notice
+            redactSensitiveLogText(messageText),
+            redactSensitiveLogText(notice)
           )
           .run();
       } catch (logErr) {
@@ -212,10 +213,10 @@ export async function sendWhatsAppNotification(
           recipientUserId || null,
           cleanPhone,
           eventType,
-          messageText.slice(0, 240),
+          redactSensitiveLogText(messageText),
           deliveryStatus,
           providerMessageId || (idempotencyKey ? `idemp_${idempotencyKey}` : ''),
-          errorDetail
+          redactSensitiveLogText(errorDetail)
         )
         .run();
     } catch (logErr) {

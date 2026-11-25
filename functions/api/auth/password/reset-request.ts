@@ -1,9 +1,10 @@
 // ============================================================================
 // POST /api/auth/password/reset-request
 // Server-side password reset request gate for Cloudflare Pages.
-// - D1-backed cooldown/hourly limit keyed by a hash of the normalized email
+// - D1-backed atomic cooldown/hourly limit keyed by a hash of the email
+// - Redirect is chosen ONLY from a strict server-side origin allowlist
 // - Calls Supabase GoTrue /auth/v1/recover with the existing anon key only
-// - No Supabase dashboard changes, service-role secret, or .env access
+// - No client-provided redirect origin is ever forwarded
 // - Always returns a generic response to prevent account enumeration
 // ============================================================================
 
@@ -18,24 +19,38 @@ const GENERIC_RESET_MESSAGE =
 const GENERIC_UNAVAILABLE_MESSAGE =
   'Password reset is unavailable right now. Please try again later.';
 const GENERIC_INVALID_MESSAGE = 'Please enter a valid email address.';
-const GENERIC_CALLBACK_MESSAGE =
-  'Unable to determine the password reset callback URL. Please try again from the site.';
+
+/** Exact application origins approved by the operator. Never derived from the client. */
+const ALLOWED_ORIGINS_ENV = 'PASSWORD_RESET_ALLOWED_ORIGINS';
 
 function isValidEmail(raw: unknown): boolean {
   const email = String(raw || '').trim().toLowerCase();
   return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function normalizeCallbackUrl(raw: unknown): string {
-  try {
-    const value = new URL(String(raw || ''));
-    if (!['http:', 'https:'].includes(value.protocol)) return '';
-    if (value.username || value.password) return '';
-    if (value.pathname !== '/' || value.search || value.hash) return '';
-    return value.toString();
-  } catch {
-    return '';
+function approvedOrigins(env: PagesContext['env']): string[] {
+  const configured = String((env as Record<string, unknown>)?.[ALLOWED_ORIGINS_ENV] || '');
+  const origins: string[] = [];
+  for (const raw of configured.split(',')) {
+    const value = raw.trim();
+    if (!value) continue;
+    try {
+      const parsed = new URL(value);
+      const isLoopback = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+      if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback)) continue;
+      if (parsed.username || parsed.password) continue;
+      if (parsed.pathname !== '/' || parsed.search || parsed.hash) continue;
+      if (!origins.includes(parsed.origin)) origins.push(parsed.origin);
+    } catch {
+      // Invalid entries are ignored; a missing/empty allowlist fails closed.
+    }
   }
+  return origins;
+}
+
+function serverApprovedCallbackUrl(env: PagesContext['env']): string {
+  const origins = approvedOrigins(env);
+  return origins.length ? `${origins[0]}/` : '';
 }
 
 function configuredSupabase(env: PagesContext['env']): { url: string; anonKey: string } {
@@ -52,15 +67,26 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const { request, env } = context;
 
   try {
-    const body = await parseJsonBody<{ email?: string; redirectTo?: string }>(request);
+    // The only client field consumed is the email. `redirectTo` is intentionally ignored.
+    const body = await parseJsonBody<{ email?: string }>(request);
     const email = sanitizeText(body?.email || '', 254).trim().toLowerCase();
-    const callbackUrl = normalizeCallbackUrl(body?.redirectTo);
-
     if (!isValidEmail(email)) {
       return json({ ok: false, code: 'INVALID_EMAIL', message: GENERIC_INVALID_MESSAGE }, 400);
     }
-    if (!callbackUrl) {
-      return json({ ok: false, code: 'NO_CALLBACK', message: GENERIC_CALLBACK_MESSAGE }, 400);
+
+    // Required configuration is checked BEFORE consuming a rate-limit allowance.
+    const callbackUrl = serverApprovedCallbackUrl(env);
+    const { url, anonKey } = configuredSupabase(env);
+    if (!callbackUrl || !url || !anonKey) {
+      return json(
+        {
+          ok: false,
+          code: 'PROVIDER_UNAVAILABLE',
+          message: GENERIC_UNAVAILABLE_MESSAGE,
+          remainingSeconds: 0,
+        },
+        503
+      );
     }
 
     let rateLimit;
@@ -94,19 +120,6 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           remainingSeconds: rateLimit.remainingSeconds,
         },
         429
-      );
-    }
-
-    const { url, anonKey } = configuredSupabase(env);
-    if (!url || !anonKey) {
-      return json(
-        {
-          ok: false,
-          code: 'PROVIDER_UNAVAILABLE',
-          message: GENERIC_UNAVAILABLE_MESSAGE,
-          remainingSeconds: rateLimit.remainingSeconds,
-        },
-        503
       );
     }
 

@@ -33,6 +33,7 @@ import {
 } from './src/db/schema.ts';
 import { ensurePlatformSeeded } from './src/db/seed.ts';
 import { AuthRequest, optionalAuth, requireAuth } from './src/middleware/auth.ts';
+import { buildPublicTrackingResponse } from './src/lib/publicTracking.ts';
 import { generateAiText } from './src/lib/gemini.ts';
 import { getRazorpayStatus } from './src/lib/razorpay.ts';
 import { generateSlugFromName, SLUG_REGEX, validateSlug } from './src/lib/slug.ts';
@@ -1041,12 +1042,9 @@ app.get('/api/orders/track/:orderNumber', async (req, res) => {
     const [order] = await db.select().from(orders).where(eq(orders.orderNumber, code)).limit(1);
     if (!order) return res.status(404).json({ error: 'No order found with that tracking ID.' });
     const [tenant] = await db.select().from(tenants).where(eq(tenants.id, order.tenantId)).limit(1);
-    let partner = null;
-    if (order.deliveryPartnerId) {
-      const found = await db.select().from(deliveryPartners).where(eq(deliveryPartners.id, order.deliveryPartnerId)).limit(1);
-      partner = found[0] || null;
-    }
-    res.json({ order, tenantName: tenant?.name || 'Vijay Visuals Store', tenantPhone: tenant?.phone || '', deliveryPartner: partner });
+    // Public tracking is customer-facing: the shared pure helper returns only
+    // masked customer fields and never the raw row or delivery partner details.
+    res.json(buildPublicTrackingResponse(order, tenant));
   } catch (error) {
     console.error('GET track order failed:', error);
     res.status(500).json({ error: 'Unable to track order.' });

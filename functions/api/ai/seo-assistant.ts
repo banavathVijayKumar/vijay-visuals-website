@@ -15,7 +15,7 @@ import {
   parseJsonBody,
   sanitizeText,
 } from '../_shared';
-import { requireTenantOwnerAccess } from '../_tenantAccess';
+import { requireAuthorizedAiTenant } from '../_aiTenantAccess';
 import { executeWithAiCreditDeduction } from '../_aiCredits';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -47,11 +47,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return jsonResponse({ error: 'tenantId is required.' }, 400);
   }
 
-  const access = await requireTenantOwnerAccess(env, auth.user, String(body.tenantId), [
-    'business_owner',
-    'business_manager',
-    'business_staff',
-  ]);
+  const access = await requireAuthorizedAiTenant(env, auth.user, body.tenantId);
   if (!access.ok) return access.response;
 
   const task = sanitizeText(body.task || 'comprehensive_audit', 60);

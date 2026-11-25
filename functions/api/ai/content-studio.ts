@@ -15,6 +15,7 @@ import {
   parseJsonBody,
   sanitizeText,
 } from '../_shared';
+import { requireAuthorizedAiTenant } from '../_aiTenantAccess';
 import { executeWithAiCreditDeduction } from '../_aiCredits';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -50,40 +51,13 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return jsonResponse({ error: 'Topic or input brief is required.' }, 400);
   }
 
-  // Load tenant metadata if tenantId is provided
-  let businessContext = '';
-  let websiteId = '';
-  let tenantRowId: number | undefined;
-  let fallbackPlanTier = 'business-website';
-
-  if (env.DB && body?.tenantId) {
-    try {
-      const isNum = typeof body.tenantId === 'number' || /^\d+$/.test(String(body.tenantId));
-      let row: Record<string, any> | null = null;
-      if (isNum) {
-        row = await env.DB.prepare(
-          `SELECT rowid, website_id, business_name, public_slug, website_json FROM customer_website_publications WHERE rowid = ? OR website_id = ? LIMIT 1`
-        )
-          .bind(Number(body.tenantId), String(body.tenantId))
-          .first();
-      } else {
-        row = await env.DB.prepare(
-          `SELECT rowid, website_id, business_name, public_slug, website_json FROM customer_website_publications WHERE public_slug = ? OR website_id = ? LIMIT 1`
-        )
-          .bind(String(body.tenantId), String(body.tenantId))
-          .first();
-      }
-      if (row) {
-        websiteId = String(row.website_id || '');
-        tenantRowId = row.rowid ? Number(row.rowid) : undefined;
-        businessContext = `Business: "${row.business_name || row.public_slug}".`;
-        try {
-          const parsed = JSON.parse(row.website_json || '{}');
-          if (parsed.planTier) fallbackPlanTier = parsed.planTier;
-        } catch {}
-      }
-    } catch {}
-  }
+  // Tenant metadata is loaded only after ownership, status, and plan/quota are
+  // verified server-side. Client-supplied roles or plan fields are ignored.
+  const access = await requireAuthorizedAiTenant(env, auth.user, body?.tenantId);
+  if (!access.ok) return access.response;
+  const { row, parsed } = access;
+  const businessName = String(row.business_name || row.public_slug || 'this store');
+  const businessContext = `Business: "${businessName}".`;
 
   const langInstruction =
     language === 'te'
@@ -161,18 +135,18 @@ Generate a detailed Visual Poster & Banner Design Brief:
 
   try {
     const result = await executeWithAiCreditDeduction(env, {
-      websiteId: websiteId || `user_${auth.user.id}`,
-      tenantRowId,
+      websiteId: row.website_id,
+      tenantRowId: row.rowid ? Number(row.rowid) : undefined,
       userId: auth.user.id,
       serviceSlug: `content-studio:${mode}`,
       requestId: body?.requestId,
       creditsNeeded: 1,
-      fallbackPlanTier,
+      fallbackPlanTier: parsed.planTier,
       promptSnippet: `${mode}: ${topic.slice(0, 80)}`,
       executeAiCall: async () => {
         const hasKey = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY);
         if (!hasKey) {
-          return `=== VIJAY VISUALS AI CONTENT STUDIO ===\nMode: ${mode.toUpperCase()}\nTopic: ${topic}\nLanguage: ${language.toUpperCase()}\n\n1. Content Overview:\nProfessional marketing copy generated for "${topic}".\n- Primary Headline: ${topic} — Exclusive Collection & Premium Services\n- Value Proposition: Crafted with precision, verified quality, and seamless direct delivery.\n- Call To Action: Visit our official storefront or connect on WhatsApp for instant orders.`;
+          return `=== ${businessName} CONTENT STUDIO ===\nMode: ${mode.toUpperCase()}\nTopic: ${topic}\nLanguage: ${language.toUpperCase()}\n\n1. Content Overview:\nProfessional marketing copy generated for "${topic}".\n- Primary Headline: ${topic} — Exclusive Collection & Premium Services\n- Value Proposition: Crafted with precision, verified quality, and seamless direct delivery.\n- Call To Action: Visit the storefront or connect on WhatsApp for instant orders.`;
         }
         return callGeminiEdge(prompt, env, { systemInstruction });
       },

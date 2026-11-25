@@ -316,7 +316,7 @@ function PlatformShell() {
           <span>
             Google Maps API daily demo quota has been reached. Manual address entry and Get Directions links continue working.{' '}
             <a
-              href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
+              href="https://developers.google.com/maps/ai/ai-studio#quota_exceeded_errors"
               target="_blank"
               rel="noopener noreferrer"
               className="underline font-semibold text-amber-300 hover:text-white"
@@ -514,7 +514,7 @@ function PlatformShell() {
 
       <InvoiceModal
         order={invoiceState?.order || null}
-        tenantName={invoiceState?.tenantName || (isPublicTenantHost ? 'Store' : 'Vijay Visuals Store')}
+        tenantName={invoiceState?.tenantName || 'Store'}
         onClose={() => setInvoiceState(null)}
       />
 

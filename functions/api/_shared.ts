@@ -47,6 +47,8 @@ export interface CloudflareEnv {
   CLAUDE_MODEL?: string;
   ANTHROPIC_API_KEY?: string;
   APP_URL?: string;
+  /** Comma-separated exact application origins allowed for password reset callbacks. */
+  PASSWORD_RESET_ALLOWED_ORIGINS?: string;
   CUSTOM_DOMAIN_CNAME_TARGET?: string;
   PLATFORM_HOSTNAMES?: string;
   RAZORPAY_KEY_ID?: string;

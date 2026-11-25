@@ -14,6 +14,7 @@ import {
   resolveVerifiedTenantSender,
 } from './_email';
 import { sendWhatsAppNotification } from './_whatsapp';
+import { resolveTenantPublicUrl } from './_tenantUrl';
 import {
   PagesContext,
   checkRateLimit,
@@ -426,8 +427,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
     // Dispatch Order Received Notifications (Resend Email & WhatsApp)
     const formattedAmount = `₹${(total || 0).toLocaleString('en-IN')}`;
-    const storeName = pub.business_name || 'Your Store';
-    const storeUrl = `https://vijay-visuals-site.pages.dev/site/${encodeURIComponent(pub.public_slug || '')}`;
+    const storeName = sanitizeText(pub.business_name || '', 80) || 'Your Store';
+    const storeLink = await resolveTenantPublicUrl(env, pub);
+    const storeUrl = storeLink.url;
     const verifiedTenantSender = await resolveVerifiedTenantSender(env, pub.website_id);
     if (customerEmail && customerEmail.includes('@')) {
       try {

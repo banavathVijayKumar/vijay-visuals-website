@@ -185,7 +185,6 @@ export const StorefrontMapPreview: React.FC<StorefrontMapPreviewProps> = ({
               <APIProvider apiKey={mapsConfig.apiKey} language="en" region="IN">
                 <GoogleMap
                   mapId="DEMO_MAP_ID"
-                  internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
                   defaultCenter={mapCenter}
                   center={mapCenter}
                   defaultZoom={14}

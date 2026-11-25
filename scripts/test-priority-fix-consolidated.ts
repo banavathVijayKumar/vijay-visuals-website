@@ -42,9 +42,9 @@ import {
   PASSWORD_RESET_COOLDOWN_STORAGE_KEY,
   PASSWORD_RESET_GENERIC_MESSAGE,
   PASSWORD_RECOVERY_INVALID_MESSAGE,
+  PASSWORD_UPDATE_REVOCATION_WARNING_MESSAGE,
   PASSWORD_UPDATE_SUCCESS_MESSAGE,
   completePasswordRecovery,
-  getPasswordResetRedirectUrl,
   isRecoverySession,
   loadPasswordResetRequestTimestamp,
   remainingResetCooldownSeconds,
@@ -161,7 +161,9 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
         ? 'auth-other'
         : token === 'token-customer'
           ? 'auth-customer'
-          : '';
+          : token === 'token-admin'
+            ? 'auth-admin'
+            : '';
 
   if (url.includes('/auth/v1/recover')) {
     const payload = JSON.parse(String(init?.body || '{}')) as { email?: string; redirect_to?: string };
@@ -179,7 +181,12 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
     });
   }
   if (url.includes('/rest/v1/profiles')) {
-    const role = token === 'token-customer' ? 'customer' : 'business_owner';
+    const role =
+      token === 'token-customer'
+        ? 'customer'
+        : token === 'token-admin'
+          ? 'super_admin'
+          : 'business_owner';
     return new Response(JSON.stringify([{ id: subject, role, full_name: 'Test Owner' }]), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -368,6 +375,7 @@ function configuredResetEnv(): CloudflareEnv {
     DB: d1,
     SUPABASE_URL: 'https://supabase.invalid',
     SUPABASE_ANON_KEY: 'anon-test-key',
+    PASSWORD_RESET_ALLOWED_ORIGINS: 'https://preview.example.test',
   };
 }
 
@@ -391,6 +399,7 @@ async function runPasswordRecoveryTests(): Promise<void> {
       'https://preview.example.test/',
       'https://preview.example.test/',
     ]);
+    assert.equal(recoverCalls.some((call) => call.redirectTo.includes('attacker')), false);
   });
 
   await it('failed provider requests never expose raw provider text or claim success', async () => {
@@ -523,10 +532,45 @@ async function runPasswordRecoveryTests(): Promise<void> {
     assert.equal(restored.remainingSeconds, 0);
   });
 
-  await it('callback URL is derived from the current origin only', async () => {
-    assert.equal(getPasswordResetRedirectUrl('https://a5120c49.vijay-visuals-site.pages.dev'), 'https://a5120c49.vijay-visuals-site.pages.dev/');
-    assert.equal(getPasswordResetRedirectUrl('https://feat-multi-tenant-website-bu.vijay-visuals-site.pages.dev/'), 'https://feat-multi-tenant-website-bu.vijay-visuals-site.pages.dev/');
-    assert.equal(getPasswordResetRedirectUrl(''), '');
+  await it('arbitrary client redirect origins are ignored', async () => {
+    recoverMode = 'ok';
+    recoverCalls = [];
+    const result = await callResetRequest(
+      configuredResetEnv(),
+      uniqueResetEmail('redirect'),
+      'https://attacker.example.test/callback?next=admin'
+    );
+    assert.equal(result.ok, true);
+    assert.equal(recoverCalls.length, 1);
+    assert.equal(recoverCalls[0].redirectTo, 'https://preview.example.test/');
+    assert.equal(recoverCalls[0].redirectTo.includes('attacker'), false);
+  });
+
+  await it('failed session revocation reports the limitation honestly', async () => {
+    const { client } = createMockClient({
+      session: validRecoverySession,
+      signOutError: 'revocation endpoint unavailable',
+    });
+    const result = await completePasswordRecovery(client as PasswordRecoveryClient, 'new-password', 'new-password');
+    assert.equal(result.ok, true);
+    assert.equal(result.code, 'SUCCESS_WITHOUT_REVOCATION');
+    assert.equal(result.sessionsRevoked, false);
+    assert.equal(result.message, PASSWORD_UPDATE_REVOCATION_WARNING_MESSAGE);
+    assert.equal(result.message.includes('successfully signed out'), false);
+  });
+
+  await it('concurrent reset requests consume only one allowance', async () => {
+    recoverMode = 'ok';
+    recoverCalls = [];
+    const env = configuredResetEnv();
+    const email = uniqueResetEmail('concurrent');
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => callResetRequest(env, email, 'https://attacker.example.test'))
+    );
+    assert.equal(results.filter((result) => result.ok).length, 1);
+    assert.equal(results.filter((result) => result.rateLimitCode === 'COOLDOWN').length, 4);
+    assert.equal(recoverCalls.length, 1);
+    assert.equal(recoverCalls[0].redirectTo, 'https://preview.example.test/');
   });
 }
 

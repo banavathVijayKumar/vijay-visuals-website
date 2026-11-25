@@ -42,6 +42,14 @@ function maskShippingAddress(address: string): string {
   return 'Protected Address, ' + parts[parts.length - 1].slice(0, 60);
 }
 
+/** Payment references are gateway identifiers, never public tracking identifiers. */
+function maskPaymentReference(reference: unknown): string {
+  const clean = String(reference || '').trim();
+  if (!clean) return '';
+  if (clean.length <= 4) return '••••';
+  return `••••••${clean.slice(-4)}`;
+}
+
 export async function onRequestGet(
   context: PagesContext<{ orderNumber: string }>
 ): Promise<Response> {
@@ -164,20 +172,43 @@ export async function onRequestGet(
 
     const rawUiOrder = mapOrderRowToUi(order, Number(pub?.rowid || 0));
 
+    // Only customer-relevant tracking fields leave this endpoint. Internal row
+    // IDs, website IDs, gateway references, and ownership data are never sent.
+    const publicOrder = {
+      orderNumber: rawUiOrder.orderNumber,
+      invoiceNumber: String(order.invoice_number || ''),
+      customerName: String(rawUiOrder.customerName || ''),
+      customerPhone: String(rawUiOrder.customerPhone || ''),
+      customerEmail: String(rawUiOrder.customerEmail || ''),
+      shippingAddress: String(rawUiOrder.shippingAddress || ''),
+      itemsJson: rawUiOrder.itemsJson,
+      subtotal: rawUiOrder.subtotal,
+      discount: rawUiOrder.discount,
+      deliveryFee: rawUiOrder.deliveryFee,
+      gstAmount: rawUiOrder.gstAmount,
+      total: rawUiOrder.total,
+      paymentMethod: rawUiOrder.paymentMethod,
+      paymentStatus: rawUiOrder.paymentStatus,
+      paymentReference: maskPaymentReference(rawUiOrder.paymentReference),
+      status: rawUiOrder.status,
+      createdAt: rawUiOrder.createdAt,
+      ...(isAuthorized ? { couponCode: rawUiOrder.couponCode, returnReason: rawUiOrder.returnReason } : {}),
+    };
+
     const finalOrder = isAuthorized
-      ? { ...rawUiOrder, isPiiMasked: false }
+      ? { ...publicOrder, isPiiMasked: false }
       : {
-          ...rawUiOrder,
-          customerName: maskCustomerName(String(rawUiOrder.customerName || '')),
-          customerPhone: maskCustomerPhone(String(rawUiOrder.customerPhone || '')),
-          customerEmail: maskCustomerEmail(String(rawUiOrder.customerEmail || '')),
-          shippingAddress: maskShippingAddress(String(rawUiOrder.shippingAddress || '')),
+          ...publicOrder,
+          customerName: maskCustomerName(publicOrder.customerName),
+          customerPhone: maskCustomerPhone(publicOrder.customerPhone),
+          customerEmail: maskCustomerEmail(publicOrder.customerEmail),
+          shippingAddress: maskShippingAddress(publicOrder.shippingAddress),
           isPiiMasked: true,
         };
 
     return jsonResponse({
       order: finalOrder,
-      tenantName: pub?.business_name || 'Vijay Visuals Store',
+      tenantName: sanitizeText(pub?.business_name || '', 80) || 'Store',
       tenantPhone,
       deliveryPartner: null,
       verificationRequiredForFullPii: !isAuthorized,

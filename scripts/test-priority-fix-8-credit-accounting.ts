@@ -57,7 +57,8 @@ class MockD1DB {
         owner_id TEXT,
         plan_code TEXT,
         plan_id TEXT,
-        status TEXT DEFAULT 'active'
+        status TEXT DEFAULT 'active',
+        current_period_end TEXT DEFAULT (datetime('now', '+30 days'))
       );
 
       CREATE TABLE IF NOT EXISTS tenant_ai_usage (
@@ -92,10 +93,10 @@ class MockD1DB {
         (1, 'prev_site_svs', 'svs', 'SVS Store', '{"planTier":"business-website"}', 'published'),
         (2, 'prev_site_tenant_b', 'tenant-b', 'Tenant B Store', '{"planTier":"starter-website"}', 'published');
 
-      INSERT INTO tenant_subscriptions (website_id, plan_code, status)
+      INSERT INTO tenant_subscriptions (website_id, plan_code, status, current_period_end)
       VALUES 
-        ('prev_site_svs', 'business-website', 'active'),
-        ('prev_site_tenant_b', 'starter-website', 'active');
+        ('prev_site_svs', 'business-website', 'active', datetime('now', '+30 days')),
+        ('prev_site_tenant_b', 'starter-website', 'active', datetime('now', '+30 days'));
     `);
   }
 

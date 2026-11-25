@@ -6,7 +6,9 @@
 // ============================================================================
 
 export const PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS = 60;
+export const PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 export const PASSWORD_RESET_COOLDOWN_STORAGE_KEY = 'vv_password_reset_requested_at';
+export const PASSWORD_RESET_HOURLY_BLOCK_STORAGE_KEY = 'vv_password_reset_hourly_block_until';
 
 export const PASSWORD_RESET_GENERIC_MESSAGE =
   'If an account exists for this email, password reset instructions have been sent. Please check your inbox.';
@@ -28,6 +30,8 @@ export const PASSWORD_UPDATE_FAILED_MESSAGE =
   'Unable to update your password right now. Please request a new reset link or try again later.';
 export const PASSWORD_UPDATE_SUCCESS_MESSAGE =
   'Password updated successfully. You can now continue signed in.';
+export const PASSWORD_UPDATE_REVOCATION_WARNING_MESSAGE =
+  'Password updated, but other active sessions could not be signed out. Please sign out on all devices manually.';
 
 interface ProviderResult {
   error?: { message?: string } | null;
@@ -58,6 +62,7 @@ export interface RecoveryActionResult {
   message: string;
   code:
     | 'SUCCESS'
+    | 'SUCCESS_WITHOUT_REVOCATION'
     | 'INVALID_EMAIL'
     | 'NO_CLIENT'
     | 'NO_CALLBACK'
@@ -68,6 +73,8 @@ export interface RecoveryActionResult {
     | 'PASSWORD_MISMATCH';
   sessionsRevoked?: boolean;
   remainingSeconds?: number;
+  rateLimitCode?: 'COOLDOWN' | 'HOURLY_LIMIT';
+  blockUntil?: number;
 }
 
 export function normalizeEmail(raw: unknown): string {
@@ -150,6 +157,56 @@ export function restorePasswordResetCooldown(
   };
 }
 
+/** Absolute server-derived hourly block timestamp — no email, token, or reset link stored. */
+export function remainingPasswordResetHourlyBlockSeconds(
+  blockedUntil: number | null | undefined,
+  now: number = Date.now()
+): number {
+  if (!blockedUntil || !Number.isFinite(blockedUntil)) return 0;
+  return Math.max(0, Math.ceil((blockedUntil - now) / 1000));
+}
+
+export function loadPasswordResetHourlyBlock(
+  storage: CooldownStorage | null | undefined = getPasswordResetCooldownStorage(),
+  now: number = Date.now()
+): number | null {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(PASSWORD_RESET_HOURLY_BLOCK_STORAGE_KEY);
+    if (raw === null) return null;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= now) return null;
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+export function savePasswordResetHourlyBlock(
+  blockedUntil: number,
+  storage: CooldownStorage | null | undefined = getPasswordResetCooldownStorage()
+): number | null {
+  const now = Date.now();
+  const clean = Number.isFinite(blockedUntil) && blockedUntil > now ? blockedUntil : 0;
+  try {
+    storage?.setItem(PASSWORD_RESET_HOURLY_BLOCK_STORAGE_KEY, String(clean));
+  } catch {
+    // In-memory state still enforces the block for this session.
+  }
+  return clean || null;
+}
+
+export function restorePasswordResetHourlyBlock(
+  storage: CooldownStorage | null | undefined = getPasswordResetCooldownStorage(),
+  now: number = Date.now()
+): { blockedUntil: number | null; remainingSeconds: number } {
+  const blockedUntil = loadPasswordResetHourlyBlock(storage, now);
+  return {
+    blockedUntil,
+    remainingSeconds: remainingPasswordResetHourlyBlockSeconds(blockedUntil, now),
+  };
+}
+
 export function isRecoverySession(session: unknown): session is RecoverySession {
   if (!session || typeof session !== 'object') return false;
   const candidate = session as RecoverySession;
@@ -172,14 +229,14 @@ export type PasswordResetFetch = (
 ) => Promise<Response>;
 
 /**
- * Requests a reset through the server-side D1 rate-limit gate. The client
- * Supabase SDK is intentionally not used here; bypassing this endpoint cannot
- * bypass the server cooldown.
+ * Requests a reset through the server-side D1 rate-limit gate. The redirect is
+ * chosen server-side from PASSWORD_RESET_ALLOWED_ORIGINS; any client redirect
+ * argument is ignored and is never sent to the server or Supabase.
  */
 export async function requestPasswordReset(
   _client: PasswordRecoveryClient | null | undefined,
   rawEmail: unknown,
-  redirectTo: unknown,
+  _ignoredRedirectTo?: unknown,
   fetchImpl: PasswordResetFetch = (input, init) => fetch(input, init)
 ): Promise<RecoveryActionResult> {
   const email = normalizeEmail(rawEmail);
@@ -187,16 +244,11 @@ export async function requestPasswordReset(
     return { ok: false, code: 'INVALID_EMAIL', message: PASSWORD_RESET_INVALID_EMAIL_MESSAGE };
   }
 
-  const callbackUrl = getPasswordResetRedirectUrl(redirectTo);
-  if (!callbackUrl) {
-    return { ok: false, code: 'NO_CALLBACK', message: PASSWORD_RESET_NO_CALLBACK_MESSAGE };
-  }
-
   try {
     const response = await fetchImpl('/api/auth/password/reset-request', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, redirectTo: callbackUrl }),
+      body: JSON.stringify({ email }),
     });
     const payload = (await response.json().catch(() => ({}))) as {
       ok?: boolean;
@@ -207,6 +259,8 @@ export async function requestPasswordReset(
       Number.isFinite(payload.remainingSeconds) && Number(payload.remainingSeconds) > 0
         ? Math.ceil(Number(payload.remainingSeconds))
         : 0;
+    const rateLimitCode =
+      payload.code === 'HOURLY_LIMIT' || payload.code === 'COOLDOWN' ? payload.code : undefined;
 
     if (response.ok && payload.ok) {
       return {
@@ -217,15 +271,23 @@ export async function requestPasswordReset(
       };
     }
 
-    if (payload.code === 'COOLDOWN' || response.status === 429) {
+    if (rateLimitCode || response.status === 429) {
+      const effectiveSeconds =
+        remainingSeconds ||
+        (rateLimitCode === 'HOURLY_LIMIT'
+          ? PASSWORD_RESET_RATE_LIMIT_WINDOW_SECONDS
+          : PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS);
       return {
         ok: false,
         code: 'RATE_LIMITED',
         message:
-          payload.code === 'HOURLY_LIMIT'
+          rateLimitCode === 'HOURLY_LIMIT'
             ? PASSWORD_RESET_RATE_LIMIT_MESSAGE
-            : `Please wait ${remainingSeconds || PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS} seconds before requesting another reset link.`,
-        remainingSeconds: remainingSeconds || PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS,
+            : `Please wait ${effectiveSeconds} seconds before requesting another reset link.`,
+        remainingSeconds: effectiveSeconds,
+        rateLimitCode,
+        blockUntil:
+          rateLimitCode === 'HOURLY_LIMIT' ? Date.now() + effectiveSeconds * 1000 : undefined,
       };
     }
 
@@ -291,8 +353,10 @@ export async function completePasswordRecovery(
 
     return {
       ok: true,
-      code: 'SUCCESS',
-      message: PASSWORD_UPDATE_SUCCESS_MESSAGE,
+      code: sessionsRevoked ? 'SUCCESS' : 'SUCCESS_WITHOUT_REVOCATION',
+      message: sessionsRevoked
+        ? PASSWORD_UPDATE_SUCCESS_MESSAGE
+        : PASSWORD_UPDATE_REVOCATION_WARNING_MESSAGE,
       sessionsRevoked,
     };
   } catch {

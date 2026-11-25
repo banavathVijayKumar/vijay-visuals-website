@@ -1,5 +1,6 @@
 import React from 'react';
 import { Printer, X } from 'lucide-react';
+import { maskPaymentReference } from '../lib/paymentDisplay';
 import { OrderItemLine, OrderRecord } from '../types/platform';
 
 interface InvoiceModalProps {
@@ -70,7 +71,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ order, tenantName, o
               <p className="text-[#8E8EA0] mb-1">Payment Summary</p>
               <p className="text-white capitalize">Method: {order.paymentMethod.replace('_', ' ')}</p>
               <p className="text-white capitalize">Status: {order.paymentStatus.replace('_', ' ')}</p>
-              {order.paymentReference && <p className="font-mono-tabular text-[#ECC86A]">Ref: {order.paymentReference}</p>}
+              {order.paymentReference && <p className="font-mono-tabular text-[#ECC86A]">Ref: {maskPaymentReference(order.paymentReference)}</p>}
               {order.isWholesale && <p className="text-[#ECC86A] mt-1">Wholesale Bulk Pricing Applied</p>}
             </div>
           </div>

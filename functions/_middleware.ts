@@ -125,7 +125,6 @@ export function buildTenantHeadInjection(
 
   const tags = [
     `<meta name="vv-tenant-slug" content="${escapeHtml(row.public_slug)}" />`,
-    `<meta name="vv-tenant-website-id" content="${escapeHtml(row.website_id)}" />`,
     `<meta name="application-name" content="${escapeHtml(row.business_name)}" />`,
     `<meta name="apple-mobile-web-app-title" content="${escapeHtml(row.business_name)}" />`,
     themeColor ? `<meta name="theme-color" content="${themeColor}" />` : '',
@@ -178,6 +177,72 @@ export function replacePlatformHeadMetadata(
   return result.replace(/<\/head>/i, `${tenantHeadInjection}\n</head>`);
 }
 
+/**
+ * /site/{slug} on a platform host is an honest fallback route. The shell stays
+ * on the official host, but platform OG/Twitter branding must not be presented
+ * as the tenant's storefront metadata.
+ */
+async function rewritePlatformSiteRouteMetadata(
+  context: PagesContext,
+  rawSlug: string,
+  hostname: string
+): Promise<Response | null> {
+  let decodedSlug: string;
+  try {
+    decodedSlug = decodeURIComponent(rawSlug || '');
+  } catch {
+    return null;
+  }
+  const slug = decodedSlug.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{1,79}$/.test(slug) || !context.env.DB) return null;
+
+  const published = await context.env.DB.prepare(
+    `SELECT website_id, public_slug, business_name, status, website_json
+     FROM customer_website_publications
+     WHERE public_slug = ? AND status = 'published'
+     LIMIT 1`
+  )
+    .bind(slug)
+    .first<{
+      website_id: string;
+      public_slug: string;
+      business_name: string;
+      status: string;
+      website_json: string;
+    }>();
+  if (!published) return null;
+
+  const response = await context.next();
+  if (!(response.headers.get('Content-Type') || '').toLowerCase().includes('text/html')) {
+    return response;
+  }
+
+  const url = new URL(context.request.url);
+  const canonicalUrl = `${url.origin}/site/${encodeURIComponent(published.public_slug)}`;
+  const row: ResolvedTenantRow = {
+    id: 0,
+    website_id: published.website_id,
+    domain_name: hostname,
+    status: 'platform_site_route',
+    www_mode: 'both',
+    dns_verification_status: 'not_applicable',
+    ssl_status: 'not_applicable',
+    public_slug: published.public_slug,
+    business_name: published.business_name,
+    website_status: published.status,
+    website_json: published.website_json,
+  };
+  const head = buildTenantHeadInjection(row, canonicalUrl);
+  const updatedHtml = replacePlatformHeadMetadata(await response.text(), head.title, head.injection);
+  const headers = new Headers(response.headers);
+  headers.set('Content-Type', 'text/html; charset=utf-8');
+  headers.set('X-VV-Tenant-Slug', row.public_slug);
+  headers.set('X-VV-Domain-Status', row.status);
+  headers.delete('Content-Length');
+
+  return new Response(updatedHtml, { status: response.status, headers });
+}
+
 export async function onRequest(context: PagesContext): Promise<Response> {
   const { request, env, next } = context;
   const url = new URL(request.url);
@@ -215,6 +280,16 @@ export async function onRequest(context: PagesContext): Promise<Response> {
     BYPASS_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
   ) {
     return next();
+  }
+
+  const platformSiteRoute = url.pathname.match(/^\/site\/([^/]+)\/?$/);
+  if (platformSiteRoute && isPlatformHostname(hostname, context.env)) {
+    const rewritten = await rewritePlatformSiteRouteMetadata(
+      context,
+      platformSiteRoute[1],
+      hostname
+    );
+    if (rewritten) return rewritten;
   }
 
   // Platform-owned default delivery subdomains are tenant hosts only when a

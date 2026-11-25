@@ -17,6 +17,14 @@ export function isVerifiedPayment(state: PaymentDisplayState): boolean {
   return Boolean(state.signatureVerified) && VERIFIED_PAYMENT_STATUSES.has(status);
 }
 
+/** Gateway references are sensitive; customer-facing surfaces show only the suffix. */
+export function maskPaymentReference(raw: unknown): string {
+  const clean = String(raw || '').trim();
+  if (!clean) return '';
+  if (clean.length <= 4) return '••••';
+  return `••••••${clean.slice(-4)}`;
+}
+
 export function formatVerifiedPaymentLabel(state: PaymentDisplayState): string {
   if (!state.amountInr || !isVerifiedPayment(state)) {
     return 'No verified payment recorded';

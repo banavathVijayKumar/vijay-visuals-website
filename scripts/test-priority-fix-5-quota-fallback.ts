@@ -79,7 +79,8 @@ class MockD1 {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         website_id TEXT,
         plan_code TEXT,
-        status TEXT DEFAULT 'active'
+        status TEXT DEFAULT 'active',
+        current_period_end TEXT DEFAULT (datetime('now', '+30 days'))
       );
 
       INSERT INTO subscription_plans (id, code, name, monthly_ai_credits)
@@ -88,8 +89,8 @@ class MockD1 {
       INSERT INTO customer_website_publications (rowid, website_id, public_slug, business_name, website_json, status)
       VALUES (1, 'site_svs', 'svs', 'SVS Store', '{"planTier":"business-website"}', 'published');
 
-      INSERT INTO tenant_subscriptions (website_id, plan_code, status)
-      VALUES ('site_svs', 'business-website', 'active');
+      INSERT INTO tenant_subscriptions (website_id, plan_code, status, current_period_end)
+      VALUES ('site_svs', 'business-website', 'active', datetime('now', '+30 days'));
     `);
   }
 

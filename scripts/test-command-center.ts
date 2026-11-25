@@ -170,8 +170,16 @@ class MockD1Database {
 const mockDb = new MockD1Database();
 
 const now = new Date();
+// Date-only columns are compared against the route's UTC `todayIso`, while
+// timestamp columns are compared against a local-midnight `startOfToday`.
+// Seed both explicitly so the fixture is stable across timezone boundaries.
 const todayIso = now.toISOString().slice(0, 10);
 const yesterdayIso = new Date(now.getTime() - 86400 * 1000).toISOString().slice(0, 10);
+const localTodayIso = [
+  now.getFullYear(),
+  String(now.getMonth() + 1).padStart(2, '0'),
+  String(now.getDate()).padStart(2, '0'),
+].join('-');
 
 // Tenant 5: Sri Venkateswara Sweets (Owner: user_owner_5)
 mockDb.publications.push({
@@ -243,7 +251,7 @@ mockDb.orders.push(
     payment_method: 'cod',
     payment_status: 'paid',
     order_status: 'delivered',
-    created_at: `${todayIso}T10:00:00Z`, // today
+    created_at: `${localTodayIso}T10:00:00`, // today
   },
   {
     id: 1002,
@@ -257,7 +265,7 @@ mockDb.orders.push(
     payment_method: 'cod',
     payment_status: 'pending',
     order_status: 'placed',
-    created_at: `${todayIso}T11:00:00Z`, // today, pending
+    created_at: `${localTodayIso}T11:00:00`, // today, pending
   },
   {
     id: 1003,
@@ -271,7 +279,7 @@ mockDb.orders.push(
     payment_method: 'online',
     payment_status: 'pending',
     order_status: 'cancelled',
-    created_at: `${yesterdayIso}T12:00:00Z`, // cancelled
+    created_at: `${yesterdayIso}T12:00:00`, // cancelled
   }
 );
 
@@ -283,7 +291,7 @@ mockDb.finance.push({
   amount_inr: 250,
   gst_inr: 45,
   entry_date: todayIso,
-  created_at: `${todayIso}T09:00:00Z`,
+  created_at: `${localTodayIso}T09:00:00`,
 });
 
 // Purchase orders
@@ -293,7 +301,7 @@ mockDb.purchaseOrders.push({
   total_cost_inr: 500,
   status: 'placed',
   payment_status: 'pending',
-  created_at: `${todayIso}T08:00:00Z`,
+  created_at: `${localTodayIso}T08:00:00`,
 });
 
 // Leads
@@ -304,7 +312,7 @@ mockDb.leads.push({
   customer_phone: '9988776655',
   stage: 'contacted',
   next_followup_date: todayIso,
-  created_at: `${todayIso}T07:00:00Z`,
+  created_at: `${localTodayIso}T07:00:00`,
 });
 
 // Appointments
@@ -313,7 +321,7 @@ mockDb.appointments.push({
   website_id: 'web_tenant_5',
   customer_name: 'Priya Sharma',
   service_name: 'Catering Consultation',
-  scheduled_start: `${todayIso}T15:00:00Z`,
+  scheduled_start: `${todayIso}T15:00:00`,
   status: 'confirmed',
 });
 

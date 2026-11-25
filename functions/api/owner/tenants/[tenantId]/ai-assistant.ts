@@ -15,7 +15,7 @@ import {
   parseJsonBody,
   sanitizeText,
 } from '../../../_shared';
-import { requireTenantOwnerAccess } from '../../../_tenantAccess';
+import { requireAuthorizedAiTenant } from '../../../_aiTenantAccess';
 import { executeWithAiCreditDeduction } from '../../../_aiCredits';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -29,11 +29,7 @@ export async function onRequestPost(
   const auth = await requireUser(request, env);
   if (!auth.ok) return auth.response;
 
-  const access = await requireTenantOwnerAccess(env, auth.user, params.tenantId, [
-    'business_owner',
-    'business_manager',
-    'business_staff',
-  ]);
+  const access = await requireAuthorizedAiTenant(env, auth.user, params.tenantId);
   if (!access.ok) return access.response;
 
   const rl = await checkRateLimit(env, `ai_asst:${auth.user.id}`, 30, 3600);

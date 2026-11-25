@@ -141,7 +141,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
             type="text"
             value={orderNumber}
             onChange={(e) => setOrderNumber(e.target.value)}
-            placeholder="Enter Order ID (e.g. VV-123456-789)"
+            placeholder="Enter your Order ID"
             className="flex-1 rounded-md border border-[#2A2A38] bg-[#09090D] px-3.5 py-2.5 text-sm text-white placeholder-[#68687A] focus:border-[#D4AF37] focus:outline-none"
           />
           <button
@@ -255,7 +255,6 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                     <APIProvider apiKey={mapsConfig.apiKey} language="en" region="IN">
                       <GoogleMap
                         mapId="DEMO_MAP_ID"
-                        internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
                         defaultCenter={mapCenter}
                         center={mapCenter}
                         defaultZoom={14}

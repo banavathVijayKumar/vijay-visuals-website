@@ -11,7 +11,7 @@
 // - Requires explicit user confirmation before financial/bulk/publish actions
 // ============================================================================
 
-import { requireUser, requireWebsiteAccess } from '../_auth';
+import { requireUser } from '../_auth';
 import {
   PagesContext,
   callGeminiEdge,
@@ -24,6 +24,7 @@ import {
   sanitizeText,
 } from '../_shared';
 import { executeWithAiCreditDeduction } from '../_aiCredits';
+import { requireAuthorizedAiTenant } from '../_aiTenantAccess';
 
 const SENSITIVE_ACTION_PATTERN = /\b(delete|refund|charge|payout|send bulk|blast|publish all|cancel all)\b/i;
 
@@ -85,11 +86,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const toolKey = (body.tool || 'assistant').toLowerCase().trim();
   const tool = Object.prototype.hasOwnProperty.call(AI_TOOL_MODES, toolKey) ? toolKey : 'assistant';
 
-  const access = await requireWebsiteAccess(env, auth.user, websiteId, [
-    'business_owner',
-    'business_manager',
-    'business_staff',
-  ]);
+  const access = await requireAuthorizedAiTenant(env, auth.user, websiteId);
   if (!access.ok) return access.response;
 
   // Confirmation gate for sensitive actions
@@ -123,9 +120,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   ]);
 
   const tenantContext = {
-    businessName: access.website.business_name,
-    publicSlug: access.website.public_slug,
-    websiteStatus: access.website.status,
+    businessName: access.row.business_name,
+    publicSlug: access.row.public_slug,
+    websiteStatus: access.row.status,
     activeProducts: Number(prodCount?.cnt || 0),
     totalOrders: Number(orderStats?.cnt || 0),
     recordedOrderVolumeInr: Number(orderStats?.revenue_inr || 0),
@@ -167,6 +164,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       serviceSlug: `platform-assistant:${tool}`,
       requestId: body?.requestId,
       creditsNeeded: 1,
+      fallbackPlanTier: access.parsed.planTier,
       promptSnippet: `${tool}: ${prompt.slice(0, 80)}`,
       executeAiCall: async () => {
         return callGeminiEdge(prompt, env, { systemInstruction });

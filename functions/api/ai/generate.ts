@@ -14,6 +14,7 @@ import {
   parseJsonBody,
   sanitizeText,
 } from '../_shared';
+import { requireAuthorizedAiTenant } from '../_aiTenantAccess';
 import { executeWithAiCreditDeduction } from '../_aiCredits';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -45,56 +46,28 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const prompt = taskLabel ? `${taskLabel}: ${rawInput}` : rawInput;
   if (!rawInput) return jsonResponse({ error: 'Prompt or input text is required.' }, 400);
 
-  let websiteId = '';
-  let tenantRowId: number | undefined;
-  let fallbackPlanTier = 'business-website';
-
-  if (env.DB && body?.tenantId) {
-    try {
-      const isNum = typeof body.tenantId === 'number' || /^\d+$/.test(String(body.tenantId));
-      let row: Record<string, any> | null = null;
-      if (isNum) {
-        row = await env.DB.prepare(
-          `SELECT rowid, website_id, website_json FROM customer_website_publications WHERE rowid = ? OR website_id = ? LIMIT 1`
-        )
-          .bind(Number(body.tenantId), String(body.tenantId))
-          .first();
-      } else {
-        row = await env.DB.prepare(
-          `SELECT rowid, website_id, website_json FROM customer_website_publications WHERE public_slug = ? OR website_id = ? LIMIT 1`
-        )
-          .bind(String(body.tenantId), String(body.tenantId))
-          .first();
-      }
-      if (row) {
-        websiteId = String(row.website_id || '');
-        tenantRowId = row.rowid ? Number(row.rowid) : undefined;
-        try {
-          const parsed = JSON.parse(row.website_json || '{}');
-          if (parsed.planTier) fallbackPlanTier = parsed.planTier;
-        } catch {}
-      }
-    } catch {}
-  }
+  const access = await requireAuthorizedAiTenant(env, auth.user, body?.tenantId);
+  if (!access.ok) return access.response;
+  const { row, parsed } = access;
+  const businessName = String(row.business_name || row.public_slug || 'this store');
 
   try {
     const result = await executeWithAiCreditDeduction(env, {
-      websiteId: websiteId || `user_${auth.user.id}`,
-      tenantRowId,
+      websiteId: row.website_id,
+      tenantRowId: row.rowid ? Number(row.rowid) : undefined,
       userId: auth.user.id,
       serviceSlug: `generate:${taskLabel || 'copy'}`,
       requestId: body?.requestId,
       creditsNeeded: 1,
-      fallbackPlanTier,
+      fallbackPlanTier: parsed.planTier,
       promptSnippet: prompt.slice(0, 100),
       executeAiCall: async () => {
         const hasKey = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY);
         if (!hasKey) {
-          return `Vijay Visuals copy for "${prompt}": Handcrafted with premium ingredients, authentic quality, and dedicated care. Order online for swift direct delivery.`;
+          return `${businessName} copy for "${prompt}": Handcrafted with premium ingredients, authentic quality, and dedicated care. Order online for swift direct delivery.`;
         }
         return callGeminiEdge(prompt, env, {
-          systemInstruction:
-            'You are a concise e-commerce and small business copywriter for Vijay Visuals. Write clear, trustworthy, conversion-ready copy without exaggerated claims or placeholders.',
+          systemInstruction: `You are a concise e-commerce and small business copywriter for ${businessName}. Write clear, trustworthy, conversion-ready copy without exaggerated claims or placeholders.`,
         });
       },
     });

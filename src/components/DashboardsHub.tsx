@@ -3536,7 +3536,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   <div className="divide-y divide-[#1D1D28]">
                     {customerOrders.map((ord) => {
                       const storeName =
-                        allTenants.find((t) => t.id === ord.tenantId)?.name || 'Vijay Visuals Store';
+                        allTenants.find((t) => t.id === ord.tenantId)?.name || 'Store';
                       return (
                       <div key={ord.id} className="p-4 flex flex-wrap items-center justify-between gap-4 text-xs">
                         <div>

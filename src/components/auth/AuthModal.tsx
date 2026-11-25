@@ -3,9 +3,12 @@ import { initSupabaseClient, authService, UserProfile, UserRole } from '../../li
 import {
   PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS,
   completePasswordRecovery,
+  loadPasswordResetHourlyBlock,
   loadPasswordResetRequestTimestamp,
+  remainingPasswordResetHourlyBlockSeconds,
   remainingResetCooldownSeconds,
   requestPasswordReset,
+  savePasswordResetHourlyBlock,
   savePasswordResetRequestTimestamp,
   type PasswordRecoveryClient,
 } from '../../lib/authRecovery';
@@ -40,6 +43,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [busy, setBusy] = useState(false);
   const [resetCooldown, setResetCooldown] = useState<number>(0);
   const [lastResetRequestAt, setLastResetRequestAt] = useState<number | null>(null);
+  const [hourlyBlockUntil, setHourlyBlockUntil] = useState<number | null>(null);
+  const [hourlyRemainingSeconds, setHourlyRemainingSeconds] = useState<number>(0);
 
   // 6-Digit Email OTP States
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
@@ -55,18 +60,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setOtpCooldown(0);
     // Reopening or changing the initial mode must restore, never clear, the cooldown.
     const restoredAt = loadPasswordResetRequestTimestamp();
+    const restoredBlockUntil = loadPasswordResetHourlyBlock();
     setLastResetRequestAt(restoredAt);
     setResetCooldown(remainingResetCooldownSeconds(restoredAt));
+    setHourlyBlockUntil(restoredBlockUntil);
+    setHourlyRemainingSeconds(remainingPasswordResetHourlyBlockSeconds(restoredBlockUntil));
   }, [isOpen, initialMode]);
 
-  // Live 60-second countdown for password reset requests, derived from the real timestamp.
+  // Live countdowns derived from real server timestamps. The hourly block counts
+  // down from the actual window end instead of restarting at a fake 60 seconds.
   useEffect(() => {
     if (!isOpen) return;
-    setResetCooldown(remainingResetCooldownSeconds(lastResetRequestAt));
-    if (!lastResetRequestAt) return;
-    const timer = setInterval(() => {
+    const tick = () => {
       setResetCooldown(remainingResetCooldownSeconds(lastResetRequestAt));
-    }, 1000);
+      const storedBlockUntil = loadPasswordResetHourlyBlock();
+      setHourlyBlockUntil(storedBlockUntil);
+      setHourlyRemainingSeconds(remainingPasswordResetHourlyBlockSeconds(storedBlockUntil));
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
   }, [isOpen, lastResetRequestAt]);
 
@@ -180,17 +192,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       // 1. Forgot Password — send real Supabase recovery email
       if (mode === 'forgot') {
-        const waitSeconds = remainingResetCooldownSeconds(lastResetRequestAt);
+        const waitSeconds = Math.max(
+          remainingResetCooldownSeconds(lastResetRequestAt),
+          remainingPasswordResetHourlyBlockSeconds(hourlyBlockUntil)
+        );
+        if (hourlyRemainingSeconds > 0) {
+          setError(`Too many reset requests. Please try again in ${hourlyRemainingSeconds} seconds.`);
+          return;
+        }
         if (waitSeconds > 0) {
           setError(`Please wait ${waitSeconds} seconds before requesting another reset link.`);
           return;
         }
 
         // Reset dispatch is server-gated; no browser Supabase client is needed here.
-        const result = await requestPasswordReset(null, email, window.location.origin);
+        // The callback origin is selected server-side; client origins are ignored.
+        const result = await requestPasswordReset(null, email);
         if (!result.ok) {
-          // The server consumed the cooldown even if the provider failed; mirror it locally.
-          if (result.remainingSeconds && result.remainingSeconds > 0) {
+          if (result.rateLimitCode === 'HOURLY_LIMIT') {
+            const persistedBlockUntil = savePasswordResetHourlyBlock(
+              result.blockUntil || Date.now() + (result.remainingSeconds || 0) * 1000
+            );
+            setHourlyBlockUntil(persistedBlockUntil);
+            setHourlyRemainingSeconds(remainingPasswordResetHourlyBlockSeconds(persistedBlockUntil));
+          } else if (result.remainingSeconds && result.remainingSeconds > 0) {
+            // The server consumed the cooldown; mirror only that real allowance.
             const derivedAt =
               Date.now() -
               (PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS - result.remainingSeconds) * 1000;
@@ -636,7 +662,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
 
               <button
-                disabled={busy || (mode === 'forgot' && resetCooldown > 0)}
+                disabled={busy || (mode === 'forgot' && (resetCooldown > 0 || hourlyRemainingSeconds > 0))}
                 type="submit"
                 className="w-full mt-2 py-2.5 rounded-lg bg-gradient-to-r from-[#DFBA5A] to-[#B38D2C] text-[#0A0A0E] text-xs font-bold uppercase tracking-wider disabled:opacity-60"
               >
@@ -645,9 +671,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   : mode === 'register'
                     ? 'Send 6-Digit Verification Code'
                     : mode === 'forgot'
-                      ? resetCooldown > 0
-                        ? `Resend in ${resetCooldown}s`
-                        : 'Send Password Reset Link'
+                      ? hourlyRemainingSeconds > 0
+                        ? `Hourly limit: ${hourlyRemainingSeconds}s`
+                        : resetCooldown > 0
+                          ? `Resend in ${resetCooldown}s`
+                          : 'Send Password Reset Link'
                       : mode === 'reset_password'
                         ? 'Update Password'
                         : 'Sign In'}
