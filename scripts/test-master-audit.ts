@@ -96,7 +96,10 @@ console.log('\n--- TRACK 3: Automatic Customer Website Delivery Engine ---');
     signatureVerified: boolean;
     tenantWebsiteId: string | null;
     subscriptionId: number | null;
+    lifetimeEntitlementId: number | null;
     billingCycle: 'one_time' | 'monthly' | 'yearly';
+    // Recurring subscriptions always carry a real period end. One-time
+    // purchases use a separate lifetime entitlement with no expiry column.
     periodEnd: string | null;
     provisioningError: string | null;
     deliveryAttempts: number;
@@ -110,6 +113,7 @@ console.log('\n--- TRACK 3: Automatic Customer Website Delivery Engine ---');
     signatureVerified: false,
     tenantWebsiteId: null,
     subscriptionId: null,
+    lifetimeEntitlementId: null,
     billingCycle: 'one_time',
     periodEnd: null,
     provisioningError: null,
@@ -135,15 +139,19 @@ console.log('\n--- TRACK 3: Automatic Customer Website Delivery Engine ---');
   // 4. Retry recovery action
   state.deliveryAttempts += 1;
   state.tenantWebsiteId = 'web-tenant-delivery-test-01';
-  state.subscriptionId = 101;
-  state.periodEnd = null; // one-time purchase never expires
+  state.lifetimeEntitlementId = 202;
+  state.subscriptionId = null; // one-time purchase is not a recurring subscription
+  state.periodEnd = null; // no subscription row is created for a lifetime entitlement
   state.orderState = 'ACTIVE';
   state.deliveryStatus = 'DELIVERY_READY';
   state.provisioningError = null;
 
   assert(state.orderState === 'ACTIVE', 'Order recovered to ACTIVE on retry');
   assert(state.deliveryStatus === 'DELIVERY_READY', 'Delivery status is DELIVERY_READY');
-  assert(state.periodEnd === null, 'One-time website purchase current_period_end is NULL (permanent activation)');
+  assert(
+    state.lifetimeEntitlementId !== null && state.subscriptionId === null,
+    'One-time purchase is provisioned as an explicit lifetime entitlement, not a subscription'
+  );
   assert(state.deliveryAttempts === 2, 'Delivery attempt count tracked accurately');
 
   // 5. Idempotent replay check

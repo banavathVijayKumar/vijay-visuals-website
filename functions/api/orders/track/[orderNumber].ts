@@ -36,9 +36,10 @@ function maskCustomerEmail(email: string): string {
 
 function maskShippingAddress(address: string): string {
   if (!address) return '';
-  const parts = address.split(',');
-  if (parts.length <= 1) return 'Protected Address (Verified)';
-  return '******, ' + parts.slice(1).map((p) => p.trim()).join(', ');
+  const parts = address.split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return 'Protected Address (Verified)';
+  // Only the final component (typically city/state) is safe to reveal.
+  return 'Protected Address, ' + parts[parts.length - 1].slice(0, 60);
 }
 
 export async function onRequestGet(
@@ -141,14 +142,22 @@ export async function onRequestGet(
       } catch {}
     }
 
-    // Check phone or email verification param
+    // Check phone or email verification param. Require a strong match to
+    // prevent PII disclosure from guessable 4-digit suffixes.
     if (!isAuthorized) {
       const orderPhoneDigits = String(order.customer_phone || '').replace(/\D/g, '');
       const orderEmailClean = String(order.customer_email || '').toLowerCase();
 
-      if (verifyPhone && verifyPhone.length >= 4 && orderPhoneDigits.endsWith(verifyPhone)) {
+      const phoneMatches =
+        verifyPhone.length >= 10 &&
+        orderPhoneDigits.length >= 10 &&
+        (verifyPhone === orderPhoneDigits ||
+          verifyPhone.endsWith(orderPhoneDigits.slice(-10)) ||
+          orderPhoneDigits.endsWith(verifyPhone.slice(-10)));
+
+      if (verifyPhone && phoneMatches) {
         isAuthorized = true;
-      } else if (verifyEmail && verifyEmail === orderEmailClean) {
+      } else if (verifyEmail && orderEmailClean && verifyEmail === orderEmailClean) {
         isAuthorized = true;
       }
     }

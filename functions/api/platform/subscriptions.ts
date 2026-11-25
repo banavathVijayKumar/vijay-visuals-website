@@ -161,10 +161,12 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         gstAmountInr: gstAmount,
         grandTotalInr: totalAmount,
       },
+      canPublish: auth.user.isSuperAdmin,
+      paymentRequiredForLivePublishing: !auth.user.isSuperAdmin,
       paymentRequiredForLiveRenewal: !auth.user.isSuperAdmin,
       message: auth.user.isSuperAdmin
         ? `Super Admin activated ${plan.name} (${billingCycle}) plan.`
-        : `Started ${plan.name} (${billingCycle}) in trial mode. Complete verified Cashfree checkout to activate paid billing.`,
+        : `Started ${plan.name} (${billingCycle}) in trial mode. You can save and privately preview your website. Complete verified Cashfree checkout before publishing it live.`,
     },
     201
   );

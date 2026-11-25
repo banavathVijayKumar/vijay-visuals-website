@@ -11,7 +11,12 @@ import {
   parseJsonBody,
   writeAuditLog,
 } from '../../_shared';
-import { checkTenantSubscriptionEntitlement, requireTenantOwnerAccess } from '../../_tenantAccess';
+import {
+  checkTenantSubscriptionEntitlement,
+  provisionLifetimeEntitlement,
+  requireTenantOwnerAccess,
+} from '../../_tenantAccess';
+import { FREE_START_PLAN_CODE, FREE_START_TIER } from '../../_planTiers';
 import { mapPublicationToTenant } from '../../_tenantMapper';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -29,20 +34,17 @@ async function handlePublish(
   if (!access.ok) return access.response;
 
   let published = true;
-  let isFreeStartRequested = false;
   if (request.method.toUpperCase() === 'PATCH' || request.method.toUpperCase() === 'POST') {
-    const body = await parseJsonBody<{ published?: boolean; freeStart?: boolean }>(request);
+    const body = await parseJsonBody<{ published?: boolean }>(request);
     if (body && typeof body.published === 'boolean') {
       published = body.published;
     }
-    if (body?.freeStart) {
-      isFreeStartRequested = true;
-    }
   }
 
-  if (access.parsedWebsite?.planTier === 'free_start' || access.parsedWebsite?.planCode === 'free-start') {
-    isFreeStartRequested = true;
-  }
+  // Only a persisted plan identity can request Free Start; a bare request flag is ignored.
+  const isFreeStartRequested =
+    access.parsedWebsite?.planTier === FREE_START_TIER ||
+    access.parsedWebsite?.planCode === FREE_START_PLAN_CODE;
 
   // Server-side entitlement verification before allowing website to be published live
   if (published) {
@@ -52,6 +54,17 @@ async function handlePublish(
       auth.user.id,
       auth.user.isSuperAdmin
     );
+
+    const hasPaidEntitlement = entitlement.hasActiveSubscription && !entitlement.isFreeStart;
+    if (isFreeStartRequested && hasPaidEntitlement) {
+      return jsonResponse(
+        {
+          error: 'This website already has a paid package. Continue with the existing package instead.',
+          code: 'PAID_SITE_LOCKED',
+        },
+        409
+      );
+    }
 
     if (!entitlement.canPublish && !isFreeStartRequested) {
       return jsonResponse(
@@ -65,17 +78,15 @@ async function handlePublish(
     }
 
     if (isFreeStartRequested && !entitlement.hasActiveSubscription) {
-      try {
-        await env.DB!.prepare(
-          `INSERT OR IGNORE INTO tenant_subscriptions
-            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-             current_period_start, current_period_end, created_at, updated_at)
-           VALUES (?, ?, 'free-start', 'monthly', 'active', 0, 0, 0, 0, 'free_plan', 'free_subdomain', datetime('now'), datetime('now', '+36500 days'), datetime('now'), datetime('now'))`
-        )
-          .bind(access.row.website_id, auth.user.id)
-          .run();
-      } catch {}
+      const provision = await provisionLifetimeEntitlement(env, {
+        websiteId: access.row.website_id,
+        ownerId: auth.user.id,
+        planCode: FREE_START_PLAN_CODE,
+        entitlementType: 'free_start',
+        source: 'free_start_tenant_publish',
+        sourceReference: params.slug,
+      });
+      if (!provision.ok && provision.error) return provision.error;
     }
   }
 

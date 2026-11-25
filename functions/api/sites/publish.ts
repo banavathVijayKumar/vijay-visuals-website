@@ -1,6 +1,10 @@
 import { CloudflareEnv, handleOptions, jsonResponse } from '../_shared';
 import { requireUser } from '../_auth';
-import { checkTenantSubscriptionEntitlement } from '../_tenantAccess';
+import {
+  checkTenantSubscriptionEntitlement,
+  provisionLifetimeEntitlement,
+} from '../_tenantAccess';
+import { FREE_START_PLAN_CODE, FREE_START_TIER } from '../_planTiers';
 
 export const onRequestOptions = () => handleOptions();
 
@@ -25,8 +29,13 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
 
   try {
     const existing = await env.DB!.prepare(
-      'SELECT website_id, owner_id FROM customer_website_publications WHERE public_slug = ?'
-    ).bind(slug).first<any>();
+      'SELECT website_id, owner_id, status, website_json FROM customer_website_publications WHERE public_slug = ?'
+    ).bind(slug).first<{
+      website_id: string;
+      owner_id: string;
+      status: string;
+      website_json: string;
+    }>();
     const now = new Date().toISOString();
     if (existing && existing.owner_id !== user.id && !user.isSuperAdmin) {
       return jsonResponse({ error: 'This website URL is already in use. Change the business name and try again.' }, 409);
@@ -34,18 +43,29 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
 
     const websiteId = existing?.website_id || crypto.randomUUID();
 
-    // Check entitlement before allowing live publishing
+    // Authorization comes from the persisted plan identity, never a bare
+    // client-supplied freeStart boolean.
+    const isFreeStartRequested =
+      website?.planTier === FREE_START_TIER || website?.planCode === FREE_START_PLAN_CODE;
+
     const entitlement = await checkTenantSubscriptionEntitlement(
       env,
       websiteId,
       user.id,
       user.isSuperAdmin
     );
+    const hasPaidEntitlement = entitlement.hasActiveSubscription && !entitlement.isFreeStart;
 
-    const isFreeStartRequested =
-      Boolean(body?.freeStart) ||
-      website?.planTier === 'free_start' ||
-      website?.planCode === 'free-start';
+    // A paid/live site must never be silently downgraded to Free Start.
+    if (isFreeStartRequested && hasPaidEntitlement) {
+      return jsonResponse(
+        {
+          error: 'This website already has a paid package. Continue with the existing package instead.',
+          code: 'PAID_SITE_LOCKED',
+        },
+        409
+      );
+    }
 
     if (!entitlement.canPublish && !isFreeStartRequested) {
       return jsonResponse(
@@ -58,21 +78,33 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
       );
     }
 
-    if (isFreeStartRequested && !entitlement.hasActiveSubscription) {
-      try {
-        await env.DB!.prepare(
-          `INSERT OR IGNORE INTO tenant_subscriptions
-            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-             current_period_start, current_period_end, created_at, updated_at)
-           VALUES (?, ?, 'free-start', 'monthly', 'active', 0, 0, 0, 0, 'free_plan', 'free_subdomain', datetime('now'), datetime('now', '+36500 days'), datetime('now'), datetime('now'))`
-        )
-          .bind(websiteId, user.id)
-          .run();
-      } catch {}
+    let createdDraft = false;
+    if (!existing && isFreeStartRequested && !entitlement.hasActiveSubscription) {
+      // Create the parent draft first so the lifetime-entitlement FK is valid.
+      // If provisioning fails below, the site remains unpublished.
+      await env.DB!.prepare(
+        `INSERT INTO customer_website_publications
+          (website_id, owner_id, public_slug, business_name, website_json, status, published_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'draft', '', ?, ?, ?)`
+      )
+        .bind(websiteId, user.id, slug, businessName, serialized, now, now, now)
+        .run();
+      createdDraft = true;
     }
 
-    if (existing) {
+    if (isFreeStartRequested && !entitlement.hasActiveSubscription) {
+      const provision = await provisionLifetimeEntitlement(env, {
+        websiteId,
+        ownerId: user.id,
+        planCode: FREE_START_PLAN_CODE,
+        entitlementType: 'free_start',
+        source: 'free_start_publish',
+        sourceReference: slug,
+      });
+      if (!provision.ok && provision.error) return provision.error;
+    }
+
+    if (existing || createdDraft) {
       await env.DB!.prepare(`UPDATE customer_website_publications
         SET business_name = ?, website_json = ?, status = 'published', published_at = ?, updated_at = ?
         WHERE public_slug = ? AND owner_id = ?`)

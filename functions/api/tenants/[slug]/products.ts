@@ -14,6 +14,7 @@ import {
   writeAuditLog,
 } from '../../_shared';
 import {
+  assertProductQuota,
   encodeProductMeta,
   isMissingTableError,
   mapProductRowToUi,
@@ -114,6 +115,14 @@ export async function onRequestPost(
     wholesalePrice,
     minWholesaleQty,
   });
+
+  const quota = await assertProductQuota(
+    env,
+    access.row.website_id,
+    access.row.owner_id,
+    auth.user.isSuperAdmin
+  );
+  if (!quota.ok) return quota.error;
 
   try {
     const result = await env.DB!.prepare(

@@ -13,6 +13,7 @@ import {
   writeAuditLog,
 } from '../_shared';
 import {
+  assertProductQuota,
   encodeProductMeta,
   isMissingTableError,
   mapProductRowToUi,
@@ -74,6 +75,14 @@ export async function onRequestPatch(
 
   // Support 1-Click Product Duplication
   if (body.action === 'duplicate') {
+    const quota = await assertProductQuota(
+      env,
+      String(existing.website_id),
+      String(existing.owner_id || access.row.owner_id),
+      auth.user.isSuperAdmin
+    );
+    if (!quota.ok) return quota.error;
+
     const copyName = `${existing.name} (Copy)`.slice(0, 160);
     const copySku = existing.sku ? `${existing.sku}-COPY`.slice(0, 80) : '';
     const res = await env.DB.prepare(

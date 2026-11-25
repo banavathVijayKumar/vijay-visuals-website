@@ -4,6 +4,7 @@
 
 import { requireAdmin } from '../../../_auth';
 import { PagesContext, errorJson, json, parseJsonBody, sanitizeText, writeAuditLog } from '../../../_shared';
+import { getPaymentEntitlementId, revokePaymentEntitlement } from '../../../_tenantAccess';
 import { createEdgeCashfreeRefund } from '../../_cashfree';
 
 export async function onRequestPost(context: PagesContext<{ id: string }>): Promise<Response> {
@@ -59,13 +60,22 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
         .run();
     }
 
+    // One-time purchases are lifetime entitlements; revoke them on refund.
+    const entitlementId = await getPaymentEntitlementId(env, row.id);
+    if (entitlementId) await revokePaymentEntitlement(env, row.id);
+
     await writeAuditLog(env, {
       actorId: auth.user.id,
       actorRole: 'super_admin',
       action: 'platform_payment_refunded',
       targetType: 'platform_payments',
       targetId: String(row.id),
-      details: { refundId: refund.id, amountInr: refundAmount || row.amount_inr, reason },
+      details: {
+        refundId: refund.id,
+        amountInr: refundAmount || row.amount_inr,
+        reason,
+        lifetimeEntitlementId: entitlementId || null,
+      },
     });
 
     const updated = await env.DB.prepare('SELECT * FROM platform_payments WHERE id = ?').bind(row.id).first();

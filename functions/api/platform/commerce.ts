@@ -15,6 +15,7 @@ import {
   randomHex,
   sanitizeText,
 } from '../_shared';
+import { assertProductQuota } from '../_tenantAccess';
 
 interface CouponRow {
   id: number;
@@ -748,6 +749,14 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     if (name.length < 2 || !Number.isFinite(priceInr) || priceInr < 0) {
       return errorJson('Product name (2+ chars) and non-negative priceInr are required.', 400);
     }
+
+    const quota = await assertProductQuota(
+      env,
+      websiteId,
+      access.website.owner_id,
+      auth.user.isSuperAdmin
+    );
+    if (!quota.ok) return quota.error;
 
     const insertRes = await env.DB.prepare(
       `INSERT INTO store_products

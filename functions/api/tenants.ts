@@ -8,6 +8,7 @@ import { requireUser } from './_auth';
 import {
   PagesContext,
   checkRateLimit,
+  errorJson,
   getClientIp,
   handleOptions,
   jsonResponse,
@@ -18,6 +19,7 @@ import {
 } from './_shared';
 import {
   checkTenantSubscriptionEntitlement,
+  provisionLifetimeEntitlement,
   validateEnabledModules,
   validateGalleryImages,
   validateGalleryItems,
@@ -26,6 +28,7 @@ import {
   validateSlugFormat,
 } from './_tenantAccess';
 import { PublicationRow, mapPublicationToTenant } from './_tenantMapper';
+import { FREE_START_PLAN_CODE } from './_planTiers';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from './plans';
 import { getEdgeCashfreeStatus } from './payments/_cashfree';
 
@@ -303,25 +306,20 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       const isOneTime = unlinked.billing_cycle === 'one_time' || isWebsitePackage;
 
       if (isOneTime) {
-        // One-time website purchases never expire: current_period_end is NULL
-        await env.DB.prepare(
-          `INSERT INTO tenant_subscriptions
-            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-             current_period_start, current_period_end, created_at, updated_at)
-           VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, ?, 'cashfree', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
-        )
-          .bind(
-            websiteId,
-            auth.user.id,
-            unlinked.plan_code,
-            unlinked.base_amount_inr,
-            unlinked.gst_amount_inr,
-            unlinked.amount_inr,
-            unlinked.setup_fee_inr,
-            unlinked.razorpay_payment_id || ''
-          )
-          .run();
+        // One-time website packages are lifetime entitlements, not subscriptions.
+        const provision = await provisionLifetimeEntitlement(env, {
+          websiteId,
+          ownerId: auth.user.id,
+          planCode: unlinked.plan_code,
+          entitlementType:
+            String(unlinked.plan_code).toLowerCase() === FREE_START_PLAN_CODE
+              ? 'free_start'
+              : 'one_time_purchase',
+          source: 'verified_platform_payment_link',
+          sourceReference: unlinked.razorpay_payment_id || '',
+          paymentId: unlinked.id,
+        });
+        if (!provision.ok && provision.error) return provision.error;
       } else {
         const durationExpr = unlinked.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
         await env.DB.prepare(
@@ -357,8 +355,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           .run();
       }
     }
-  } catch {
-    // Non-fatal if subscriptions table not yet populated
+  } catch (err) {
+    console.error('Payment entitlement linking failed:', err);
+    return errorJson('Unable to link the verified purchase. Please retry.', 500, {
+      code: 'ENTITLEMENT_LINK_FAILED',
+    });
   }
 
   // Optional initial revision snapshot (safe if migration 0003 not applied yet)

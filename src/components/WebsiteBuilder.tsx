@@ -29,6 +29,7 @@ import {
 import { BUSINESS_CATEGORIES, GLOBAL_CURRENCIES } from '../data/content';
 import { TEMPLATES_DATA, BusinessTemplate } from '../lib/templatesData';
 import { apiFetch } from '../lib/api';
+import { PLAN_TIERS, type PlanTier } from '@/functions/api/_planTiers';
 import { CustomerLogoCustomizer } from './CustomerLogoCustomizer';
 import { generateSlugFromName, validateSlug } from '../lib/slug';
 import { optimizeImageFileToDataUrl } from '../lib/imageUpload';
@@ -49,13 +50,7 @@ interface WebsiteBuilderProps {
   onNotify: (msg: string) => void;
 }
 
-export type BuilderPlanTier =
-  | 'free_start'
-  | 'starter_website'
-  | 'website_only'
-  | 'ecommerce_website'
-  | 'website_pwa'
-  | 'enterprise_ai';
+export type BuilderPlanTier = PlanTier;
 
 export const PLAN_TIER_CONFIG: Record<
   BuilderPlanTier,
@@ -482,7 +477,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     try {
       const selectedTier = PLAN_TIER_CONFIG[planTier] || PLAN_TIER_CONFIG.website_only;
 
-      // Free Start: bypass Cashfree — call /api/sites/publish directly with freeStart flag
+      // Free Start: bypass Cashfree — the saved plan identity is verified server-side
       if (planTier === 'free_start') {
         const freeWebsiteData = {
           name: name.trim(), slug, category, templateId, tagline: tagline.trim(),
@@ -497,7 +492,6 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
             slug,
             businessName: name.trim(),
             website: freeWebsiteData,
-            freeStart: true,
           }),
         });
         if (res.success) {
@@ -661,7 +655,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     } else {
       setGalleryItems([]);
     }
-    const VALID_TIERS = new Set<string>(['free_start', 'starter_website', 'website_only', 'ecommerce_website', 'website_pwa', 'enterprise_ai']);
+    const VALID_TIERS = new Set<string>(PLAN_TIERS);
     setPlanTier((VALID_TIERS.has(t.planTier) ? t.planTier : 'website_only') as BuilderPlanTier);
     setPwaEnabled(Boolean(t.pwaEnabled));
     setPwaAppName(t.pwaAppName || t.name);

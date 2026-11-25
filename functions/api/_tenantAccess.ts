@@ -7,6 +7,12 @@
 import { AuthenticatedUser, TenantRole } from './_auth';
 import { CloudflareEnv, errorJson } from './_shared';
 import { PublicationRow, cleanString } from './_tenantMapper';
+import {
+  FREE_START_PLAN_CODE,
+  FREE_START_TIER,
+  PLAN_TIER_SET,
+  type PlanTier,
+} from './_planTiers';
 
 export const RESERVED_SLUGS = new Set([
   'admin',
@@ -517,12 +523,338 @@ export interface SubscriptionEntitlement {
   hasActiveSubscription: boolean;
   canPublish: boolean;
   planCode: string;
-  planTier: 'free_start' | 'starter_website' | 'website_only' | 'ecommerce_website' | 'website_pwa' | 'enterprise_ai';
+  planTier: PlanTier;
   pwaEnabled: boolean;
   enterpriseAiEnabled: boolean;
   maxWebsites: number;
   maxProducts: number;
-  isFreeStart?: boolean;
+  isFreeStart: boolean;
+}
+
+export type LifetimeEntitlementType = 'free_start' | 'one_time_purchase';
+
+interface LifetimeEntitlementRow {
+  id: number;
+  website_id: string;
+  owner_id: string;
+  plan_code: string;
+  entitlement_type: LifetimeEntitlementType;
+  status: string;
+  source: string;
+  source_reference: string;
+  max_websites?: number;
+  max_products?: number;
+}
+
+interface EntitlementProvisionResult {
+  ok: boolean;
+  entitlementId?: number;
+  error?: Response;
+}
+
+export interface ProvisionLifetimeEntitlementInput {
+  websiteId: string;
+  ownerId: string;
+  planCode: string;
+  entitlementType: LifetimeEntitlementType;
+  source: string;
+  sourceReference?: string;
+  paymentId?: number | null;
+}
+
+export type QuotaCheckResult =
+  | { ok: true; maxProducts: number }
+  | { ok: false; error: Response };
+
+function planTierFromPlanCode(code: string): PlanTier {
+  if (code === FREE_START_PLAN_CODE) return FREE_START_TIER;
+  if (code === 'custom-dev-enterprise' || code === 'enterprise' || code.includes('enterprise')) return 'enterprise_ai';
+  if (code === 'website-plus-pwa' || code.includes('pwa')) return 'website_pwa';
+  if (code === 'ecommerce-website' || code === 'ecommerce') return 'ecommerce_website';
+  if (code === 'starter-website') return 'starter_website';
+  return 'website_only';
+}
+
+function entitlementFromPlanCode(
+  rawCode: string,
+  maxWebsites: number,
+  maxProducts: number
+): SubscriptionEntitlement {
+  const code = String(rawCode || '').toLowerCase();
+  const isEnterprise = code === 'custom-dev-enterprise' || code === 'enterprise' || code.includes('enterprise');
+  const isPwa = code === 'website-plus-pwa' || code.includes('pwa');
+  const isFreeStart = code === FREE_START_PLAN_CODE;
+
+  return {
+    hasActiveSubscription: true,
+    // Legacy SaaS plans never grant website publishing; authorized website packages do.
+    canPublish: AUTHORIZED_WEBSITE_PUBLISHING_PLANS.has(code) || isEnterprise,
+    planCode: code,
+    planTier: planTierFromPlanCode(code),
+    pwaEnabled: isPwa || isEnterprise,
+    enterpriseAiEnabled: isEnterprise,
+    maxWebsites,
+    maxProducts,
+    isFreeStart,
+  };
+}
+
+async function findLifetimeEntitlement(
+  env: CloudflareEnv,
+  websiteId: string,
+  ownerId: string
+): Promise<LifetimeEntitlementRow | null> {
+  if (!env.DB) return null;
+  return env.DB.prepare(
+    `SELECT le.id, le.website_id, le.owner_id, le.plan_code, le.entitlement_type,
+            le.status, le.source, le.source_reference, sp.max_websites, sp.max_products
+     FROM tenant_lifetime_entitlements le
+     LEFT JOIN subscription_plans sp ON sp.code = le.plan_code
+     WHERE le.website_id = ? AND le.owner_id = ? AND le.status = 'active'
+     ORDER BY le.id DESC LIMIT 1`
+  )
+    .bind(websiteId, ownerId)
+    .first<LifetimeEntitlementRow>();
+}
+
+async function findOwnerFreeStart(
+  env: CloudflareEnv,
+  ownerId: string
+): Promise<LifetimeEntitlementRow | null> {
+  if (!env.DB) return null;
+  return env.DB.prepare(
+    `SELECT id, website_id, owner_id, plan_code, entitlement_type, status, source, source_reference
+     FROM tenant_lifetime_entitlements
+     WHERE owner_id = ? AND entitlement_type = 'free_start'
+     ORDER BY id DESC LIMIT 1`
+  )
+    .bind(ownerId)
+    .first<LifetimeEntitlementRow>();
+}
+
+async function findActiveLifetimePurchase(
+  env: CloudflareEnv,
+  websiteId: string,
+  ownerId: string,
+  planCode: string
+): Promise<LifetimeEntitlementRow | null> {
+  if (!env.DB) return null;
+  return env.DB.prepare(
+    `SELECT id, website_id, owner_id, plan_code, entitlement_type, status, source, source_reference
+     FROM tenant_lifetime_entitlements
+     WHERE website_id = ? AND owner_id = ? AND plan_code = ?
+       AND entitlement_type = 'one_time_purchase' AND status = 'active'
+     ORDER BY id DESC LIMIT 1`
+  )
+    .bind(websiteId, ownerId, planCode)
+    .first<LifetimeEntitlementRow>();
+}
+
+export async function linkPaymentToEntitlement(
+  env: CloudflareEnv,
+  paymentId: number,
+  entitlementId: number
+): Promise<void> {
+  if (!env.DB || !paymentId || !entitlementId) return;
+  await env.DB.prepare(
+    `INSERT INTO platform_payment_entitlements (payment_id, entitlement_id)
+     VALUES (?, ?)
+     ON CONFLICT(payment_id) DO UPDATE SET entitlement_id = excluded.entitlement_id`
+  )
+    .bind(paymentId, entitlementId)
+    .run();
+}
+
+export async function getPaymentEntitlementId(
+  env: CloudflareEnv,
+  paymentId: number
+): Promise<number | null> {
+  if (!env.DB || !paymentId) return null;
+  const row = await env.DB.prepare(
+    'SELECT entitlement_id FROM platform_payment_entitlements WHERE payment_id = ? LIMIT 1'
+  )
+    .bind(paymentId)
+    .first<{ entitlement_id: number }>();
+  return row ? Number(row.entitlement_id) || null : null;
+}
+
+export async function revokePaymentEntitlement(
+  env: CloudflareEnv,
+  paymentId: number
+): Promise<void> {
+  const entitlementId = await getPaymentEntitlementId(env, paymentId);
+  if (!env.DB || !entitlementId) return;
+  await env.DB.prepare(
+    `UPDATE tenant_lifetime_entitlements
+     SET status = 'revoked', updated_at = datetime('now')
+     WHERE id = ?`
+  )
+    .bind(entitlementId)
+    .run();
+}
+
+export async function provisionLifetimeEntitlement(
+  env: CloudflareEnv,
+  input: ProvisionLifetimeEntitlementInput
+): Promise<EntitlementProvisionResult> {
+  if (!env.DB) {
+    return {
+      ok: false,
+      error: errorJson('Database unavailable. Please retry.', 503, { code: 'DB_UNAVAILABLE' }),
+    };
+  }
+
+  const planCode = String(input.planCode || '').toLowerCase();
+  const source = String(input.source || 'manual').slice(0, 60);
+
+  try {
+    const plan = await env.DB.prepare('SELECT code FROM subscription_plans WHERE code = ? LIMIT 1')
+      .bind(planCode)
+      .first<{ code: string }>();
+    if (!plan) {
+      return {
+        ok: false,
+        error: errorJson(`Plan "${planCode}" is not available.`, 409, { code: 'PLAN_NOT_FOUND' }),
+      };
+    }
+
+    if (input.entitlementType === 'free_start') {
+      const existing = await findOwnerFreeStart(env, input.ownerId);
+      if (existing) {
+        if (existing.website_id === input.websiteId) {
+          if (input.paymentId) await linkPaymentToEntitlement(env, input.paymentId, existing.id);
+          return { ok: true, entitlementId: existing.id };
+        }
+        return {
+          ok: false,
+          error: errorJson('Only one Free Start website is allowed per account.', 409, {
+            code: 'FREE_START_LIMIT',
+          }),
+        };
+      }
+    } else {
+      const existing = await findActiveLifetimePurchase(env, input.websiteId, input.ownerId, planCode);
+      if (existing) {
+        if (input.paymentId) await linkPaymentToEntitlement(env, input.paymentId, existing.id);
+        return { ok: true, entitlementId: existing.id };
+      }
+    }
+
+    const result = await env.DB.prepare(
+      `INSERT OR IGNORE INTO tenant_lifetime_entitlements
+        (website_id, owner_id, plan_code, entitlement_type, status, source, source_reference, acquired_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'active', ?, ?, datetime('now'), datetime('now'), datetime('now'))`
+    )
+      .bind(
+        input.websiteId,
+        input.ownerId,
+        planCode,
+        input.entitlementType,
+        source,
+        String(input.sourceReference || '').slice(0, 160)
+      )
+      .run();
+
+    let entitlementId = Number(result?.meta?.last_row_id || 0) || null;
+    if (!entitlementId) {
+      const existing =
+        input.entitlementType === 'free_start'
+          ? await findOwnerFreeStart(env, input.ownerId)
+          : await findActiveLifetimePurchase(env, input.websiteId, input.ownerId, planCode);
+      entitlementId = existing ? Number(existing.id) : null;
+    }
+
+    if (!entitlementId) {
+      return {
+        ok: false,
+        error: errorJson(
+          input.entitlementType === 'free_start'
+            ? 'Only one Free Start website is allowed per account.'
+            : 'Lifetime entitlement could not be provisioned.',
+          409,
+          { code: input.entitlementType === 'free_start' ? 'FREE_START_LIMIT' : 'ENTITLEMENT_CONFLICT' }
+        ),
+      };
+    }
+
+    if (input.paymentId) await linkPaymentToEntitlement(env, input.paymentId, entitlementId);
+    return { ok: true, entitlementId };
+  } catch (err) {
+    console.error('Lifetime entitlement provisioning failed:', err);
+    return {
+      ok: false,
+      error: errorJson('Unable to provision entitlement. Please retry.', 500, {
+        code: 'ENTITLEMENT_PROVISIONING_FAILED',
+      }),
+    };
+  }
+}
+
+export async function assertProductQuota(
+  env: CloudflareEnv,
+  websiteId: string,
+  ownerId: string,
+  isSuperAdmin = false,
+  additional = 1
+): Promise<QuotaCheckResult> {
+  if (isSuperAdmin) return { ok: true, maxProducts: 100000 };
+  if (!env.DB) {
+    return {
+      ok: false,
+      error: errorJson('Database unavailable. Please retry.', 503, { code: 'DB_UNAVAILABLE' }),
+    };
+  }
+
+  try {
+    const entitlement = await checkTenantSubscriptionEntitlement(env, websiteId, ownerId, false);
+    let maxProducts = entitlement.hasActiveSubscription ? entitlement.maxProducts : 50;
+
+    if (!entitlement.hasActiveSubscription) {
+      // Drafts are editable before purchase, but a draft explicitly selected as
+      // Free Start still obeys the free catalog limit.
+      const pub = await env.DB.prepare(
+        'SELECT website_json FROM customer_website_publications WHERE website_id = ? LIMIT 1'
+      )
+        .bind(websiteId)
+        .first<{ website_json: string }>();
+      if (pub?.website_json) {
+        try {
+          const parsed = JSON.parse(pub.website_json);
+          if (parsed.planTier === FREE_START_TIER || parsed.planCode === FREE_START_PLAN_CODE) {
+            maxProducts = 15;
+          }
+        } catch {}
+      }
+    }
+
+    const countRow = await env.DB.prepare(
+      'SELECT COUNT(*) AS count FROM store_products WHERE website_id = ?'
+    )
+      .bind(websiteId)
+      .first<{ count: number }>();
+    const current = Number(countRow?.count || 0);
+
+    if (current + additional > maxProducts) {
+      return {
+        ok: false,
+        error: errorJson(`This plan allows up to ${maxProducts} products.`, 403, {
+          code: 'PRODUCT_LIMIT',
+          limit: maxProducts,
+          current,
+        }),
+      };
+    }
+
+    return { ok: true, maxProducts };
+  } catch (err) {
+    console.error('Product quota check failed:', err);
+    return {
+      ok: false,
+      error: errorJson('Unable to verify product quota. Please retry.', 500, {
+        code: 'QUOTA_CHECK_FAILED',
+      }),
+    };
+  }
 }
 
 export async function checkTenantSubscriptionEntitlement(
@@ -541,6 +873,7 @@ export async function checkTenantSubscriptionEntitlement(
       enterpriseAiEnabled: true,
       maxWebsites: 25,
       maxProducts: 100000,
+      isFreeStart: false,
     };
   }
 
@@ -554,123 +887,80 @@ export async function checkTenantSubscriptionEntitlement(
       enterpriseAiEnabled: false,
       maxWebsites: 1,
       maxProducts: 50,
+      isFreeStart: false,
     };
   }
 
-  // 1. Check active subscription in tenant_subscriptions
+  // 1. Explicit lifetime entitlements (Free Start / one-time website purchases)
+  try {
+    const lifetime = await findLifetimeEntitlement(env, websiteId, ownerId);
+    if (lifetime) {
+      const code = String(lifetime.plan_code || '').toLowerCase();
+      return entitlementFromPlanCode(
+        code,
+        Number(lifetime.max_websites || 1),
+        Number(lifetime.max_products || (code === FREE_START_PLAN_CODE ? 15 : 500))
+      );
+    }
+  } catch (err) {
+    console.error('Lifetime entitlement lookup failed:', err);
+  }
+
+  // 2. Active recurring subscriptions. Period end is always a real timestamp.
   try {
     const sub = await env.DB.prepare(
       `SELECT ts.plan_code, ts.status, ts.current_period_end, sp.max_websites, sp.max_products
        FROM tenant_subscriptions ts
        LEFT JOIN subscription_plans sp ON sp.code = ts.plan_code
        WHERE (ts.website_id = ? OR ts.owner_id = ?)
-         AND ts.status IN ('active', 'trial')
-         AND (ts.current_period_end IS NULL OR ts.current_period_end > datetime('now'))
+         -- Self-service trial subscriptions do not grant live publishing.
+         -- Trial users may edit/save/preview drafts; verified paid or
+         -- Super Admin activated subscriptions use status = 'active'.
+         AND ts.status = 'active'
+         AND ts.current_period_end > datetime('now')
        ORDER BY ts.id DESC LIMIT 1`
     )
       .bind(websiteId, ownerId)
       .first<{
         plan_code: string;
         status: string;
-        current_period_end: string | null;
+        current_period_end: string;
         max_websites?: number;
         max_products?: number;
       }>();
 
     if (sub) {
       const code = String(sub.plan_code || '').toLowerCase();
-      const isWebsitePackage = AUTHORIZED_WEBSITE_PUBLISHING_PLANS.has(code);
-      const isEnterprise = code === 'custom-dev-enterprise' || code === 'enterprise' || code.includes('enterprise');
-      const isPwa = code === 'website-plus-pwa' || code.includes('pwa');
-      const isFree = code === 'free-start';
-      const isEcom = code === 'ecommerce-website' || code === 'ecommerce';
-      const isStarter = code === 'starter-website';
-      const planTier: 'free_start' | 'starter_website' | 'website_only' | 'ecommerce_website' | 'website_pwa' | 'enterprise_ai' =
-        isFree ? 'free_start' : isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : isEcom ? 'ecommerce_website' : isStarter ? 'starter_website' : 'website_only';
-
-      // Legacy SaaS plans (e.g. starter ₹499 or business ₹1,499) never grant website publishing entitlement!
-      const canPublish = isWebsitePackage || isEnterprise;
-
-      return {
-        hasActiveSubscription: true,
-        canPublish,
-        planCode: code,
-        planTier,
-        pwaEnabled: isPwa || isEnterprise,
-        enterpriseAiEnabled: isEnterprise,
-        maxWebsites: Number(sub.max_websites || (isFree ? 1 : 1)),
-        maxProducts: Number(sub.max_products || (isFree ? 15 : 500)),
-        isFreeStart: isFree,
-      };
+      return entitlementFromPlanCode(
+        code,
+        Number(sub.max_websites || 1),
+        Number(sub.max_products || 500)
+      );
     }
-  } catch {}
+  } catch (err) {
+    console.error('Subscription entitlement lookup failed:', err);
+  }
 
-  // 2. Check verified payment in platform_payments
+  // 3. Verified paid platform payment fallback for provisioning races.
+  // Free Start is never a payment and must not be inferred from a payment row.
   try {
     const payment = await env.DB.prepare(
       `SELECT plan_code FROM platform_payments
        WHERE (website_id = ? OR owner_id = ?)
          AND status = 'paid' AND signature_verified = 1
+         AND purpose IN ('platform_subscription', 'website_purchase')
+         AND plan_code <> ?
        ORDER BY id DESC LIMIT 1`
     )
-      .bind(websiteId, ownerId)
+      .bind(websiteId, ownerId, FREE_START_PLAN_CODE)
       .first<{ plan_code: string }>();
 
     if (payment) {
       const code = String(payment.plan_code || '').toLowerCase();
-      const isWebsitePackage = AUTHORIZED_WEBSITE_PUBLISHING_PLANS.has(code);
-      const isEnterprise = code === 'custom-dev-enterprise' || code === 'enterprise' || code.includes('enterprise');
-      const isPwa = code === 'website-plus-pwa' || code.includes('pwa');
-      const isFree = code === 'free-start';
-      const isEcom = code === 'ecommerce-website' || code === 'ecommerce';
-      const isStarter = code === 'starter-website';
-      const planTier: 'free_start' | 'starter_website' | 'website_only' | 'ecommerce_website' | 'website_pwa' | 'enterprise_ai' =
-        isFree ? 'free_start' : isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : isEcom ? 'ecommerce_website' : isStarter ? 'starter_website' : 'website_only';
-
-      const canPublish = isWebsitePackage || isEnterprise;
-
-      return {
-        hasActiveSubscription: true,
-        canPublish,
-        planCode: code,
-        planTier,
-        pwaEnabled: isPwa || isEnterprise,
-        enterpriseAiEnabled: isEnterprise,
-        maxWebsites: 1,
-        maxProducts: 500,
-        isFreeStart: isFree,
-      };
+      return entitlementFromPlanCode(code, 1, 500);
     }
-  } catch {}
-
-  // 3. Check customer_website_publications for existing Free Start tier
-  if (websiteId) {
-    try {
-      const pub = await env.DB.prepare(
-        'SELECT website_json, status FROM customer_website_publications WHERE website_id = ? LIMIT 1'
-      )
-        .bind(websiteId)
-        .first<{ website_json: string; status: string }>();
-
-      if (pub && pub.website_json) {
-        try {
-          const parsed = JSON.parse(pub.website_json);
-          if (parsed.planTier === 'free_start' || parsed.planCode === 'free-start') {
-            return {
-              hasActiveSubscription: true,
-              canPublish: true,
-              planCode: 'free-start',
-              planTier: 'free_start',
-              pwaEnabled: false,
-              enterpriseAiEnabled: false,
-              maxWebsites: 1,
-              maxProducts: 15,
-              isFreeStart: true,
-            };
-          }
-        } catch {}
-      }
-    } catch {}
+  } catch (err) {
+    console.error('Platform payment entitlement lookup failed:', err);
   }
 
   return {
@@ -682,5 +972,6 @@ export async function checkTenantSubscriptionEntitlement(
     enterpriseAiEnabled: false,
     maxWebsites: 1,
     maxProducts: 50,
+    isFreeStart: false,
   };
 }

@@ -7,6 +7,7 @@
 
 import { requireAdmin } from '../_auth';
 import { PagesContext, errorJson, handleOptions, json, parseJsonBody, sanitizeText, writeAuditLog } from '../_shared';
+import { provisionLifetimeEntitlement } from '../_tenantAccess';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from '../plans';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -280,25 +281,18 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
     if (!subscriptionId) {
       if (isOneTime) {
-        const subRes = await env.DB.prepare(
-          `INSERT INTO tenant_subscriptions
-            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-             current_period_start, current_period_end, created_at, updated_at)
-           VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, ?, 'cashfree', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
-        )
-          .bind(
-            targetWebsiteId,
-            payment.owner_id,
-            payment.plan_code,
-            payment.base_amount_inr,
-            payment.gst_amount_inr,
-            payment.amount_inr,
-            payment.setup_fee_inr,
-            payment.razorpay_payment_id || payment.razorpay_order_id
-          )
-          .run();
-        subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+        // One-time website packages are lifetime entitlements. Never write
+        // 'one_time' into tenant_subscriptions.billing_cycle (CHECK forbids it).
+        const provision = await provisionLifetimeEntitlement(env, {
+          websiteId: targetWebsiteId,
+          ownerId: payment.owner_id,
+          planCode: payment.plan_code,
+          entitlementType: 'one_time_purchase',
+          source: 'admin_delivery_retry',
+          sourceReference: payment.razorpay_payment_id || payment.razorpay_order_id || '',
+          paymentId: payment.id,
+        });
+        if (!provision.ok && provision.error) return provision.error;
       } else {
         const durationExpr = payment.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
         const subRes = await env.DB.prepare(

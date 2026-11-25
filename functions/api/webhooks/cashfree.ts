@@ -9,6 +9,9 @@
 // ============================================================================
 
 import { PagesContext, errorJson, handleOptions, json, sanitizeText, writeAuditLog } from '../_shared';
+import { provisionLifetimeEntitlement } from '../_tenantAccess';
+import { ALLOWED_WEBSITE_PACKAGE_CODES } from '../plans';
+import { FREE_START_PLAN_CODE } from '../_planTiers';
 import { sendTransactionalEmail, buildPaymentReceiptEmailHtml } from '../_email';
 import { sendWhatsAppNotification } from '../_whatsapp';
 import {
@@ -339,40 +342,65 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           .bind(cfPaymentId, JSON.stringify(notes), `cf_${orderId}`)
           .run();
 
-        // Activate website publication if linked for platform packages
+        // Provision entitlement BEFORE publishing. A payment never publishes
+        // a website until its entitlement has been persisted successfully.
         if (existingPayment.entity_type === 'platform_package' && existingPayment.website_id) {
-          try {
-            await env.DB.prepare(
-              `UPDATE customer_website_publications
-               SET status = 'published',
-                   published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
-                   updated_at = datetime('now')
-               WHERE website_id = ?`
-            )
-              .bind(existingPayment.website_id)
-              .run();
+          const planCode = String(existingPayment.reference_id || '').toLowerCase();
+          const isWebsitePackage = (ALLOWED_WEBSITE_PACKAGE_CODES as readonly string[]).includes(planCode);
+          const linkedPayment = await env.DB.prepare(
+            'SELECT id, billing_cycle FROM platform_payments WHERE razorpay_order_id = ? LIMIT 1'
+          )
+            .bind(`cf_${orderId}`)
+            .first<{ id: number; billing_cycle: string }>();
 
-            // Provision subscription
+          if (isWebsitePackage) {
+            const provision = await provisionLifetimeEntitlement(env, {
+              websiteId: existingPayment.website_id,
+              ownerId: existingPayment.user_id,
+              planCode,
+              entitlementType:
+                planCode === FREE_START_PLAN_CODE ? 'free_start' : 'one_time_purchase',
+              source: 'cashfree_webhook',
+              sourceReference: cfPaymentId || '',
+              paymentId: linkedPayment?.id,
+            });
+            if (!provision.ok) {
+              console.error('Lifetime entitlement provisioning failed in webhook:', provision.error);
+              throw new Error('Lifetime entitlement provisioning failed for this payment.');
+            }
+          } else {
+            const cycle = linkedPayment?.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
+            const durationExpr = cycle === 'yearly' ? '+365 days' : '+30 days';
             await env.DB.prepare(
-              `INSERT OR IGNORE INTO tenant_subscriptions
+              `INSERT INTO tenant_subscriptions
                 (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
                  total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
                  current_period_start, current_period_end, created_at, updated_at)
-               VALUES (?, ?, ?, 'monthly', 'active', ?, ?, ?, 0, 'cashfree', ?, datetime('now'), datetime('now', '+365 days'), datetime('now'), datetime('now'))`
+               VALUES (?, ?, ?, ?, 'active', ?, ?, ?, 0, 'cashfree', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
             )
               .bind(
                 existingPayment.website_id,
                 existingPayment.user_id,
-                existingPayment.reference_id,
+                planCode,
+                cycle,
                 existingPayment.base_amount_inr,
                 existingPayment.gst_amount_inr,
                 existingPayment.amount_inr,
-                cfPaymentId
+                cfPaymentId,
+                durationExpr
               )
               .run();
-          } catch (pubErr) {
-            console.error('Tenant publication/subscription activation notice:', pubErr);
           }
+
+          await env.DB.prepare(
+            `UPDATE customer_website_publications
+             SET status = 'published',
+                 published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
+                 updated_at = datetime('now')
+             WHERE website_id = ?`
+          )
+            .bind(existingPayment.website_id)
+            .run();
         }
       }
     }

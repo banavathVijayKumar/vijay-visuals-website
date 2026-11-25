@@ -17,6 +17,7 @@ import {
   sanitizeText,
   writeAuditLog,
 } from '../../_shared';
+import { provisionLifetimeEntitlement } from '../../_tenantAccess';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from '../platform/create-order';
 import {
   fetchEdgeCashfreeOrder,
@@ -436,25 +437,51 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     const isWebsitePackage = ALLOWED_WEBSITE_PACKAGE_CODES.has(existing.reference_id);
 
     if (targetWebsiteId && existing.reference_id) {
-      // One-time website packages provisioned with 1-year renewable active status
-      const subRes = await env.DB.prepare(
-        `INSERT INTO tenant_subscriptions
-          (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-           total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-           current_period_start, current_period_end, created_at, updated_at)
-         VALUES (?, ?, ?, 'monthly', 'active', ?, ?, ?, 0, 'cashfree', ?, datetime('now'), datetime('now', '+365 days'), datetime('now'), datetime('now'))`
+      const linkedPayment = await env.DB.prepare(
+        'SELECT id, billing_cycle FROM platform_payments WHERE razorpay_order_id = ? LIMIT 1'
       )
-        .bind(
-          targetWebsiteId,
-          existing.user_id,
-          existing.reference_id,
-          existing.base_amount_inr,
-          existing.gst_amount_inr,
-          existing.amount_inr,
-          cfPaymentId
+        .bind(`cf_${orderId}`)
+        .first<{ id: number; billing_cycle: string }>();
+
+      if (isWebsitePackage) {
+        // One-time website packages are lifetime entitlements, not subscriptions.
+        const provision = await provisionLifetimeEntitlement(env, {
+          websiteId: targetWebsiteId,
+          ownerId: existing.user_id,
+          planCode: existing.reference_id,
+          entitlementType: 'one_time_purchase',
+          source: 'cashfree_checkout_verify',
+          sourceReference: cfPaymentId || '',
+          paymentId: linkedPayment?.id,
+        });
+        if (!provision.ok) {
+          throw new Error('Lifetime entitlement provisioning failed for this payment.');
+        }
+      } else {
+        // Recurring SaaS plans keep a real monthly/yearly period end.
+        const cycle = linkedPayment?.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
+        const durationExpr = cycle === 'yearly' ? '+365 days' : '+30 days';
+        const subRes = await env.DB.prepare(
+          `INSERT INTO tenant_subscriptions
+            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+             current_period_start, current_period_end, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'active', ?, ?, ?, 0, 'cashfree', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
         )
-        .run();
-      subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+          .bind(
+            targetWebsiteId,
+            existing.user_id,
+            existing.reference_id,
+            cycle,
+            existing.base_amount_inr,
+            existing.gst_amount_inr,
+            existing.amount_inr,
+            cfPaymentId,
+            durationExpr
+          )
+          .run();
+        subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+      }
 
       if (body?.publishWebsite) {
         if (!isWebsitePackage && !authUser.isSuperAdmin) {

@@ -7,6 +7,7 @@
 
 import { requireUser } from '../../../_auth';
 import { PagesContext, errorJson, json, sanitizeText, writeAuditLog } from '../../../_shared';
+import { getPaymentEntitlementId, provisionLifetimeEntitlement } from '../../../_tenantAccess';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from '../../../plans';
 
 export async function onRequestPost(context: PagesContext<{ id: string }>): Promise<Response> {
@@ -163,53 +164,47 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
     const isWebsitePackage = ALLOWED_WEBSITE_PACKAGE_CODES.includes(payment.plan_code as any);
     const isOneTime = payment.billing_cycle === 'one_time' || isWebsitePackage;
 
-    if (!subscriptionId) {
-      if (isOneTime) {
-        const subRes = await env.DB.prepare(
-          `INSERT INTO tenant_subscriptions
-            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-             current_period_start, current_period_end, created_at, updated_at)
-           VALUES (?, ?, ?, 'one_time', 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), NULL, datetime('now'), datetime('now'))`
-        )
-          .bind(
-            targetWebsiteId,
-            payment.owner_id,
-            payment.plan_code,
-            payment.base_amount_inr,
-            payment.gst_amount_inr,
-            payment.amount_inr,
-            payment.setup_fee_inr,
-            payment.razorpay_payment_id || payment.razorpay_order_id
-          )
-          .run();
-        subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
-      } else {
-        const durationExpr = payment.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
-        const subRes = await env.DB.prepare(
-          `INSERT INTO tenant_subscriptions
-            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-             current_period_start, current_period_end, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
-        )
-          .bind(
-            targetWebsiteId,
-            payment.owner_id,
-            payment.plan_code,
-            payment.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
-            payment.base_amount_inr,
-            payment.gst_amount_inr,
-            payment.amount_inr,
-            payment.setup_fee_inr,
-            payment.razorpay_payment_id || payment.razorpay_order_id,
-            durationExpr
-          )
-          .run();
-        subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+    const existingEntitlementId = await getPaymentEntitlementId(env, payment.id);
+
+    if (isOneTime) {
+      // One-time website packages are lifetime entitlements, never subscriptions.
+      if (!existingEntitlementId) {
+        const provision = await provisionLifetimeEntitlement(env, {
+          websiteId: targetWebsiteId,
+          ownerId: payment.owner_id,
+          planCode: payment.plan_code,
+          entitlementType: 'one_time_purchase',
+          source: 'delivery_retry',
+          sourceReference: payment.razorpay_payment_id || payment.razorpay_order_id || '',
+          paymentId: payment.id,
+        });
+        if (!provision.ok && provision.error) return provision.error;
       }
+    } else if (!subscriptionId) {
+      const durationExpr = payment.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
+      const subRes = await env.DB.prepare(
+        `INSERT INTO tenant_subscriptions
+          (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+           total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+           current_period_start, current_period_end, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+      )
+        .bind(
+          targetWebsiteId,
+          payment.owner_id,
+          payment.plan_code,
+          payment.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
+          payment.base_amount_inr,
+          payment.gst_amount_inr,
+          payment.amount_inr,
+          payment.setup_fee_inr,
+          payment.razorpay_payment_id || payment.razorpay_order_id,
+          durationExpr
+        )
+        .run();
+      subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
     } else {
-      // Ensure subscription status is active
+      // Ensure recurring subscription status is active
       await env.DB.prepare(
         `UPDATE tenant_subscriptions
          SET status = 'active', website_id = ?, updated_at = datetime('now')
@@ -245,6 +240,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
         websiteId: targetWebsiteId,
         publicSlug: targetSlug,
         subscriptionId,
+        lifetimeEntitlementId: existingEntitlementId || null,
         status: 'DELIVERY_READY',
       },
     });

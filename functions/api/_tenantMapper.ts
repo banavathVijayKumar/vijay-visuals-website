@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { getPackageMonthlyAiCredits } from './_aiCredits';
+import { PLAN_TIER_SET, type PlanTier } from './_planTiers';
 
 export interface PublicationRow {
   rowid?: number | null;
@@ -113,7 +114,7 @@ export interface MappedTenantRecord {
   sectionOrder: string[];
   customPages: Array<{ slug: string; title: string; content: string }>;
   published: boolean;
-  planTier: 'website_only' | 'website_pwa' | 'enterprise_ai';
+  planTier: PlanTier;
   pwaEnabled: boolean;
   pwaAppName: string;
   pwaShortName: string;
@@ -132,7 +133,7 @@ export interface MappedTenantRecord {
   createdAt: string;
 }
 
-const VALID_PLAN_TIERS = new Set(['website_only', 'website_pwa', 'enterprise_ai']);
+const VALID_PLAN_TIERS = PLAN_TIER_SET;
 const SAFE_COLOR_REGEX = /^#[0-9a-fA-F]{3,8}$/;
 const SAFE_IMAGE_DATA_REGEX = /^data:image\/(?:png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/i;
 

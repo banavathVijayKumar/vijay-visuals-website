@@ -1,3 +1,5 @@
+import type { PlanTier } from '@/functions/api/_planTiers';
+
 export interface UserProfile {
   id: number;
   uid: string;
@@ -77,7 +79,7 @@ export interface TenantRecord {
   customPages?: Array<{ slug: string; title: string; content: string }>;
   published: boolean;
   status?: string;
-  planTier: 'free_start' | 'starter_website' | 'website_only' | 'ecommerce_website' | 'website_pwa' | 'enterprise_ai' | string;
+  planTier: PlanTier;
   pwaEnabled: boolean;
   pwaAppName: string;
   pwaShortName: string;
