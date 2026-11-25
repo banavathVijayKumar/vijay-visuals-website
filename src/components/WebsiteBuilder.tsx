@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Tablet,
   Trash2,
   Upload,
   Wand2,
@@ -49,6 +50,7 @@ interface WebsiteBuilderProps {
 }
 
 export type BuilderPlanTier =
+  | 'free_start'
   | 'starter_website'
   | 'website_only'
   | 'ecommerce_website'
@@ -70,6 +72,18 @@ export const PLAN_TIER_CONFIG: Record<
     desc: string;
   }
 > = {
+  free_start: {
+    code: 'free-start',
+    name: 'Free Start Package',
+    base: 0,
+    gst: 0,
+    total: 0,
+    baseStr: '₹0',
+    gstStr: '₹0',
+    totalStr: 'Free',
+    highlight: 'Free',
+    desc: 'Mobile-responsive website on a free /site/your-brand subdomain, up to 15 products. Upgrade anytime.',
+  },
   starter_website: {
     code: 'starter-website',
     name: 'Starter Website Package',
@@ -467,6 +481,35 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     setCheckoutBusy(true);
     try {
       const selectedTier = PLAN_TIER_CONFIG[planTier] || PLAN_TIER_CONFIG.website_only;
+
+      // Free Start: bypass Cashfree — call /api/sites/publish directly with freeStart flag
+      if (planTier === 'free_start') {
+        const freeWebsiteData = {
+          name: name.trim(), slug, category, templateId, tagline: tagline.trim(),
+          description: description.trim(), logoText: logoText.trim().slice(0, 6) || 'VV',
+          primaryColor, accentColor, fontFamily, phone: phone.trim(),
+          whatsapp: whatsapp.replace(/\D/g, ''), address: address.trim(),
+          planTier: 'free_start' as const, planCode: 'free-start',
+        };
+        const res = await apiFetch<{ success: boolean; slug: string; url: string }>('/api/sites/publish', {
+          method: 'POST',
+          body: JSON.stringify({
+            slug,
+            businessName: name.trim(),
+            website: freeWebsiteData,
+            freeStart: true,
+          }),
+        });
+        if (res.success) {
+          setPublishModalOpen(false);
+          setSitePublished(true);
+          setPublishedSlug(res.slug);
+          onNotify(`"${name}" is now live for free at /site/${res.slug}!`);
+        }
+        return;
+      }
+
+
       const checkoutOptions = {
         planCode: selectedTier.code,
         planName: `${selectedTier.name} (${selectedTier.totalStr})`,
@@ -618,7 +661,8 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     } else {
       setGalleryItems([]);
     }
-    setPlanTier(t.planTier || 'website_only');
+    const VALID_TIERS = new Set<string>(['free_start', 'starter_website', 'website_only', 'ecommerce_website', 'website_pwa', 'enterprise_ai']);
+    setPlanTier((VALID_TIERS.has(t.planTier) ? t.planTier : 'website_only') as BuilderPlanTier);
     setPwaEnabled(Boolean(t.pwaEnabled));
     setPwaAppName(t.pwaAppName || t.name);
     setPwaShortName(t.pwaShortName || t.name.slice(0, 12));
@@ -2194,6 +2238,26 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
 
             {/* Action Buttons */}
             <div className="space-y-2">
+              {planTier === 'free_start' ? (
+                <button
+                  type="button"
+                  onClick={handlePurchaseAndPublish}
+                  disabled={checkoutBusy}
+                  className="w-full py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors flex items-center justify-center gap-2 shadow-lg disabled:opacity-60"
+                >
+                  {checkoutBusy ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Publishing Free Website...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="w-4 h-4" />
+                      <span>Launch Free — Publish to /site/{slug}</span>
+                    </>
+                  )}
+                </button>
+              ) : (
               <button
                 type="button"
                 onClick={handlePurchaseAndPublish}
@@ -2216,6 +2280,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                   </>
                 )}
               </button>
+              )}
 
               <button
                 type="button"

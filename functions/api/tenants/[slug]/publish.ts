@@ -29,11 +29,19 @@ async function handlePublish(
   if (!access.ok) return access.response;
 
   let published = true;
-  if (request.method.toUpperCase() === 'PATCH') {
-    const body = await parseJsonBody<{ published?: boolean }>(request);
+  let isFreeStartRequested = false;
+  if (request.method.toUpperCase() === 'PATCH' || request.method.toUpperCase() === 'POST') {
+    const body = await parseJsonBody<{ published?: boolean; freeStart?: boolean }>(request);
     if (body && typeof body.published === 'boolean') {
       published = body.published;
     }
+    if (body?.freeStart) {
+      isFreeStartRequested = true;
+    }
+  }
+
+  if (access.parsedWebsite?.planTier === 'free_start' || access.parsedWebsite?.planCode === 'free-start') {
+    isFreeStartRequested = true;
   }
 
   // Server-side entitlement verification before allowing website to be published live
@@ -45,15 +53,29 @@ async function handlePublish(
       auth.user.isSuperAdmin
     );
 
-    if (!entitlement.canPublish) {
+    if (!entitlement.canPublish && !isFreeStartRequested) {
       return jsonResponse(
         {
           error:
-            'An active package or subscription is required to publish this website live. Please complete your website package purchase (₹7,999 Business Website package).',
+            'An active package or subscription is required to publish this website live. Please complete your website package purchase (₹7,999 Business Website package) or choose the Free Start package.',
           code: 'PAYMENT_REQUIRED',
         },
         402
       );
+    }
+
+    if (isFreeStartRequested && !entitlement.hasActiveSubscription) {
+      try {
+        await env.DB!.prepare(
+          `INSERT OR IGNORE INTO tenant_subscriptions
+            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+             current_period_start, current_period_end, created_at, updated_at)
+           VALUES (?, ?, 'free-start', 'monthly', 'active', 0, 0, 0, 0, 'free_plan', 'free_subdomain', datetime('now'), datetime('now', '+36500 days'), datetime('now'), datetime('now'))`
+        )
+          .bind(access.row.website_id, auth.user.id)
+          .run();
+      } catch {}
     }
   }
 

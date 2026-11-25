@@ -496,6 +496,7 @@ export function mapOrderRowToUi(
 }
 
 export const AUTHORIZED_WEBSITE_PUBLISHING_PLANS = new Set([
+  'free-start',
   'starter-website',
   'business-website',
   'ecommerce-website',
@@ -516,11 +517,12 @@ export interface SubscriptionEntitlement {
   hasActiveSubscription: boolean;
   canPublish: boolean;
   planCode: string;
-  planTier: 'website_only' | 'website_pwa' | 'enterprise_ai';
+  planTier: 'free_start' | 'starter_website' | 'website_only' | 'ecommerce_website' | 'website_pwa' | 'enterprise_ai';
   pwaEnabled: boolean;
   enterpriseAiEnabled: boolean;
   maxWebsites: number;
   maxProducts: number;
+  isFreeStart?: boolean;
 }
 
 export async function checkTenantSubscriptionEntitlement(
@@ -580,8 +582,11 @@ export async function checkTenantSubscriptionEntitlement(
       const isWebsitePackage = AUTHORIZED_WEBSITE_PUBLISHING_PLANS.has(code);
       const isEnterprise = code === 'custom-dev-enterprise' || code === 'enterprise' || code.includes('enterprise');
       const isPwa = code === 'website-plus-pwa' || code.includes('pwa');
-      const planTier: 'website_only' | 'website_pwa' | 'enterprise_ai' =
-        isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : 'website_only';
+      const isFree = code === 'free-start';
+      const isEcom = code === 'ecommerce-website' || code === 'ecommerce';
+      const isStarter = code === 'starter-website';
+      const planTier: 'free_start' | 'starter_website' | 'website_only' | 'ecommerce_website' | 'website_pwa' | 'enterprise_ai' =
+        isFree ? 'free_start' : isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : isEcom ? 'ecommerce_website' : isStarter ? 'starter_website' : 'website_only';
 
       // Legacy SaaS plans (e.g. starter ₹499 or business ₹1,499) never grant website publishing entitlement!
       const canPublish = isWebsitePackage || isEnterprise;
@@ -593,8 +598,9 @@ export async function checkTenantSubscriptionEntitlement(
         planTier,
         pwaEnabled: isPwa || isEnterprise,
         enterpriseAiEnabled: isEnterprise,
-        maxWebsites: Number(sub.max_websites || 1),
-        maxProducts: Number(sub.max_products || 500),
+        maxWebsites: Number(sub.max_websites || (isFree ? 1 : 1)),
+        maxProducts: Number(sub.max_products || (isFree ? 15 : 500)),
+        isFreeStart: isFree,
       };
     }
   } catch {}
@@ -615,8 +621,11 @@ export async function checkTenantSubscriptionEntitlement(
       const isWebsitePackage = AUTHORIZED_WEBSITE_PUBLISHING_PLANS.has(code);
       const isEnterprise = code === 'custom-dev-enterprise' || code === 'enterprise' || code.includes('enterprise');
       const isPwa = code === 'website-plus-pwa' || code.includes('pwa');
-      const planTier: 'website_only' | 'website_pwa' | 'enterprise_ai' =
-        isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : 'website_only';
+      const isFree = code === 'free-start';
+      const isEcom = code === 'ecommerce-website' || code === 'ecommerce';
+      const isStarter = code === 'starter-website';
+      const planTier: 'free_start' | 'starter_website' | 'website_only' | 'ecommerce_website' | 'website_pwa' | 'enterprise_ai' =
+        isFree ? 'free_start' : isEnterprise ? 'enterprise_ai' : isPwa ? 'website_pwa' : isEcom ? 'ecommerce_website' : isStarter ? 'starter_website' : 'website_only';
 
       const canPublish = isWebsitePackage || isEnterprise;
 
@@ -629,9 +638,40 @@ export async function checkTenantSubscriptionEntitlement(
         enterpriseAiEnabled: isEnterprise,
         maxWebsites: 1,
         maxProducts: 500,
+        isFreeStart: isFree,
       };
     }
   } catch {}
+
+  // 3. Check customer_website_publications for existing Free Start tier
+  if (websiteId) {
+    try {
+      const pub = await env.DB.prepare(
+        'SELECT website_json, status FROM customer_website_publications WHERE website_id = ? LIMIT 1'
+      )
+        .bind(websiteId)
+        .first<{ website_json: string; status: string }>();
+
+      if (pub && pub.website_json) {
+        try {
+          const parsed = JSON.parse(pub.website_json);
+          if (parsed.planTier === 'free_start' || parsed.planCode === 'free-start') {
+            return {
+              hasActiveSubscription: true,
+              canPublish: true,
+              planCode: 'free-start',
+              planTier: 'free_start',
+              pwaEnabled: false,
+              enterpriseAiEnabled: false,
+              maxWebsites: 1,
+              maxProducts: 15,
+              isFreeStart: true,
+            };
+          }
+        } catch {}
+      }
+    } catch {}
+  }
 
   return {
     hasActiveSubscription: false,

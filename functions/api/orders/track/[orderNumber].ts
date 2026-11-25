@@ -1,7 +1,10 @@
 // ============================================================================
 // GET /api/orders/track/:orderNumber — Public Order Status Tracking
+// Secure PII masking for unauthenticated public lookups (DPDP / GDPR Compliant).
+// Full unmasked details returned only when authenticated or verified via phone/email.
 // ============================================================================
 
+import { requireUser } from '../../_auth';
 import { PagesContext, handleOptions, jsonResponse, sanitizeText } from '../../_shared';
 import { isMissingTableError, mapOrderRowToUi } from '../../_tenantAccess';
 
@@ -9,10 +12,39 @@ export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
 }
 
+function maskCustomerName(name: string): string {
+  if (!name) return 'Customer';
+  const parts = name.trim().split(/\s+/);
+  return parts
+    .map((p) => (p.length <= 1 ? p : p[0] + '*'.repeat(Math.max(1, p.length - 1))))
+    .join(' ');
+}
+
+function maskCustomerPhone(phone: string): string {
+  const digits = (phone || '').replace(/\D/g, '');
+  if (digits.length <= 4) return '******';
+  return '******' + digits.slice(-4);
+}
+
+function maskCustomerEmail(email: string): string {
+  if (!email || !email.includes('@')) return '';
+  const [local, domain] = email.split('@');
+  const maskedLocal =
+    local.length <= 2 ? local[0] + '***' : local[0] + '***' + local.slice(-1);
+  return `${maskedLocal}@${domain}`;
+}
+
+function maskShippingAddress(address: string): string {
+  if (!address) return '';
+  const parts = address.split(',');
+  if (parts.length <= 1) return 'Protected Address (Verified)';
+  return '******, ' + parts.slice(1).map((p) => p.trim()).join(', ');
+}
+
 export async function onRequestGet(
   context: PagesContext<{ orderNumber: string }>
 ): Promise<Response> {
-  const { env, params } = context;
+  const { request, env, params } = context;
   const orderNumber = sanitizeText(params.orderNumber, 40).toUpperCase();
   if (!orderNumber || orderNumber.length < 5) {
     return jsonResponse({ error: 'Please enter a valid Order ID.' }, 400);
@@ -44,8 +76,10 @@ export async function onRequestGet(
               id: custOrder.id || 1,
               order_number: custOrder.order_number || custOrder.order_id || orderNumber,
               website_id: custOrder.website_id || '',
+              customer_user_id: custOrder.customer_user_id || null,
               customer_name: custOrder.customer_name || 'Customer',
               customer_phone: custOrder.customer_phone || '',
+              customer_email: custOrder.customer_email || '',
               delivery_address: custOrder.delivery_address || '',
               delivery_city: custOrder.delivery_city || 'Hyderabad',
               total_amount_inr: custOrder.total_amount || 0,
@@ -70,10 +104,10 @@ export async function onRequestGet(
     }
 
     const pub = await env.DB.prepare(
-      'SELECT rowid, business_name, website_json FROM customer_website_publications WHERE website_id = ? LIMIT 1'
+      'SELECT rowid, owner_id, business_name, website_json FROM customer_website_publications WHERE website_id = ? LIMIT 1'
     )
       .bind(order.website_id)
-      .first<{ rowid?: number; business_name: string; website_json: string }>();
+      .first<{ rowid?: number; owner_id?: string; business_name: string; website_json: string }>();
 
     let tenantPhone = '';
     try {
@@ -81,11 +115,63 @@ export async function onRequestGet(
       tenantPhone = String(parsed.phone || '');
     } catch {}
 
+    const url = new URL(request.url);
+    const verifyPhone = sanitizeText(url.searchParams.get('phone') || '', 30).replace(/\D/g, '');
+    const verifyEmail = sanitizeText(url.searchParams.get('email') || '', 160).toLowerCase();
+
+    let isAuthorized = false;
+
+    // Check optional authenticated user
+    if (request.headers.get('Authorization')) {
+      try {
+        const auth = await requireUser(request, env);
+        if (auth.ok) {
+          const u = auth.user;
+          const orderCustomerUserId = String(order.customer_user_id || '');
+          const orderCustomerEmail = String(order.customer_email || '').toLowerCase();
+          if (
+            u.isSuperAdmin ||
+            (orderCustomerUserId && (orderCustomerUserId === u.id || orderCustomerUserId === u.authSubject)) ||
+            (orderCustomerEmail && orderCustomerEmail === (u.email || '').toLowerCase()) ||
+            (order.website_id && pub && pub.owner_id === u.id)
+          ) {
+            isAuthorized = true;
+          }
+        }
+      } catch {}
+    }
+
+    // Check phone or email verification param
+    if (!isAuthorized) {
+      const orderPhoneDigits = String(order.customer_phone || '').replace(/\D/g, '');
+      const orderEmailClean = String(order.customer_email || '').toLowerCase();
+
+      if (verifyPhone && verifyPhone.length >= 4 && orderPhoneDigits.endsWith(verifyPhone)) {
+        isAuthorized = true;
+      } else if (verifyEmail && verifyEmail === orderEmailClean) {
+        isAuthorized = true;
+      }
+    }
+
+    const rawUiOrder = mapOrderRowToUi(order, Number(pub?.rowid || 0));
+
+    const finalOrder = isAuthorized
+      ? { ...rawUiOrder, isPiiMasked: false }
+      : {
+          ...rawUiOrder,
+          customerName: maskCustomerName(String(rawUiOrder.customerName || '')),
+          customerPhone: maskCustomerPhone(String(rawUiOrder.customerPhone || '')),
+          customerEmail: maskCustomerEmail(String(rawUiOrder.customerEmail || '')),
+          shippingAddress: maskShippingAddress(String(rawUiOrder.shippingAddress || '')),
+          isPiiMasked: true,
+        };
+
     return jsonResponse({
-      order: mapOrderRowToUi(order, Number(pub?.rowid || 0)),
+      order: finalOrder,
       tenantName: pub?.business_name || 'Vijay Visuals Store',
       tenantPhone,
       deliveryPartner: null,
+      verificationRequiredForFullPii: !isAuthorized,
     });
   } catch (err) {
     return jsonResponse(

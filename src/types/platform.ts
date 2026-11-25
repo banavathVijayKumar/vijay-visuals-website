@@ -77,7 +77,7 @@ export interface TenantRecord {
   customPages?: Array<{ slug: string; title: string; content: string }>;
   published: boolean;
   status?: string;
-  planTier: 'website_only' | 'website_pwa' | 'enterprise_ai';
+  planTier: 'free_start' | 'starter_website' | 'website_only' | 'ecommerce_website' | 'website_pwa' | 'enterprise_ai' | string;
   pwaEnabled: boolean;
   pwaAppName: string;
   pwaShortName: string;

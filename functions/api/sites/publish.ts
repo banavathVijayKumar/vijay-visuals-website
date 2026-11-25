@@ -42,15 +42,34 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
       user.isSuperAdmin
     );
 
-    if (!entitlement.canPublish) {
+    const isFreeStartRequested =
+      Boolean(body?.freeStart) ||
+      website?.planTier === 'free_start' ||
+      website?.planCode === 'free-start';
+
+    if (!entitlement.canPublish && !isFreeStartRequested) {
       return jsonResponse(
         {
           error:
-            'An active package or subscription is required to publish this website live. Please complete your website package purchase (₹7,999 Business Website package).',
+            'An active package or subscription is required to publish this website live. Please complete your website package purchase (₹7,999 Business Website package) or choose the Free Start package.',
           code: 'PAYMENT_REQUIRED',
         },
         402
       );
+    }
+
+    if (isFreeStartRequested && !entitlement.hasActiveSubscription) {
+      try {
+        await env.DB!.prepare(
+          `INSERT OR IGNORE INTO tenant_subscriptions
+            (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+             total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+             current_period_start, current_period_end, created_at, updated_at)
+           VALUES (?, ?, 'free-start', 'monthly', 'active', 0, 0, 0, 0, 'free_plan', 'free_subdomain', datetime('now'), datetime('now', '+36500 days'), datetime('now'), datetime('now'))`
+        )
+          .bind(websiteId, user.id)
+          .run();
+      } catch {}
     }
 
     if (existing) {

@@ -7,6 +7,7 @@
 import { PagesContext, handleOptions, jsonResponse } from './_shared';
 
 export const ALLOWED_WEBSITE_PACKAGE_CODES = [
+  'free-start',
   'starter-website',
   'business-website',
   'ecommerce-website',
@@ -24,6 +25,26 @@ export const LEGACY_SAAS_PLAN_CODES = [
 ] as const;
 
 const DEFAULT_PLANS = [
+  {
+    id: 0,
+    code: 'free-start',
+    name: 'Free Start Package',
+    category: 'website',
+    billingCycle: 'one_time',
+    priceInr: 0,
+    includesPwa: false,
+    active: true,
+    featuresJson: JSON.stringify([
+      'Mobile-responsive business website across 35 industry templates',
+      'Free subdomain (/site/your-brand) on Cloudflare Pages infrastructure',
+      'Up to 15 product or service catalog items',
+      'Contact, WhatsApp enquiry & Call lead forms',
+      'Standard Cloudflare edge delivery (100MB media storage)',
+      'One-click upgrade to custom domain & payment gateway anytime',
+    ]),
+    thirdPartyDisclosure:
+      'Free hosting provided on VIJAY VISUALS Cloudflare Pages infrastructure. Custom domain connection and direct merchant payment gateway require upgrading to a paid package.',
+  },
   {
     id: 1,
     code: 'starter-website',
@@ -167,7 +188,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         // Default: strictly website purchase packages
         query = `SELECT rowid as id, code, name, monthly_price_inr, yearly_price_inr, setup_fee_inr, gst_percent, features_json, is_active
                  FROM subscription_plans
-                 WHERE is_active = 1 AND code IN ('starter-website', 'business-website', 'ecommerce-website', 'website-only', 'website-plus-pwa', 'custom-dev-enterprise')
+                 WHERE is_active = 1 AND code IN ('free-start', 'starter-website', 'business-website', 'ecommerce-website', 'website-only', 'website-plus-pwa', 'custom-dev-enterprise')
                  ORDER BY monthly_price_inr ASC`;
       }
 
