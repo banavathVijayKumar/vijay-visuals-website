@@ -24,7 +24,12 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const { request, env } = context;
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
-  await ensureOtpTable(env.DB);
+  try {
+    await ensureOtpTable(env.DB);
+  } catch (err: any) {
+    console.error('Failed to verify OTP persistence in resend.ts:', err);
+    return errorJson('Database persistence for OTP is currently unavailable.', 503);
+  }
 
   const body = await parseJsonBody<{
     email?: string;
