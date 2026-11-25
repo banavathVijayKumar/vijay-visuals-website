@@ -8,6 +8,10 @@ import {
   UserProfile as SupabaseUserProfile,
 } from '../lib/supabase';
 import { apiFetch } from '../lib/api';
+import {
+  PASSWORD_RECOVERY_INVALID_MESSAGE,
+  isRecoverySession,
+} from '../lib/authRecovery';
 import { DeliveryPartnerRecord, TenantRecord, UserProfile } from '../types/platform';
 
 function mapSupabaseRoleToPlatformRole(
@@ -183,6 +187,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { data: listener } = client.auth.onAuthStateChange(async (event, nextSession) => {
           if (!mounted) return;
           if (event === 'PASSWORD_RECOVERY') {
+            if (!isRecoverySession(nextSession)) {
+              setAuthError(PASSWORD_RECOVERY_INVALID_MESSAGE);
+              setAuthModalMode('signin');
+              setAuthModalOpen(false);
+              await syncUserFromSession(null);
+              setLoading(false);
+              return;
+            }
+            setAuthError(null);
             setAuthModalMode('reset_password');
             setAuthModalOpen(true);
           }

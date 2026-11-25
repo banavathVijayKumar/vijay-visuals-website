@@ -317,7 +317,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
         {!result && !error && (
           <div className="flex items-center gap-3 text-xs text-[#88889A] bg-[#0B0B10] border border-[#1E1E28] rounded-lg p-4">
             <Package className="w-4 h-4 text-[#D4AF37] shrink-0" />
-            <span>Place an order on any Vijay Visuals storefront to receive a live tracking code and downloadable invoice immediately.</span>
+            <span>Place an order on a supported storefront to receive a live tracking code and downloadable invoice immediately.</span>
           </div>
         )}
       </div>

@@ -422,7 +422,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
     // Dispatch Order Received Notifications (Resend Email & WhatsApp)
     const formattedAmount = `₹${(total || 0).toLocaleString('en-IN')}`;
-    const storeName = pub.business_name || 'Vijay Visuals Store';
+    const storeName = pub.business_name || 'Your Store';
+    const storeUrl = `https://vijay-visuals-site.pages.dev/site/${encodeURIComponent(pub.public_slug || '')}`;
     if (customerEmail && customerEmail.includes('@')) {
       try {
         const orderEmailHtml = buildOrderConfirmationEmailHtml({
@@ -430,7 +431,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           orderNumber,
           packageName: `${storeName} Order`,
           amountFormatted: formattedAmount,
-          dashboardUrl: 'https://vijay-visuals-site.pages.dev/dashboard',
+          dashboardUrl: storeUrl,
+          businessName: storeName,
+          storeUrl,
         });
         await sendTransactionalEmail(env, {
           to: customerEmail,
@@ -458,7 +461,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           `📦 *Items:* ${orderLines.length} item(s)`,
           `📍 *Delivery Address:* ${streetAddress}, ${city}`,
           ``,
-          `Track your order status: https://vijay-visuals-site.pages.dev/dashboard`,
+          `Track your order status: ${storeUrl}`,
           ``,
           `Thank you for shopping with us!`,
         ].join('\n');

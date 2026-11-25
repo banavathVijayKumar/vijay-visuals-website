@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { initSupabaseClient, authService, UserProfile, UserRole } from '../../lib/supabase';
+import {
+  PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS,
+  completePasswordRecovery,
+  remainingResetCooldownSeconds,
+  requestPasswordReset,
+  type PasswordRecoveryClient,
+} from '../../lib/authRecovery';
 import { X, Lock, Mail, User, Phone, KeyRound, CheckCircle2, ShieldCheck, ArrowLeft, RefreshCw } from 'lucide-react';
 import { VijayVisualsLogo } from '../VijayVisualsLogo';
 
@@ -29,6 +36,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resetCooldown, setResetCooldown] = useState<number>(0);
+  const [lastResetRequestAt, setLastResetRequestAt] = useState<number | null>(null);
 
   // 6-Digit Email OTP States
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
@@ -42,8 +51,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setInfo(null);
       setOtpDigits(['', '', '', '', '', '']);
       setOtpCooldown(0);
+      setResetCooldown(0);
+      setLastResetRequestAt(null);
     }
   }, [isOpen, initialMode]);
+
+  // Live 60-second countdown for password reset requests
+  useEffect(() => {
+    let timer: any;
+    if (resetCooldown > 0) {
+      timer = setInterval(() => {
+        setResetCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [resetCooldown]);
 
   // Live 60-second countdown for OTP resend
   useEffect(() => {
@@ -155,40 +179,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       // 1. Forgot Password — send real Supabase recovery email
       if (mode === 'forgot') {
-        const cleanEmail = email.trim().toLowerCase();
-        if (!cleanEmail) {
-          setError('Please enter your registered email address.');
+        const waitSeconds = remainingResetCooldownSeconds(lastResetRequestAt);
+        if (waitSeconds > 0) {
+          setError(`Please wait ${waitSeconds} seconds before requesting another reset link.`);
           return;
         }
+
         const client = await initSupabaseClient();
-        if (client) {
-          const { error: resetError } = await client.auth.resetPasswordForEmail(cleanEmail, {
-            redirectTo: window.location.origin,
-          });
-          if (resetError) throw resetError;
+        const result = await requestPasswordReset(
+          client as unknown as PasswordRecoveryClient | null,
+          email,
+          window.location.origin
+        );
+        if (!result.ok) {
+          setError(result.message);
+          return;
         }
-        setInfo('Password reset instructions sent! Check your email inbox to set a new password.');
+
+        setLastResetRequestAt(Date.now());
+        setResetCooldown(PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS);
+        setInfo(result.message);
         return;
       }
 
       // 2. Complete Password Recovery — set new password
       if (mode === 'reset_password') {
-        if (password.length < 6) {
-          setError('New password must be at least 6 characters long.');
-          return;
-        }
-        if (password !== confirmPassword) {
-          setError('Passwords do not match.');
-          return;
-        }
         const client = await initSupabaseClient();
-        if (client) {
-          const { error: updateErr } = await client.auth.updateUser({ password });
-          if (updateErr) throw updateErr;
+        const result = await completePasswordRecovery(
+          client as unknown as PasswordRecoveryClient | null,
+          password,
+          confirmPassword
+        );
+        if (!result.ok) {
+          setError(result.message);
+          return;
         }
+
         setPassword('');
         setConfirmPassword('');
-        setInfo('Password updated successfully! You can now continue signed in.');
+        setInfo(result.message);
         setMode('signin');
         return;
       }
@@ -377,8 +406,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       authService.setCurrentUser(profile);
       onSuccess(profile);
       onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Authentication failed. Please try again.');
+    } catch {
+      // Never render raw Supabase/provider error messages to the user.
+      setError('Authentication failed. Please check your details or try again.');
     } finally {
       setBusy(false);
     }
@@ -599,7 +629,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
 
               <button
-                disabled={busy}
+                disabled={busy || (mode === 'forgot' && resetCooldown > 0)}
                 type="submit"
                 className="w-full mt-2 py-2.5 rounded-lg bg-gradient-to-r from-[#DFBA5A] to-[#B38D2C] text-[#0A0A0E] text-xs font-bold uppercase tracking-wider disabled:opacity-60"
               >
@@ -608,7 +638,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   : mode === 'register'
                     ? 'Send 6-Digit Verification Code'
                     : mode === 'forgot'
-                      ? 'Send Password Reset Link'
+                      ? resetCooldown > 0
+                        ? `Resend in ${resetCooldown}s`
+                        : 'Send Password Reset Link'
                       : mode === 'reset_password'
                         ? 'Update Password'
                         : 'Sign In'}

@@ -5,7 +5,7 @@
 // ZERO secrets exposed in logs or API responses.
 // ============================================================================
 
-import { CloudflareEnv, sanitizeText } from './_shared';
+import { CloudflareEnv, escapeHtml, sanitizeText } from './_shared';
 
 export interface EmailSendOptions {
   to: string;
@@ -38,6 +38,21 @@ export function getSenderEmail(env: CloudflareEnv): string {
   const custom = (env.RESEND_FROM || '').trim();
   if (custom) return custom;
   return DEFAULT_SENDER;
+}
+
+/**
+ * Removes credential-like values before any email body preview is persisted.
+ * OTP codes are numeric, so standalone 4-8 digit sequences are always masked.
+ */
+export function redactSensitiveLogText(raw: unknown): string {
+  const text = sanitizeText(String(raw || ''), 500);
+  return text
+    .replace(/\b\d{4,8}\b/g, '[REDACTED]')
+    .replace(
+      /\b(reset[_-]?link|reset[_-]?token|token|otp|code|password)\s*[=:]\s*\S+/gi,
+      '$1=[REDACTED]'
+    )
+    .slice(0, 200);
 }
 
 /**
@@ -99,7 +114,7 @@ export async function sendTransactionalEmail(
             cleanEmail,
             eventType,
             subject,
-            sanitizeText(text || subject, 200),
+            redactSensitiveLogText(text || subject),
             notice
           )
           .run();
@@ -209,10 +224,10 @@ export async function sendTransactionalEmail(
           cleanEmail,
           eventType,
           subject,
-          sanitizeText(text || subject, 200),
+          redactSensitiveLogText(text || subject),
           deliveryStatus,
           providerMessageId || (idempotencyKey ? `idemp_${idempotencyKey}` : ''),
-          errorDetail
+          redactSensitiveLogText(errorDetail)
         )
         .run();
     } catch (logErr) {
@@ -232,7 +247,35 @@ export async function sendTransactionalEmail(
 // LUXURY VIJAY VISUALS BRANDED EMAIL TEMPLATES
 // ============================================================================
 
-function baseEmailWrapper(contentHtml: string, title = 'Vijay Visuals'): string {
+interface EmailWrapperOptions {
+  brandName?: string;
+  brandSubtitle?: string;
+  footerHtml?: string;
+}
+
+const DEFAULT_EMAIL_FOOTER_HTML = `
+              <p style="margin: 0 0 8px 0; color: #B38D2C; font-weight: 600;">
+                Vijay Visuals — Hyderabad, Telangana, India
+              </p>
+              <p style="margin: 0 0 8px 0;">
+                Official Support: <a href="tel:+919361024823" style="color: #DFBA5A; text-decoration: none;">+91 93610 24823</a> ·
+                <a href="mailto:vk66278@gmail.com" style="color: #DFBA5A; text-decoration: none;">vk66278@gmail.com</a>
+              </p>
+              <p style="margin: 0; font-size: 10px; color: #505062;">
+                This is an automated system transmission. Please do not reply directly with passwords or private tokens.
+              </p>`;
+
+function baseEmailWrapper(
+  contentHtml: string,
+  title = 'Vijay Visuals',
+  options: EmailWrapperOptions = {}
+): string {
+  const brandName = escapeHtml(sanitizeText(options.brandName || 'VIJAY VISUALS', 120));
+  const brandSubtitle = escapeHtml(
+    sanitizeText(options.brandSubtitle || 'Architectural Web & Digital Systems', 120)
+  );
+  const footerHtml = options.footerHtml || DEFAULT_EMAIL_FOOTER_HTML;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -249,10 +292,10 @@ function baseEmailWrapper(contentHtml: string, title = 'Vijay Visuals'): string 
           <tr>
             <td style="padding: 32px 32px 24px 32px; text-align: center; border-bottom: 1px solid #1E1E2C; background: linear-gradient(180deg, #161622 0%, #0F0F17 100%);">
               <h1 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 3px; color: #DFBA5A; text-transform: uppercase;">
-                VIJAY VISUALS
+                ${brandName}
               </h1>
               <p style="margin: 6px 0 0 0; font-size: 11px; letter-spacing: 1.5px; color: #8A8A9E; text-transform: uppercase;">
-                Architectural Web & Digital Systems
+                ${brandSubtitle}
               </p>
             </td>
           </tr>
@@ -264,17 +307,7 @@ function baseEmailWrapper(contentHtml: string, title = 'Vijay Visuals'): string 
           </tr>
           <!-- Footer -->
           <tr>
-            <td style="padding: 24px 32px; background-color: #0A0A10; border-top: 1px solid #1A1A26; text-align: center; font-size: 11px; color: #707085; line-height: 1.6;">
-              <p style="margin: 0 0 8px 0; color: #B38D2C; font-weight: 600;">
-                Vijay Visuals — Hyderabad, Telangana, India
-              </p>
-              <p style="margin: 0 0 8px 0;">
-                Official Support: <a href="tel:+919361024823" style="color: #DFBA5A; text-decoration: none;">+91 93610 24823</a> · 
-                <a href="mailto:vk66278@gmail.com" style="color: #DFBA5A; text-decoration: none;">vk66278@gmail.com</a>
-              </p>
-              <p style="margin: 0; font-size: 10px; color: #505062;">
-                This is an automated system transmission. Please do not reply directly with passwords or private tokens.
-              </p>
+            <td style="padding: 24px 32px; background-color: #0A0A10; border-top: 1px solid #1A1A26; text-align: center; font-size: 11px; color: #707085; line-height: 1.6;">${footerHtml}
             </td>
           </tr>
         </table>
@@ -328,45 +361,79 @@ export function buildOrderConfirmationEmailHtml(params: {
   packageName: string;
   amountFormatted: string;
   dashboardUrl: string;
+  /** Present for customer store orders; absent for platform service orders. */
+  businessName?: string;
+  storeUrl?: string;
 }): string {
   const { customerName, orderNumber, packageName, amountFormatted, dashboardUrl } = params;
+  const tenantBrand = sanitizeText(params.businessName, 120);
+  const isStoreOrder = Boolean(tenantBrand);
+  const safeCustomer = escapeHtml(sanitizeText(customerName, 80));
+  const safeOrder = escapeHtml(sanitizeText(orderNumber, 80));
+  const safePackage = escapeHtml(sanitizeText(packageName, 100));
+  const safeAmount = escapeHtml(sanitizeText(amountFormatted, 40));
+
+  const intro = isStoreOrder
+    ? `We have received your order from <strong>${escapeHtml(tenantBrand)}</strong>. The store will review your order and share updates.`
+    : `We have received your website development order for <strong>${safePackage}</strong>. Our engineering and creative team is reviewing your requirements.`;
+  const statusLabel = isStoreOrder ? 'ORDER STATUS' : 'ESTIMATED DELIVERY';
+  const statusValue = isStoreOrder ? 'Received — awaiting store confirmation' : '3–5 Business Days';
+  const actionUrl = isStoreOrder && params.storeUrl ? escapeHtml(params.storeUrl) : escapeHtml(dashboardUrl);
+  const actionLabel = isStoreOrder && params.storeUrl ? 'View Store' : 'View Order in Dashboard';
+  const tenantFooter = isStoreOrder
+    ? `
+              <p style="margin: 0 0 8px 0; color: #B38D2C; font-weight: 600;">
+                ${escapeHtml(tenantBrand)}
+              </p>
+              <p style="margin: 0 0 8px 0;">
+                Order updates are sent by the store. Please contact the business directly.
+              </p>
+              <p style="margin: 0; font-size: 10px; color: #505062;">
+                This is an automated order confirmation. Please do not reply with passwords or private tokens.
+              </p>`
+    : undefined;
+
   const content = `
     <h2 style="margin: 0 0 8px 0; font-size: 20px; font-weight: 700; color: #FFFFFF;">
       Order Received & Confirmed
     </h2>
     <p style="margin: 0 0 20px 0; font-size: 14px; color: #A0A0B2;">
-      Dear ${sanitizeText(customerName, 80)},
+      Dear ${safeCustomer},
     </p>
     <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #CCCCCC;">
-      We have received your website development order for <strong>${sanitizeText(packageName, 100)}</strong>. Our engineering and creative team is reviewing your requirements.
+      ${intro}
     </p>
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #14141E; border: 1px solid #242436; border-radius: 8px; margin: 20px 0; padding: 16px;">
       <tr>
         <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94;">ORDER NUMBER</td>
-        <td style="padding: 8px 12px; font-size: 13px; font-weight: 700; color: #FFFFFF; text-align: right;">${orderNumber}</td>
+        <td style="padding: 8px 12px; font-size: 13px; font-weight: 700; color: #FFFFFF; text-align: right;">${safeOrder}</td>
       </tr>
       <tr>
         <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">PACKAGE</td>
-        <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #DFBA5A; text-align: right; border-top: 1px solid #1E1E2C;">${packageName}</td>
+        <td style="padding: 8px 12px; font-size: 13px; font-weight: 600; color: #DFBA5A; text-align: right; border-top: 1px solid #1E1E2C;">${safePackage}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">TOTAL INVESTMENT</td>
-        <td style="padding: 8px 12px; font-size: 15px; font-weight: 800; color: #ECC86A; text-align: right; border-top: 1px solid #1E1E2C;">${amountFormatted}</td>
+        <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">TOTAL</td>
+        <td style="padding: 8px 12px; font-size: 15px; font-weight: 800; color: #ECC86A; text-align: right; border-top: 1px solid #1E1E2C;">${safeAmount}</td>
       </tr>
       <tr>
-        <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">ESTIMATED DELIVERY</td>
-        <td style="padding: 8px 12px; font-size: 13px; color: #FFFFFF; text-align: right; border-top: 1px solid #1E1E2C;">3–5 Business Days</td>
+        <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">${statusLabel}</td>
+        <td style="padding: 8px 12px; font-size: 13px; color: #FFFFFF; text-align: right; border-top: 1px solid #1E1E2C;">${statusValue}</td>
       </tr>
     </table>
 
     <div style="text-align: center; margin: 32px 0 16px 0;">
-      <a href="${dashboardUrl}" style="background: linear-gradient(135deg, #ECC86A 0%, #DFBA5A 50%, #B38D2C 100%); color: #08080C; text-decoration: none; padding: 14px 28px; font-weight: 700; border-radius: 6px; font-size: 13px; display: inline-block; letter-spacing: 0.5px; text-transform: uppercase;">
-        View Order in Dashboard
+      <a href="${actionUrl}" style="background: linear-gradient(135deg, #ECC86A 0%, #DFBA5A 50%, #B38D2C 100%); color: #08080C; text-decoration: none; padding: 14px 28px; font-weight: 700; border-radius: 6px; font-size: 13px; display: inline-block; letter-spacing: 0.5px; text-transform: uppercase;">
+        ${actionLabel}
       </a>
     </div>
   `;
-  return baseEmailWrapper(content, `Order Confirmed: ${orderNumber}`);
+  return baseEmailWrapper(content, `Order Confirmed: ${orderNumber}`, {
+    brandName: isStoreOrder ? tenantBrand : undefined,
+    brandSubtitle: isStoreOrder ? 'Order Confirmation' : undefined,
+    footerHtml: tenantFooter,
+  });
 }
 
 /**

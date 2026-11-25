@@ -830,7 +830,7 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
                 <span className="w-2 h-2 rounded-full bg-emerald-500/80" />
               </div>
               <div className="truncate px-2 font-mono text-[9px] text-[#A0A0B2] bg-[#14141E] rounded">
-                vijayvisuals.in/site/{tenant.slug}
+                vijay-visuals-site.pages.dev/site/{tenant.slug}
               </div>
               <span className="text-[9px] text-emerald-400">● Live</span>
             </div>

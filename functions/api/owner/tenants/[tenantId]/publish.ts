@@ -73,9 +73,30 @@ export async function onRequestPatch(
     details: { slug: access.row.public_slug, status: nextStatus },
   });
 
+  const tenant = mapPublicationToTenant(
+    {
+      ...access.row,
+      status: nextStatus,
+      published_at: body.published ? nowIso : access.row.published_at,
+      updated_at: nowIso,
+    },
+    access.parsedWebsite
+  );
+
   return jsonResponse({
     published: body.published,
     status: nextStatus,
     slug: access.row.public_slug,
+    tenant,
+    siteUrl: body.published
+      ? `https://vijay-visuals-site.pages.dev/site/${access.row.public_slug}`
+      : null,
+    deliverySubdomainUrl: body.published
+      ? `https://${access.row.public_slug}.vijay-visuals-site.pages.dev`
+      : null,
+    deliverySubdomainStatus: body.published ? 'requires_wildcard_dns_tls' : null,
+    deliveryNotice: body.published
+      ? 'The /site/ URL is live immediately. Tenant subdomains and custom domains require wildcard DNS and HTTPS verification before they can serve the website.'
+      : null,
   });
 }

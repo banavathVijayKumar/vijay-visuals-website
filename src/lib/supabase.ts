@@ -857,34 +857,6 @@ export const authService = {
     notifyListeners();
   },
 
-  // Forgot password flow
-  requestPasswordReset(email: string): { success: boolean; message: string; resetToken?: string } {
-    const profiles = getFromStorage<UserProfile[]>(STORAGE_KEYS.PROFILES, SEED_PROFILES);
-    const user = profiles.find(p => p.email.toLowerCase() === email.trim().toLowerCase());
-
-    if (!user) {
-      return { success: false, message: 'If this email is registered in our system, a password reset link has been dispatched.' };
-    }
-
-    const resetToken = 'rst_' + Math.random().toString(36).substring(2, 10);
-    // In production, Supabase Auth sends an email with this token.
-    return {
-      success: true,
-      message: `Password reset link generated securely. An email has been simulated for ${user.email}.`,
-      resetToken
-    };
-  },
-
-  // Reset password with token
-  resetPassword(email: string, token: string, newPassword: string): { success: boolean; message: string } {
-    if (!newPassword || newPassword.length < 6) {
-      return { success: false, message: 'Password must be at least 6 characters long.' };
-    }
-    return {
-      success: true,
-      message: 'Password updated successfully! You can now log in with your new credentials.'
-    };
-  }
 };
 
 // ============================================================================

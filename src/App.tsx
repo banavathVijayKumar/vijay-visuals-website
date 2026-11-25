@@ -18,6 +18,7 @@ import { InteractiveDemoHub } from './components/InteractiveDemoHub';
 import { CustomerProposalView } from './components/CustomerProposalView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { NotFoundView } from './components/NotFoundView';
+import { parseTenantDeliveryHostname } from '../shared/tenantHost';
 
 const VALID_LANGS = new Set<string>(SUPPORTED_LANGUAGES.map((l) => l.code));
 const VALID_CURRENCIES = new Set<string>(GLOBAL_CURRENCIES.map((c) => c.code));
@@ -66,11 +67,21 @@ function parseRouteFromPath(): { view: AppView; slug: string | null } {
   return { view: 'studio', slug: null };
 }
 
+function getEdgeTenantSlug(): string | null {
+  return (
+    document
+      .querySelector('meta[name="vv-tenant-slug"]')
+      ?.getAttribute('content')
+      ?.trim() || null
+  );
+}
+
 function PlatformShell() {
   const { profile, authError, authModalOpen, authModalMode, closeAuthModal, handleSupabaseAuthSuccess } = useAuth();
   const initial = parseRouteFromPath();
   const [activeView, setActiveView] = useState<AppView>(initial.view);
   const [activeSlug, setActiveSlug] = useState<string | null>(initial.slug);
+  const [isPublicTenantHost, setIsPublicTenantHost] = useState<boolean>(() => Boolean(getEdgeTenantSlug()));
   const [lang, setLang] = useState<Lang>(resolveInitialLang);
   const [currency, setCurrency] = useState<CurrencyCode>(resolveInitialCurrency);
   const [fxRates, setFxRates] = useState<Record<string, number> | null>(null);
@@ -164,26 +175,26 @@ function PlatformShell() {
     loadPublicData();
   }, [loadPublicData]);
 
-  // Multi-Tenant Custom Hostname Auto-Resolution (only activates on verified customer custom domains)
+  // Multi-Tenant Hostname Auto-Resolution: verified custom domains and published
+  // default delivery subdomains become white-labeled public tenant sessions.
   useEffect(() => {
     const host = (window.location.hostname || '').toLowerCase();
+    const edgeMetaSlug = getEdgeTenantSlug();
+    if (edgeMetaSlug) {
+      setActiveView('storefront');
+      setActiveSlug(edgeMetaSlug);
+      setIsPublicTenantHost(true);
+      return;
+    }
+
+    const deliveryHost = parseTenantDeliveryHostname(host);
     const isPlatformHost =
       !host ||
       host === 'localhost' ||
       host === '127.0.0.1' ||
       host.endsWith('.run.app') ||
-      host.endsWith('.pages.dev');
+      (host.endsWith('.pages.dev') && !deliveryHost);
     if (isPlatformHost) return;
-
-    const edgeMetaSlug = document
-      .querySelector('meta[name="vv-tenant-slug"]')
-      ?.getAttribute('content')
-      ?.trim();
-    if (edgeMetaSlug) {
-      setActiveView('storefront');
-      setActiveSlug(edgeMetaSlug);
-      return;
-    }
 
     apiFetch<{
       matched: boolean;
@@ -198,6 +209,7 @@ function PlatformShell() {
         if (res.matched && res.tenantSlug) {
           setActiveView('storefront');
           setActiveSlug(res.tenantSlug);
+          setIsPublicTenantHost(true);
         }
       })
       .catch(() => {});
@@ -296,7 +308,7 @@ function PlatformShell() {
 
   return (
     <div className="min-h-screen bg-[#08080A] text-[#E8E8ED] flex flex-col overflow-x-hidden w-full">
-      {mapsQuotaExceeded && (
+      {mapsQuotaExceeded && !isPublicTenantHost && (
         <div
           role="alert"
           className="sticky top-0 z-50 border-b border-amber-500/40 bg-amber-950/95 px-4 py-2.5 text-center text-xs text-amber-100 flex flex-wrap items-center justify-center gap-3"
@@ -322,7 +334,7 @@ function PlatformShell() {
         </div>
       )}
 
-      {activeView !== 'proposal' && (
+      {activeView !== 'proposal' && !isPublicTenantHost && (
         <>
           <Navbar activeView={activeView} onNavigate={(v) => navigateTo(v)} lang={lang} />
 
@@ -371,7 +383,7 @@ function PlatformShell() {
         </>
       )}
 
-      {announcements.length > 0 && (
+      {announcements.length > 0 && !isPublicTenantHost && (
         <div className="border-b border-[#D4AF37]/25 bg-[#12100A] px-6 py-2 text-center text-xs text-[#F2DC9B]">
           <strong className="mr-2">{announcements[0].title}:</strong>
           <span>{announcements[0].message}</span>
@@ -428,10 +440,11 @@ function PlatformShell() {
         )}
 
         {activeView === 'storefront' && activeSlug && (
-          <ErrorBoundary sectionName="Storefront View">
+          <ErrorBoundary sectionName={isPublicTenantHost ? 'Website' : 'Storefront View'}>
             <StorefrontView
               slug={activeSlug}
               lang={lang}
+              publicHost={isPublicTenantHost}
               wishlistIds={wishlistIds}
               onToggleWishlist={toggleWishlist}
               onBack={() => navigateTo('marketplace')}
@@ -501,7 +514,7 @@ function PlatformShell() {
 
       <InvoiceModal
         order={invoiceState?.order || null}
-        tenantName={invoiceState?.tenantName || 'Vijay Visuals Store'}
+        tenantName={invoiceState?.tenantName || (isPublicTenantHost ? 'Store' : 'Vijay Visuals Store')}
         onClose={() => setInvoiceState(null)}
       />
 

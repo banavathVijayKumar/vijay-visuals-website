@@ -1,36 +1,40 @@
 // ============================================================================
-// SHARED SUPABASE WISHLIST STORE FOR CLOUDFLARE PAGES FUNCTIONS
-// - Uses the authenticated user's Supabase Bearer token only.
-// - Never reads/returns SUPABASE_SERVICE_ROLE_KEY or any private backend key.
-// - Relies on `public.wishlists` RLS (`wishlist_owner_only`) in addition to
-//   explicit user_id filters, so cross-user reads/writes are denied.
-// - No new database schema or migration is introduced.
+// SHARED D1 WISHLIST STORE FOR CLOUDFLARE PAGES FUNCTIONS
+// - Supabase Auth is the identity provider; Cloudflare D1 is authoritative.
+// - User identity is derived only from the verified auth context. Client supplied
+//   userId/ownerId/tenant fields are never read.
+// - Products are validated against D1 `store_products` and must be active.
+// - Missing binding/table returns an explicit migration-required error.
 // ============================================================================
 
-import { getSupabaseConfig } from '../_auth';
-import { CloudflareEnv } from '../_shared';
+import { isMissingTableError } from '../_tenantAccess';
+import { CloudflareEnv, D1Database } from '../_shared';
 
 export interface WishlistRow {
   id: number;
   product_id: number;
-  tenant_id: number;
+  website_id: string;
   created_at?: string;
 }
 
-interface ProductRow {
+export interface ActiveProduct {
   id: number;
-  tenant_id: number;
-  active?: boolean;
+  websiteId: string;
 }
 
-interface UserRow {
-  id: number | string;
-}
+const WISHLIST_TABLE = 'customer_wishlists';
+export const WISHLIST_MIGRATION_REQUIRED =
+  'Wishlist storage is unavailable. Apply D1 migration 0017_customer_wishlists.sql.';
 
-const MAX_POSTGRES_INTEGER = 2_147_483_647;
+export class WishlistStorageUnavailableError extends Error {
+  constructor(message: string = WISHLIST_MIGRATION_REQUIRED) {
+    super(message);
+    this.name = 'WishlistStorageUnavailableError';
+  }
+}
 
 function isPositiveInteger(value: unknown): value is number {
-  return Number.isInteger(value) && Number(value) > 0 && Number(value) <= MAX_POSTGRES_INTEGER;
+  return Number.isInteger(value) && Number(value) > 0 && Number(value) <= 2_147_483_647;
 }
 
 export function validateProductId(raw: unknown): number | null {
@@ -39,121 +43,174 @@ export function validateProductId(raw: unknown): number | null {
   return isPositiveInteger(productId) ? productId : null;
 }
 
-async function supabaseRequest<T>(
-  env: CloudflareEnv,
-  token: string,
-  path: string,
-  init: RequestInit = {}
-): Promise<T> {
-  const config = getSupabaseConfig(env);
-  if (!config) throw new Error('SUPABASE_CONFIG_MISSING');
-
-  const response = await fetch(`${config.url}${path}`, {
-    ...init,
-    method: init.method || 'GET',
-    headers: {
-      apikey: config.anonKey,
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-      ...(init.headers || {}),
-    },
-  });
-
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`SUPABASE_REQUEST_FAILED_${response.status}`);
+function requireDb(env: CloudflareEnv): D1Database {
+  if (!env.DB) {
+    throw new WishlistStorageUnavailableError(
+      `Cloudflare D1 binding is not configured. ${WISHLIST_MIGRATION_REQUIRED}`
+    );
   }
-  if (!text) return [] as unknown as T;
-  return JSON.parse(text) as T;
+  return env.DB;
 }
 
-/** Resolves the authenticated Supabase subject to the legacy integer user id. */
+function storageUnavailable(err: unknown): WishlistStorageUnavailableError {
+  return err instanceof WishlistStorageUnavailableError
+    ? err
+    : new WishlistStorageUnavailableError(WISHLIST_MIGRATION_REQUIRED);
+}
+
+async function ensureWishlistTable(db: D1Database): Promise<void> {
+  try {
+    await db.prepare(`SELECT id FROM ${WISHLIST_TABLE} LIMIT 1`).all();
+  } catch (err) {
+    if (err instanceof WishlistStorageUnavailableError) throw err;
+    if (isMissingTableError(err)) throw storageUnavailable(err);
+    throw err;
+  }
+}
+
+/**
+ * Maps the authenticated Supabase subject to the existing D1 `vv_users` row
+ * when present. Falls back to the verified auth id without ever trusting the
+ * request body.
+ */
 export async function resolveWishlistUserId(
   env: CloudflareEnv,
-  token: string,
-  authSubject: string
-): Promise<number | null> {
-  const rows = await supabaseRequest<UserRow[]>(
-    env,
-    token,
-    `/rest/v1/users?uid=eq.${encodeURIComponent(authSubject)}&select=id&limit=1`
-  );
-  const userId = Number(rows?.[0]?.id);
-  return isPositiveInteger(userId) ? userId : null;
+  authSubject: string,
+  authenticatedUserId: string
+): Promise<string | null> {
+  const db = requireDb(env);
+  await ensureWishlistTable(db);
+
+  const subject = String(authSubject || '').trim();
+  const fallbackId = String(authenticatedUserId || '').trim();
+  if (!subject && !fallbackId) return null;
+
+  try {
+    const row = await db
+      .prepare('SELECT id FROM vv_users WHERE id = ? OR auth_subject = ? LIMIT 1')
+      .bind(fallbackId || subject, subject || fallbackId)
+      .first<{ id: string | number }>();
+    if (row?.id !== undefined && row?.id !== null && String(row.id).trim()) {
+      return String(row.id).trim();
+    }
+  } catch {
+    // vv_users is managed outside these migrations; the verified auth id is
+    // already a stable Supabase subject when no D1 identity row exists.
+  }
+
+  return fallbackId || subject || null;
 }
 
 export async function listWishlistRows(
   env: CloudflareEnv,
-  token: string,
-  userId: number
+  userId: string
 ): Promise<WishlistRow[]> {
-  const rows = await supabaseRequest<WishlistRow[]>(
-    env,
-    token,
-    `/rest/v1/wishlists?user_id=eq.${userId}&select=id,product_id,tenant_id,created_at&order=created_at.desc`
-  );
-  return Array.isArray(rows) ? rows : [];
+  const db = requireDb(env);
+  await ensureWishlistTable(db);
+  try {
+    const result = await db
+      .prepare(
+        `SELECT id, product_id, website_id, created_at
+         FROM ${WISHLIST_TABLE}
+         WHERE user_id = ?
+         ORDER BY created_at DESC, id DESC`
+      )
+      .bind(userId)
+      .all<WishlistRow>();
+    return Array.isArray(result.results) ? result.results : [];
+  } catch (err) {
+    if (isMissingTableError(err)) throw storageUnavailable(err);
+    throw err;
+  }
 }
 
 export async function findWishlistEntry(
   env: CloudflareEnv,
-  token: string,
-  userId: number,
+  userId: string,
   productId: number
 ): Promise<WishlistRow | null> {
-  const rows = await supabaseRequest<WishlistRow[]>(
-    env,
-    token,
-    `/rest/v1/wishlists?user_id=eq.${userId}&product_id=eq.${productId}&select=id,product_id,tenant_id&limit=1`
-  );
-  return rows?.[0] || null;
+  const db = requireDb(env);
+  await ensureWishlistTable(db);
+  try {
+    return await db
+      .prepare(
+        `SELECT id, product_id, website_id, created_at
+         FROM ${WISHLIST_TABLE}
+         WHERE user_id = ? AND product_id = ? LIMIT 1`
+      )
+      .bind(userId, productId)
+      .first<WishlistRow>();
+  } catch (err) {
+    if (isMissingTableError(err)) throw storageUnavailable(err);
+    throw err;
+  }
 }
 
-/** Validates that the product exists, is active, and yields its owning tenant. */
+/** Validates that the product exists in D1 and is active. */
 export async function findActiveProduct(
   env: CloudflareEnv,
-  token: string,
   productId: number
-): Promise<{ id: number; tenantId: number } | null> {
-  const rows = await supabaseRequest<ProductRow[]>(
-    env,
-    token,
-    `/rest/v1/products?id=eq.${productId}&select=id,tenant_id,active&limit=1`
-  );
-  const product = rows?.[0];
-  if (!product || product.active === false) return null;
-  const id = Number(product.id);
-  const tenantId = Number(product.tenant_id);
-  if (!isPositiveInteger(id) || !isPositiveInteger(tenantId)) return null;
-  return { id, tenantId };
+): Promise<ActiveProduct | null> {
+  const db = requireDb(env);
+  try {
+    const row = await db
+      .prepare(
+        `SELECT id, website_id
+         FROM store_products
+         WHERE id = ? AND is_active = 1 LIMIT 1`
+      )
+      .bind(productId)
+      .first<{ id: number; website_id: string }>();
+    const id = Number(row?.id);
+    if (!isPositiveInteger(id)) return null;
+    return { id, websiteId: String(row?.website_id || '') };
+  } catch (err) {
+    if (isMissingTableError(err)) {
+      throw new WishlistStorageUnavailableError(
+        'Product catalogue storage requires D1 migration 0003_complete_platform_saas.sql.'
+      );
+    }
+    throw err;
+  }
 }
 
 export async function addWishlistEntry(
   env: CloudflareEnv,
-  token: string,
-  userId: number,
+  userId: string,
   productId: number,
-  tenantId: number
+  websiteId: string
 ): Promise<void> {
-  await supabaseRequest(
-    env,
-    token,
-    '/rest/v1/wishlists',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-      body: JSON.stringify({ user_id: userId, product_id: productId, tenant_id: tenantId }),
-    }
-  );
+  const db = requireDb(env);
+  await ensureWishlistTable(db);
+  try {
+    await db
+      .prepare(
+        `INSERT OR IGNORE INTO ${WISHLIST_TABLE} (user_id, product_id, website_id, created_at)
+         VALUES (?, ?, ?, datetime('now'))`
+      )
+      .bind(userId, productId, websiteId || '')
+      .run();
+  } catch (err) {
+    if (isMissingTableError(err)) throw storageUnavailable(err);
+    throw err;
+  }
 }
 
+/** Removes only the caller's own wishlist entry. */
 export async function removeWishlistEntry(
   env: CloudflareEnv,
-  token: string,
-  wishlistId: number
+  userId: string,
+  productId: number
 ): Promise<void> {
-  await supabaseRequest(env, token, `/rest/v1/wishlists?id=eq.${wishlistId}`, {
-    method: 'DELETE',
-    headers: { Prefer: 'return=minimal' },
-  });
+  const db = requireDb(env);
+  await ensureWishlistTable(db);
+  try {
+    await db
+      .prepare(`DELETE FROM ${WISHLIST_TABLE} WHERE user_id = ? AND product_id = ?`)
+      .bind(userId, productId)
+      .run();
+  } catch (err) {
+    if (isMissingTableError(err)) throw storageUnavailable(err);
+    throw err;
+  }
 }

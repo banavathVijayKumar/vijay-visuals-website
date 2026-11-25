@@ -10,6 +10,7 @@ import {
   escapeHtml,
   isPlatformHostname,
 } from './api/_shared';
+import { parseTenantDeliveryHostname } from '../shared/tenantHost';
 
 interface ResolvedTenantRow {
   id: number;
@@ -36,7 +37,7 @@ function blockedDomainHtml(title: string, message: string, hostname: string): Re
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="robots" content="noindex,nofollow" />
-  <title>${escapeHtml(title)} — Vijay Visuals</title>
+  <title>${escapeHtml(title)}</title>
   <style>
     body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#08080A;color:#E8E8ED;font-family:system-ui,-apple-system,sans-serif;padding:24px;}
     .card{max-width:520px;background:#111116;border:1px solid #262630;border-radius:14px;padding:28px;}
@@ -63,11 +64,35 @@ function blockedDomainHtml(title: string, message: string, hostname: string): Re
   });
 }
 
-function buildTenantHeadInjection(row: ResolvedTenantRow, canonicalUrl: string): string {
+interface TenantHeadMetadata {
+  title: string;
+  injection: string;
+}
+
+function safeMediaUrl(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
+  return '';
+}
+
+function safeCssColor(value: unknown): string {
+  const raw = String(value || '').trim();
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : '';
+}
+
+/** Builds tenant-owned head tags. No platform credit appears in customer HTML. */
+export function buildTenantHeadInjection(
+  row: ResolvedTenantRow,
+  canonicalUrl: string
+): TenantHeadMetadata {
   let seoTitle = `${row.business_name} | Official Website`;
-  let seoDescription = `Visit ${row.business_name} online — powered by Vijay Visuals.`;
+  let seoDescription = `Browse products, services and contact details for ${row.business_name}.`;
   let phone = '';
   let address = '';
+  let logoUrl = '';
+  let themeColor = '';
 
   try {
     const parsed = JSON.parse(row.website_json || '{}') as Record<string, unknown>;
@@ -83,6 +108,8 @@ function buildTenantHeadInjection(row: ResolvedTenantRow, canonicalUrl: string):
     }
     if (typeof parsed.phone === 'string') phone = parsed.phone.trim();
     if (typeof parsed.address === 'string') address = parsed.address.trim();
+    logoUrl = safeMediaUrl(parsed.logoImage || parsed.logoUrl);
+    themeColor = safeCssColor(parsed.primaryColor || parsed.themeColor || parsed.brandColor);
   } catch {
     // Use safe defaults
   }
@@ -96,17 +123,59 @@ function buildTenantHeadInjection(row: ResolvedTenantRow, canonicalUrl: string):
     ...(address ? { address } : {}),
   }).replace(/</g, '\\u003c');
 
-  return [
+  const tags = [
     `<meta name="vv-tenant-slug" content="${escapeHtml(row.public_slug)}" />`,
     `<meta name="vv-tenant-website-id" content="${escapeHtml(row.website_id)}" />`,
+    `<meta name="application-name" content="${escapeHtml(row.business_name)}" />`,
+    `<meta name="apple-mobile-web-app-title" content="${escapeHtml(row.business_name)}" />`,
+    themeColor ? `<meta name="theme-color" content="${themeColor}" />` : '',
     `<meta name="description" content="${escapeHtml(seoDescription)}" />`,
     `<link rel="canonical" href="${escapeHtml(canonicalUrl)}" />`,
     `<meta property="og:type" content="website" />`,
+    `<meta property="og:site_name" content="${escapeHtml(row.business_name)}" />`,
     `<meta property="og:title" content="${escapeHtml(seoTitle)}" />`,
     `<meta property="og:description" content="${escapeHtml(seoDescription)}" />`,
     `<meta property="og:url" content="${escapeHtml(canonicalUrl)}" />`,
+    `<meta name="twitter:card" content="summary" />`,
+    `<meta name="twitter:title" content="${escapeHtml(seoTitle)}" />`,
+    `<meta name="twitter:description" content="${escapeHtml(seoDescription)}" />`,
+    logoUrl ? `<meta property="og:image" content="${escapeHtml(logoUrl)}" />` : '',
+    logoUrl ? `<link rel="icon" href="${escapeHtml(logoUrl)}" />` : '',
+    logoUrl ? `<link rel="apple-touch-icon" href="${escapeHtml(logoUrl)}" />` : '',
     `<script type="application/ld+json">${ldJson}</script>`,
-  ].join('\n');
+  ];
+
+  return { title: seoTitle, injection: tags.filter(Boolean).join('\n') };
+}
+
+/**
+ * Removes the global platform SPA metadata before tenant tags are injected.
+ * Appending tenant tags alone left duplicate titles and platform JSON-LD on
+ * delivered customer domains.
+ */
+export function replacePlatformHeadMetadata(
+  html: string,
+  tenantTitle: string,
+  tenantHeadInjection: string
+): string {
+  const safeTitle = escapeHtml(tenantTitle);
+  let result = String(html || '').replace(/<title\b[^>]*>[\s\S]*?<\/title>/gi, `<title>${safeTitle}</title>`);
+
+  result = result
+    .replace(
+      /<meta\b[^>]*\b(?:property|name)\s*=\s*["'](?:og:|twitter:|google-site-verification|description|robots|theme-color|mobile-web-app-capable|apple-mobile-web-app-capable|apple-mobile-web-app-status-bar-style|apple-mobile-web-app-title)[^"']*["'][^>]*>/gi,
+      ''
+    )
+    .replace(
+      /<link\b[^>]*\brel\s*=\s*["'](?:canonical|alternate|icon|shortcut icon|apple-touch-icon)["'][^>]*>/gi,
+      ''
+    )
+    .replace(
+      /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi,
+      ''
+    );
+
+  return result.replace(/<\/head>/i, `${tenantHeadInjection}\n</head>`);
 }
 
 export async function onRequest(context: PagesContext): Promise<Response> {
@@ -140,12 +209,20 @@ export async function onRequest(context: PagesContext): Promise<Response> {
   // SECURITY: Always use the TLS-verified request URL hostname — never trust arbitrary Host/X-Forwarded-Host headers.
   const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
 
-  // Pass through platform domains, API endpoints, static assets, and SEO files directly
+  // API endpoints, static assets and SEO files always bypass tenant HTML rewriting.
   if (
-    isPlatformHostname(hostname, env) ||
     BYPASS_EXACT.has(url.pathname) ||
     BYPASS_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
   ) {
+    return next();
+  }
+
+  // Platform-owned default delivery subdomains are tenant hosts only when a
+  // published tenant actually exists for the subdomain. Unknown hosts (including
+  // Pages deploy previews) continue to render the platform shell.
+  const deliveryHost = parseTenantDeliveryHostname(hostname);
+  const canResolveDeliveryHost = Boolean(deliveryHost && env.DB);
+  if (isPlatformHostname(hostname, env) && !canResolveDeliveryHost) {
     return next();
   }
 
@@ -159,59 +236,99 @@ export async function onRequest(context: PagesContext): Promise<Response> {
 
   const isWwwRequest = hostname.startsWith('www.');
   const rootCandidate = isWwwRequest ? hostname.slice(4) : hostname;
+  let row: ResolvedTenantRow | null = null;
+  let isDeliveryHost = false;
 
-  const row = await env.DB.prepare(
-    `SELECT
-       td.id,
-       td.website_id,
-       td.domain_name,
-       td.status,
-       td.www_mode,
-       td.dns_verification_status,
-       td.ssl_status,
-       p.public_slug,
-       p.business_name,
-       p.status AS website_status,
-       p.website_json
-     FROM tenant_domains td
-     INNER JOIN customer_website_publications p ON p.website_id = td.website_id
-     WHERE td.domain_name = ? OR td.domain_name = ?
-     LIMIT 1`
-  )
-    .bind(hostname, rootCandidate)
-    .first<ResolvedTenantRow>();
+  if (deliveryHost) {
+    const published = await env.DB.prepare(
+      `SELECT website_id, public_slug, business_name, status, website_json
+       FROM customer_website_publications
+       WHERE (public_slug = ? OR website_id = ?) AND status = 'published'
+       LIMIT 1`
+    )
+      .bind(deliveryHost.slug, deliveryHost.slug)
+      .first<{
+        website_id: string;
+        public_slug: string;
+        business_name: string;
+        status: string;
+        website_json: string;
+      }>();
 
-  // Domain Takeover Defense: never serve an unverified or unregistered custom domain
+    if (published) {
+      row = {
+        id: 0,
+        website_id: published.website_id,
+        domain_name: hostname,
+        status: 'live',
+        www_mode: 'both',
+        dns_verification_status: 'verified',
+        ssl_status: 'active',
+        public_slug: published.public_slug,
+        business_name: published.business_name,
+        website_status: published.status,
+        website_json: published.website_json,
+      };
+      isDeliveryHost = true;
+    }
+  } else {
+    row = await env.DB.prepare(
+      `SELECT
+         td.id,
+         td.website_id,
+         td.domain_name,
+         td.status,
+         td.www_mode,
+         td.dns_verification_status,
+         td.ssl_status,
+         p.public_slug,
+         p.business_name,
+         p.status AS website_status,
+         p.website_json
+       FROM tenant_domains td
+       INNER JOIN customer_website_publications p ON p.website_id = td.website_id
+       WHERE td.domain_name = ? OR td.domain_name = ?
+       LIMIT 1`
+    )
+      .bind(hostname, rootCandidate)
+      .first<ResolvedTenantRow>();
+  }
+
+  // Unknown delivery hosts are deploy previews or unprovisioned hostnames; they
+  // stay on the platform shell. Unknown custom domains remain blocked.
   if (!row) {
+    if (deliveryHost) return next();
     return blockedDomainHtml(
       'Domain Not Connected',
-      'This custom domain is not connected to any verified business website on Vijay Visuals.',
+      'This custom domain is not connected to any verified business website.',
       hostname
     );
   }
 
-  if (row.status === 'suspended' || row.status === 'expired' || row.status === 'rejected' || row.status === 'disconnected') {
-    return blockedDomainHtml(
-      'Website Temporarily Unavailable',
-      'This custom domain is currently inactive, suspended, or awaiting renewal verification.',
-      hostname
-    );
-  }
+  if (!isDeliveryHost) {
+    if (row.status === 'suspended' || row.status === 'expired' || row.status === 'rejected' || row.status === 'disconnected') {
+      return blockedDomainHtml(
+        'Website Temporarily Unavailable',
+        'This custom domain is currently inactive, suspended, or awaiting renewal verification.',
+        hostname
+      );
+    }
 
-  if (row.dns_verification_status !== 'verified' || (row.status !== 'live' && row.status !== 'expiring_soon')) {
-    return blockedDomainHtml(
-      'Domain Verification Pending',
-      'DNS ownership verification and HTTPS activation have not been completed for this domain yet.',
-      hostname
-    );
-  }
+    if (row.dns_verification_status !== 'verified' || (row.status !== 'live' && row.status !== 'expiring_soon')) {
+      return blockedDomainHtml(
+        'Domain Verification Pending',
+        'DNS ownership verification and HTTPS activation have not been completed for this domain yet.',
+        hostname
+      );
+    }
 
-  if (row.website_status !== 'published') {
-    return blockedDomainHtml(
-      'Website Unpublished',
-      'The business owner has currently set this website to unpublished mode.',
-      hostname
-    );
+    if (row.website_status !== 'published') {
+      return blockedDomainHtml(
+        'Website Unpublished',
+        'The business owner has currently set this website to unpublished mode.',
+        hostname
+      );
+    }
   }
 
   // Canonical 301 Redirect Enforcement (www <-> root)
@@ -236,15 +353,16 @@ export async function onRequest(context: PagesContext): Promise<Response> {
     return response;
   }
 
-  const canonicalHost = row.www_mode === 'redirect_to_www' ? `www.${rootDomain}` : rootDomain;
+  const canonicalHost = isDeliveryHost
+    ? hostname
+    : row.www_mode === 'redirect_to_www'
+      ? `www.${rootDomain}`
+      : rootDomain;
   const canonicalUrl = `https://${canonicalHost}${url.pathname === '/' ? '' : url.pathname}`;
-  const headInjection = buildTenantHeadInjection(row, canonicalUrl);
-  const safeTitle = escapeHtml(`${row.business_name} | Official Website`);
+  const head = buildTenantHeadInjection(row, canonicalUrl);
 
   const html = await response.text();
-  const updatedHtml = html
-    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${safeTitle}</title>`)
-    .replace(/<\/head>/i, `${headInjection}\n</head>`);
+  const updatedHtml = replacePlatformHeadMetadata(html, head.title, head.injection);
 
   const headers = new Headers(response.headers);
   headers.set('Content-Type', 'text/html; charset=utf-8');

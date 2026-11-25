@@ -1061,7 +1061,7 @@ export function StorefrontReviews({
             </div>
 
             <p className="text-[#A5A5B8]">
-              Reporting review by <strong className="text-white">{activeReviewForAction.customerName}</strong>. All reports are audited by Vijay Visuals platform administrators.
+              Reporting review by <strong className="text-white">{activeReviewForAction.customerName}</strong>. All reports are reviewed by the store administrator.
             </p>
 
             <form onSubmit={handleSubmitReport} className="space-y-3">

@@ -118,7 +118,7 @@ export async function onRequestPost(
 
     await env.DB!.prepare(
       `INSERT INTO website_revisions (website_id, owner_id, version_number, revision_type, summary, website_json, created_by, created_at)
-       VALUES (?, ?, ?, 'manual_backup', ?, ?, ?, datetime('now'))`
+       VALUES (?, ?, ?, 'draft', ?, ?, ?, datetime('now'))`
     )
       .bind(
         access.row.website_id,

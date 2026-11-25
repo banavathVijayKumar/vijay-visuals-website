@@ -95,6 +95,31 @@ interface DashboardsHubProps {
 
 type RoleTab = 'owner' | 'delivery' | 'customer' | 'super_admin';
 
+interface CustomerPackageStatus {
+  packageStatus: string;
+  planCode: string;
+  planName: string;
+  paymentStatus: string | null;
+  canPublish: boolean;
+  currentPeriodEnd: string | null;
+  isFreeStart: boolean;
+  amountInr: number | null;
+  websiteId: string | null;
+}
+
+const getPackageStatusClass = (status: string): string => {
+  if (status === 'active' || status === 'free_start') {
+    return 'bg-emerald-950/60 text-emerald-400 border-emerald-500/30';
+  }
+  if (status === 'pending') {
+    return 'bg-sky-950/60 text-sky-400 border-sky-500/30';
+  }
+  if (status === 'failed' || status === 'refunded' || status === 'expired') {
+    return 'bg-rose-950/60 text-rose-400 border-rose-500/30';
+  }
+  return 'bg-[#171722] text-[#9E9EB2] border-[#2A2A38]';
+};
+
 const getReceiptNumber = (p: any): string =>
   p?.receipt || p?.receiptNumber || (p?.id ? `RCPT-${p.id}` : 'RCPT-UNAVAILABLE');
 
@@ -294,13 +319,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
   // Customer Platform Purchases & Entitlements
   const [platformPayments, setPlatformPayments] = useState<any[]>([]);
-  const [activeSubscription, setActiveSubscription] = useState<{
-    id: number;
-    planCode: string;
-    billingCycle: string;
-    status: string;
-    currentPeriodEnd: string;
-  } | null>(null);
+  const [packageStatus, setPackageStatus] = useState<CustomerPackageStatus | null>(null);
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
   const [buyingPackage, setBuyingPackage] = useState(false);
 
@@ -546,12 +565,10 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       }
 
       try {
-        const subRes = await apiFetch<{ subscriptions: any[] }>('/api/platform/subscriptions');
-        if (subRes.subscriptions && subRes.subscriptions.length > 0) {
-          setActiveSubscription(subRes.subscriptions[0]);
-        }
+        const statusRes = await apiFetch<CustomerPackageStatus>('/api/customer/package-status');
+        setPackageStatus(statusRes);
       } catch {
-        // Subscriptions unconfigured or empty
+        setPackageStatus(null);
       }
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Unable to load customer data.');
@@ -3185,14 +3202,23 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-4 space-y-2">
-                    <span className="text-[10px] text-[#8E8EA0] uppercase tracking-wider">Active Package</span>
-                    <p className="font-luxury text-base font-bold text-white">Business Website Package</p>
-                    <p className="font-mono-tabular text-sm text-[#ECC86A] font-semibold">
-                      ₹7,999 <span className="text-[10px] text-[#8A8A9E] font-normal">+ 18% GST (₹9,439 Total)</span>
+                    <span className="text-[10px] text-[#8E8EA0] uppercase tracking-wider">Package Status</span>
+                    <p className="font-luxury text-base font-bold text-white">
+                      {packageStatus?.planName || 'No package selected'}
                     </p>
-                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-500/30">
-                      Entitlement: {activeSubscription?.status ? activeSubscription.status.toUpperCase() : 'ACTIVE'}
+                    <p className="font-mono-tabular text-sm text-[#ECC86A] font-semibold">
+                      {packageStatus?.amountInr
+                        ? `₹${packageStatus.amountInr.toLocaleString('en-IN')} verified payment`
+                        : 'No verified payment recorded'}
+                    </p>
+                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${getPackageStatusClass(packageStatus?.packageStatus || 'none')}`}>
+                      Entitlement: {(packageStatus?.packageStatus || 'none').toUpperCase()}
                     </span>
+                    {packageStatus?.currentPeriodEnd && (
+                      <p className="text-[10px] text-[#8A8A9E]">
+                        Current period ends {new Date(packageStatus.currentPeriodEnd).toLocaleDateString('en-IN')}
+                      </p>
+                    )}
                   </div>
 
                   <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-4 space-y-1.5 text-[11px]">
@@ -3252,12 +3278,25 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                         ? new Date(payDate).toLocaleDateString('en-IN')
                         : 'Date Unavailable';
 
+                      // Entitlement comes from the linked D1 entitlement row, never
+                      // from stale human-readable notes written at checkout time.
+                      const entitlementStatus = String(pay.entitlement_status || '').toLowerCase();
+                      const paymentStatus = String(pay.status || '').toLowerCase();
+                      const deliveryState: string =
+                        entitlementStatus === 'active'
+                          ? 'ACTIVE'
+                          : entitlementStatus === 'revoked' || paymentStatus === 'refunded'
+                            ? 'REFUNDED'
+                            : paymentStatus === 'failed'
+                              ? 'FAILED'
+                              : paymentStatus === 'paid' && Number(pay.signature_verified) === 1
+                                ? 'ACTIVE'
+                                : 'PAYMENT_PENDING';
                       let payNotes: Record<string, any> = {};
                       try {
                         payNotes = JSON.parse(pay.notes_json || '{}');
                       } catch {}
-                      const deliveryState = payNotes.orderState || (pay.status === 'paid' ? 'ACTIVE' : 'PAYMENT_PENDING');
-                      const siteUrl = payNotes.websiteUrl || (pay.website_id ? `/site/${pay.website_id}` : null);
+                      const siteUrl = payNotes.websiteUrl || (pay.website_id ? `/site/${pay.public_slug || pay.website_id}` : null);
 
                       return (
                         <div key={pay.id} className="p-4 flex flex-wrap items-center justify-between gap-4 text-xs">
@@ -3267,7 +3306,14 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                             </p>
                             <div className="flex flex-wrap items-center gap-2 text-[#9E9EB2] mt-0.5">
                               <span>
-                                Status: <strong className="text-emerald-400 capitalize">{pay.status || 'Paid'}</strong> · Date: {dateFormatted}
+                                Status:{' '}
+                                <strong className={paymentStatus === 'paid' ? 'text-emerald-400 capitalize' : 'text-rose-400 capitalize'}>
+                                  {pay.status || 'Unknown'}
+                                </strong>{' '}
+                                · Date: {dateFormatted}
+                                {paymentStatus === 'paid' && Number(pay.signature_verified) !== 1 && (
+                                  <span className="ml-1 text-amber-300">· verification pending</span>
+                                )}
                               </span>
                               {deliveryState === 'ACTIVE' || deliveryState === 'DELIVERY_READY' ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium">

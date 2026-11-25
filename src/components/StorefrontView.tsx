@@ -114,6 +114,8 @@ function resolveTenantModules(tenant: TenantRecord | null): TenantModules {
 interface StorefrontViewProps {
   slug: string;
   lang: Lang;
+  /** True when rendered on a delivered customer domain/subdomain. */
+  publicHost?: boolean;
   wishlistIds: number[];
   onToggleWishlist: (productId: number) => void;
   onBack: () => void;
@@ -125,6 +127,7 @@ interface StorefrontViewProps {
 export const StorefrontView: React.FC<StorefrontViewProps> = ({
   slug,
   lang,
+  publicHost = false,
   wishlistIds,
   onToggleWishlist,
   onBack,
@@ -390,7 +393,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
       {
         '@type': 'BreadcrumbList',
         itemListElement: [
-          { '@type': 'ListItem', position: 1, name: 'Vijay Visuals', item: window.location.origin },
+          { '@type': 'ListItem', position: 1, name: tenant.name, item: window.location.origin },
           { '@type': 'ListItem', position: 2, name: tenant.name, item: storeUrl },
         ],
       },
@@ -817,36 +820,44 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
             The storefront for <span className="font-mono text-[#ECC86A] bg-[#161622] px-1.5 py-0.5 rounded border border-[#262638]">/site/{slug}</span> has been unpublished or taken offline by its business owner for scheduled catalog updates, branding adjustments, or private maintenance.
           </p>
 
-          {/* Business Owner Guidance Box */}
-          <div className="rounded-xl border border-[#232332] bg-[#0A0A0F] p-4 text-left mb-6 space-y-1.5">
-            <p className="text-xs font-semibold text-white flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#ECC86A]" />
-              <span>Are you the owner of this business?</span>
+          {publicHost ? (
+            <p className="text-[11px] text-[#8E8EA2]">
+              Please try again later or contact the business directly.
             </p>
-            <p className="text-[11px] text-[#8E8EA2] leading-relaxed">
-              Log in with your verified merchant account to edit website content, upload products, manage live orders, or toggle your site status back to <strong>Published</strong> at any time.
-            </p>
-          </div>
+          ) : (
+            <>
+              {/* Business Owner Guidance Box (platform preview only) */}
+              <div className="rounded-xl border border-[#232332] bg-[#0A0A0F] p-4 text-left mb-6 space-y-1.5">
+                <p className="text-xs font-semibold text-white flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#ECC86A]" />
+                  <span>Are you the owner of this business?</span>
+                </p>
+                <p className="text-[11px] text-[#8E8EA2] leading-relaxed">
+                  Log in with your verified merchant account to edit website content, upload products, manage live orders, or toggle your site status back to <strong>Published</strong> at any time.
+                </p>
+              </div>
 
-          {/* Actions */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            {onGoDashboards && (
-              <button
-                type="button"
-                onClick={onGoDashboards}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-gold-gradient text-[#08080A] text-xs font-bold hover:opacity-95 transition-opacity shadow-md"
-              >
-                Go to Business Owner Dashboard
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onBack}
-              className="w-full sm:w-auto px-5 py-2.5 rounded-lg border border-[#2E2E40] text-[#D4D4E8] text-xs font-medium hover:border-[#D4AF37] hover:text-white transition-colors"
-            >
-              Back to Marketplace
-            </button>
-          </div>
+              {/* Actions */}
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                {onGoDashboards && (
+                  <button
+                    type="button"
+                    onClick={onGoDashboards}
+                    className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-gold-gradient text-[#08080A] text-xs font-bold hover:opacity-95 transition-opacity shadow-md"
+                  >
+                    Go to Business Owner Dashboard
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-lg border border-[#2E2E40] text-[#D4D4E8] text-xs font-medium hover:border-[#D4AF37] hover:text-white transition-colors"
+                >
+                  Back to Marketplace
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -858,15 +869,19 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
       <div className="border-b border-[#1E1E2A] bg-[#0C0C12] sticky top-0 z-30 backdrop-blur">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2.5 sm:gap-4">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="inline-flex items-center gap-1.5 text-xs text-[#A3A3B5] hover:text-white"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Marketplace</span>
-            </button>
-            <span aria-hidden="true" className="text-[#3A3A4A]">·</span>
+            {!publicHost && (
+              <>
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="inline-flex items-center gap-1.5 text-xs text-[#A3A3B5] hover:text-white"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Marketplace</span>
+                </button>
+                <span aria-hidden="true" className="text-[#3A3A4A]">·</span>
+              </>
+            )}
             <nav aria-label="Storefront sections" className="hidden md:flex items-center gap-4 text-xs text-[#B8B8C8]">
               <a href="#store-home" className="hover:text-[#ECC86A]">Home</a>
               {(modules.ecommerce || products.length > 0) && (
@@ -2348,7 +2363,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                                       </div>
                                       <div className="flex items-center gap-1.5 text-[9px] text-emerald-400 pt-0.5">
                                         <ShieldCheck className="w-3 h-3 shrink-0" />
-                                        <span>RBI Authorized Payment Aggregator · Verified Server-Side by Vijay Visuals</span>
+                                        <span>RBI Authorized Payment Aggregator · Verified Server-Side by the Payment Gateway</span>
                                       </div>
                                     </div>
                                   )}

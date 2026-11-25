@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { PagesContext, errorJson, isPlatformHostname, json } from '../_shared';
+import { parseTenantDeliveryHostname } from '../../../shared/tenantHost';
 
 interface ResolveRow {
   id: number;
@@ -101,43 +102,37 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     });
   }
 
-  // 2. Fallback: Automatic Default Customer Delivery Subdomains
-  // Matches: <slug>.vijayvisuals.in or <slug>.vijay-visuals-site.pages.dev
-  const deliverySubdomainMatch = lookupHost.match(/^([a-z0-9-]+)\.(?:vijayvisuals\.in|vijay-visuals-site\.pages\.dev)$/);
+  // 2. Fallback: Automatic default customer delivery subdomains.
+  // Uses the same classification rules as the HTML edge middleware.
+  const deliveryHost = parseTenantDeliveryHostname(lookupHost);
+  if (deliveryHost) {
+    const pub = await env.DB.prepare(
+      `SELECT website_id, owner_id, public_slug, business_name, status
+       FROM customer_website_publications
+       WHERE (public_slug = ? OR website_id = ?) AND status = 'published'
+       LIMIT 1`
+    )
+      .bind(deliveryHost.slug, deliveryHost.slug)
+      .first<{ website_id: string; owner_id: string; public_slug: string; business_name: string; status: string }>();
 
-  if (deliverySubdomainMatch) {
-    const candidateSlug = deliverySubdomainMatch[1];
-    // Exclude core reserved platform prefixes
-    const platformPrefixes = new Set(['www', 'master', 'api', 'app', 'admin', 'preview']);
-
-    if (!platformPrefixes.has(candidateSlug)) {
-      const pub = await env.DB.prepare(
-        `SELECT website_id, owner_id, public_slug, business_name, status
-         FROM customer_website_publications
-         WHERE (public_slug = ? OR website_id = ?) AND status = 'published'
-         LIMIT 1`
-      )
-        .bind(candidateSlug, candidateSlug)
-        .first<{ website_id: string; owner_id: string; public_slug: string; business_name: string; status: string }>();
-
-      if (pub) {
-        return json({
-          matched: true,
-          hostname: lookupHost,
-          websiteId: pub.website_id,
-          tenantSlug: pub.public_slug,
-          businessName: pub.business_name,
-          domainName: lookupHost,
-          status: 'live',
-          sslStatus: 'active',
-          wwwMode: 'both',
-          redirectUrl: null,
-          isDefaultDeliverySubdomain: true,
-          deliveryUrl: `https://${pub.public_slug}.vijayvisuals.in`,
-          previewDeliveryUrl: `https://${pub.public_slug}.vijay-visuals-site.pages.dev`,
-          customDomainConnected: false,
-        });
-      }
+    if (pub) {
+      return json({
+        matched: true,
+        hostname: lookupHost,
+        websiteId: pub.website_id,
+        tenantSlug: pub.public_slug,
+        businessName: pub.business_name,
+        domainName: lookupHost,
+        status: 'live',
+        sslStatus: 'active',
+        wwwMode: 'both',
+        redirectUrl: null,
+        isDefaultDeliverySubdomain: true,
+        deliveryParent: deliveryHost.parentHost,
+        deliveryUrl: `https://${pub.public_slug}.vijayvisuals.in`,
+        previewDeliveryUrl: `https://${pub.public_slug}.vijay-visuals-site.pages.dev`,
+        customDomainConnected: false,
+      });
     }
   }
 

@@ -131,15 +131,7 @@ let cashfreeScenario:
   | 'unknown'
   | 'provider_error' = 'active';
 
-interface TestWishlistRow {
-  id: number;
-  user_id: number;
-  product_id: number;
-  tenant_id: number;
-  created_at: string;
-}
-let wishlistRows: TestWishlistRow[] = [];
-let nextWishlistId = 1;
+const wishlistFetchUrls: string[] = [];
 
 function headersOf(init?: RequestInit): Headers {
   return new Headers(init?.headers || {});
@@ -159,6 +151,7 @@ function jsonRes(data: unknown, status = 200): Response {
 
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = String(input);
+  if (fetchMode === 'wishlist') wishlistFetchUrls.push(url);
 
   if (fetchMode === 'cashfree') {
     if (url.includes('/auth/v1/user')) {
@@ -230,50 +223,6 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   }
   if (url.includes('/rest/v1/profiles')) {
     return jsonRes([{ id: subject, role: 'customer', full_name: 'Test Customer' }]);
-  }
-  if (url.includes('/rest/v1/users')) {
-    const uid = param(url, 'uid') || subject;
-    const userId = uid === 'auth-user-a' ? 1 : uid === 'auth-user-b' ? 2 : null;
-    return jsonRes(userId ? [{ id: userId }] : []);
-  }
-  if (url.includes('/rest/v1/products')) {
-    const productId = Number(param(url, 'id'));
-    if (productId === 101) return jsonRes([{ id: 101, tenant_id: 1, active: true }]);
-    if (productId === 202) return jsonRes([{ id: 202, tenant_id: 2, active: true }]);
-    return jsonRes([]);
-  }
-  if (url.includes('/rest/v1/wishlists')) {
-    const method = (init?.method || 'GET').toUpperCase();
-    if (method === 'GET') {
-      const userId = Number(param(url, 'user_id'));
-      const productIdParam = param(url, 'product_id');
-      let rows = wishlistRows.filter((row) => row.user_id === userId);
-      if (productIdParam) rows = rows.filter((row) => row.product_id === Number(productIdParam));
-      return jsonRes(
-        rows.map((row) => ({
-          id: row.id,
-          product_id: row.product_id,
-          tenant_id: row.tenant_id,
-          created_at: row.created_at,
-        }))
-      );
-    }
-    if (method === 'POST') {
-      const body = JSON.parse(String(init?.body || '{}'));
-      wishlistRows.push({
-        id: nextWishlistId++,
-        user_id: Number(body.user_id),
-        product_id: Number(body.product_id),
-        tenant_id: Number(body.tenant_id),
-        created_at: new Date().toISOString(),
-      });
-      return new Response(null, { status: 201 });
-    }
-    if (method === 'DELETE') {
-      const id = Number(param(url, 'id'));
-      wishlistRows = wishlistRows.filter((row) => row.id !== id);
-      return new Response(null, { status: 204 });
-    }
   }
   return jsonRes({ error: `Unexpected wishlist mock URL: ${url}` }, 500);
 }) as typeof fetch;
@@ -429,13 +378,59 @@ async function runCashfreeTests(): Promise<void> {
   });
 }
 
-async function runWishlistTests(): Promise<void> {
-  console.log('\nWishlist Pages Function regressions');
-  fetchMode = 'wishlist';
-  wishlistRows = [];
-  nextWishlistId = 1;
+function seedWishlistProducts(db: DatabaseSync): void {
+  db.prepare(
+    `INSERT INTO customer_website_publications
+      (website_id, owner_id, public_slug, business_name, website_json, status)
+     VALUES (?, ?, ?, ?, ?, 'published')`
+  ).run('web_a', 'auth-user-a', 'store-a', 'Store A', '{}');
+  db.prepare(
+    `INSERT INTO customer_website_publications
+      (website_id, owner_id, public_slug, business_name, website_json, status)
+     VALUES (?, ?, ?, ?, ?, 'published')`
+  ).run('web_b', 'auth-user-b', 'store-b', 'Store B', '{}');
 
-  const { d1 } = createD1();
+  const insertProduct = db.prepare(
+    `INSERT INTO store_products
+      (id, website_id, owner_id, name, price_inr, is_active)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
+  insertProduct.run(101, 'web_a', 'auth-user-a', 'Active Product A', 100, 1);
+  insertProduct.run(202, 'web_b', 'auth-user-b', 'Active Product B', 200, 1);
+  insertProduct.run(303, 'web_a', 'auth-user-a', 'Inactive Product A', 300, 0);
+}
+
+function createBrokenWishlistDb(): D1Database {
+  const fail = () => {
+    throw new Error('no such table: customer_wishlists');
+  };
+  return {
+    prepare() {
+      return {
+        bind() {
+          return this;
+        },
+        async first() {
+          return fail();
+        },
+        async all() {
+          return fail();
+        },
+        async run() {
+          return fail();
+        },
+      } as any;
+    },
+  } as unknown as D1Database;
+}
+
+async function runWishlistTests(): Promise<void> {
+  console.log('\nWishlist Pages Function regressions (D1 authoritative store)');
+  fetchMode = 'wishlist';
+  wishlistFetchUrls.length = 0;
+
+  const { db, d1 } = createD1();
+  seedWishlistProducts(db);
   const env: CloudflareEnv = {
     DB: d1,
     VITE_SUPABASE_URL: 'https://supabase.invalid',
@@ -452,28 +447,40 @@ async function runWishlistTests(): Promise<void> {
     const body = await readJson(response);
     assert.equal(response.status, 200);
     assert.deepEqual(body.productIds, []);
+    assert.ok(Array.isArray(body.items));
   });
 
-  await it('toggle adds a valid product and returns productIds', async () => {
-    const response = await toggleWishlist(
-      makeContext(env, { productId: 101 }, 'token-user-a')
-    );
+  await it('toggle adds a valid active product and returns productIds', async () => {
+    const response = await toggleWishlist(makeContext(env, { productId: 101 }, 'token-user-a'));
     const body = await readJson(response);
     assert.equal(response.status, 200);
     assert.deepEqual(body.productIds, [101]);
   });
 
   await it('repeated toggle is safe and creates no duplicate row', async () => {
-    const response = await toggleWishlist(
-      makeContext(env, { productId: 101 }, 'token-user-a')
-    );
+    const response = await toggleWishlist(makeContext(env, { productId: 101 }, 'token-user-a'));
     const body = await readJson(response);
     assert.equal(response.status, 200);
     assert.deepEqual(body.productIds, []);
-    assert.equal(wishlistRows.filter((r) => r.user_id === 1 && r.product_id === 101).length, 0);
+    assert.equal(
+      db.prepare("SELECT COUNT(*) AS n FROM customer_wishlists WHERE user_id = 'auth-user-a' AND product_id = 101").get()?.n,
+      0
+    );
+  });
+
+  await it('add uses INSERT OR IGNORE so duplicate rows cannot be created', async () => {
+    db.prepare('DELETE FROM customer_wishlists').run();
+    await toggleWishlist(makeContext(env, { productId: 101 }, 'token-user-a'));
+    await toggleWishlist(makeContext(env, { productId: 101 }, 'token-user-a'));
+    await toggleWishlist(makeContext(env, { productId: 101 }, 'token-user-a'));
+    const count = db
+      .prepare("SELECT COUNT(*) AS n FROM customer_wishlists WHERE user_id = 'auth-user-a' AND product_id = 101")
+      .get()?.n;
+    assert.equal(Number(count) <= 1, true);
   });
 
   await it('wishlist read reflects stored product IDs', async () => {
+    db.prepare('DELETE FROM customer_wishlists').run();
     await toggleWishlist(makeContext(env, { productId: 101 }, 'token-user-a'));
     const response = await getWishlist(makeContext(env, {}, 'token-user-a', 'GET'));
     const body = await readJson(response);
@@ -481,30 +488,75 @@ async function runWishlistTests(): Promise<void> {
     assert.deepEqual(body.productIds, [101]);
   });
 
-  await it('cross-user access is isolated even with a spoofed userId body', async () => {
+  await it('cross-user access is isolated with spoofed userId/ownerId fields', async () => {
+    db.prepare('DELETE FROM customer_wishlists').run();
+    await toggleWishlist(makeContext(env, { productId: 101 }, 'token-user-a'));
     await toggleWishlist(
-      makeContext(env, { productId: 202, userId: 1 }, 'token-user-b')
+      makeContext(env, { productId: 202, userId: 1, ownerId: 'auth-user-a', tenantId: 1 }, 'token-user-b')
     );
     const a = await readJson(await getWishlist(makeContext(env, {}, 'token-user-a', 'GET')));
     const b = await readJson(await getWishlist(makeContext(env, {}, 'token-user-b', 'GET')));
     assert.deepEqual(a.productIds, [101]);
     assert.deepEqual(b.productIds, [202]);
+    const spoofRows = db
+      .prepare("SELECT COUNT(*) AS n FROM customer_wishlists WHERE user_id = 'auth-user-a' AND product_id = 202")
+      .get()?.n;
+    assert.equal(spoofRows, 0);
   });
 
   await it('invalid product IDs are rejected safely', async () => {
     for (const invalid of [0, -1, 1.5, 'abc', null, 2_147_483_648]) {
-      const response = await toggleWishlist(
-        makeContext(env, { productId: invalid }, 'token-user-a')
-      );
+      const response = await toggleWishlist(makeContext(env, { productId: invalid }, 'token-user-a'));
       assert.equal(response.status, 400, `productId ${String(invalid)} should be rejected`);
     }
   });
 
-  await it('unknown product returns 404', async () => {
-    const response = await toggleWishlist(
-      makeContext(env, { productId: 999 }, 'token-user-a')
+  await it('unknown and inactive products return 404', async () => {
+    const unknown = await toggleWishlist(makeContext(env, { productId: 999 }, 'token-user-a'));
+    const inactive = await toggleWishlist(makeContext(env, { productId: 303 }, 'token-user-a'));
+    assert.equal(unknown.status, 404);
+    assert.equal(inactive.status, 404);
+  });
+
+  await it('missing D1 binding returns explicit 503 migration error', async () => {
+    const noDbEnv: CloudflareEnv = {
+      VITE_SUPABASE_URL: 'https://supabase.invalid',
+      VITE_SUPABASE_ANON_KEY: 'anon-test-key',
+    };
+    const read = await getWishlist(makeContext(noDbEnv, {}, 'token-user-a', 'GET'));
+    const write = await toggleWishlist(makeContext(noDbEnv, { productId: 101 }, 'token-user-a'));
+    assert.equal(read.status, 503);
+    assert.equal(write.status, 503);
+    assert.equal((await readJson(read)).code, 'WISHLIST_STORAGE_UNAVAILABLE');
+    assert.equal((await readJson(write)).code, 'WISHLIST_STORAGE_UNAVAILABLE');
+  });
+
+  await it('missing wishlist table returns explicit 503 instead of 502', async () => {
+    const brokenEnv: CloudflareEnv = {
+      ...env,
+      DB: createBrokenWishlistDb(),
+    };
+    const read = await getWishlist(makeContext(brokenEnv, {}, 'token-user-a', 'GET'));
+    const write = await toggleWishlist(makeContext(brokenEnv, { productId: 101 }, 'token-user-a'));
+    assert.equal(read.status, 503);
+    assert.equal(write.status, 503);
+    assert.match((await readJson(read)).error, /0017_customer_wishlists\.sql/);
+    assert.match((await readJson(write)).error, /0017_customer_wishlists\.sql/);
+  });
+
+  await it('no Supabase REST wishlist/product/user calls are made', async () => {
+    const forbidden = wishlistFetchUrls.filter((url) =>
+      /\/rest\/v1\/(wishlists|products|users)(\?|$)/i.test(url)
     );
-    assert.equal(response.status, 404);
+    assert.deepEqual(forbidden, []);
+  });
+
+  await it('frontend response shape remains productIds: number[]', async () => {
+    const response = await getWishlist(makeContext(env, {}, 'token-user-a', 'GET'));
+    const body = await readJson(response);
+    assert.equal(response.status, 200);
+    assert.ok(Array.isArray(body.productIds));
+    assert.equal(body.productIds.every((id: unknown) => typeof id === 'number'), true);
   });
 }
 

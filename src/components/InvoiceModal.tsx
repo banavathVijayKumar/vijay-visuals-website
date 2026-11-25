@@ -49,7 +49,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({ order, tenantName, o
           <div className="flex flex-wrap justify-between gap-4 border-b border-[#222230] pb-4">
             <div>
               <p className="font-luxury text-lg font-bold text-[#ECC86A]">{tenantName}</p>
-              <p className="text-xs text-[#8E8EA0] mt-0.5">Powered by Vijay Visuals Commerce Platform</p>
+              <p className="text-xs text-[#8E8EA0] mt-0.5">Tax Invoice</p>
             </div>
             <div className="text-right text-xs font-mono-tabular">
               <p className="text-white">Invoice: {order.invoiceNumber}</p>
