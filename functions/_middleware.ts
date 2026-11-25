@@ -260,10 +260,12 @@ export async function onRequest(context: PagesContext): Promise<Response> {
         id: 0,
         website_id: published.website_id,
         domain_name: hostname,
-        status: 'live',
+        status: 'requires_wildcard_dns_tls',
         www_mode: 'both',
-        dns_verification_status: 'verified',
-        ssl_status: 'active',
+        // Do not fabricate DNS/TLS verification. Real wildcard provisioning
+        // must be completed externally before these hosts can be advertised as live.
+        dns_verification_status: 'pending',
+        ssl_status: 'pending',
         public_slug: published.public_slug,
         business_name: published.business_name,
         website_status: published.status,

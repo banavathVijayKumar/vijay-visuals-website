@@ -1,0 +1,163 @@
+// ============================================================================
+// POST /api/auth/password/reset-request
+// Server-side password reset request gate for Cloudflare Pages.
+// - D1-backed cooldown/hourly limit keyed by a hash of the normalized email
+// - Calls Supabase GoTrue /auth/v1/recover with the existing anon key only
+// - No Supabase dashboard changes, service-role secret, or .env access
+// - Always returns a generic response to prevent account enumeration
+// ============================================================================
+
+import { PagesContext, handleOptions, json, parseJsonBody, sanitizeText } from '../../_shared';
+import {
+  PasswordResetRateLimitUnavailableError,
+  authorizePasswordResetRequest,
+} from '../_passwordResetRateLimit';
+
+const GENERIC_RESET_MESSAGE =
+  'If an account exists for this email, password reset instructions have been sent. Please check your inbox.';
+const GENERIC_UNAVAILABLE_MESSAGE =
+  'Password reset is unavailable right now. Please try again later.';
+const GENERIC_INVALID_MESSAGE = 'Please enter a valid email address.';
+const GENERIC_CALLBACK_MESSAGE =
+  'Unable to determine the password reset callback URL. Please try again from the site.';
+
+function isValidEmail(raw: unknown): boolean {
+  const email = String(raw || '').trim().toLowerCase();
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function normalizeCallbackUrl(raw: unknown): string {
+  try {
+    const value = new URL(String(raw || ''));
+    if (!['http:', 'https:'].includes(value.protocol)) return '';
+    if (value.username || value.password) return '';
+    if (value.pathname !== '/' || value.search || value.hash) return '';
+    return value.toString();
+  } catch {
+    return '';
+  }
+}
+
+function configuredSupabase(env: PagesContext['env']): { url: string; anonKey: string } {
+  const url = String(env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  const anonKey = String(env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim();
+  return { url, anonKey };
+}
+
+export async function onRequestOptions(): Promise<Response> {
+  return handleOptions();
+}
+
+export async function onRequestPost(context: PagesContext): Promise<Response> {
+  const { request, env } = context;
+
+  try {
+    const body = await parseJsonBody<{ email?: string; redirectTo?: string }>(request);
+    const email = sanitizeText(body?.email || '', 254).trim().toLowerCase();
+    const callbackUrl = normalizeCallbackUrl(body?.redirectTo);
+
+    if (!isValidEmail(email)) {
+      return json({ ok: false, code: 'INVALID_EMAIL', message: GENERIC_INVALID_MESSAGE }, 400);
+    }
+    if (!callbackUrl) {
+      return json({ ok: false, code: 'NO_CALLBACK', message: GENERIC_CALLBACK_MESSAGE }, 400);
+    }
+
+    let rateLimit;
+    try {
+      rateLimit = await authorizePasswordResetRequest(env, email);
+    } catch (error) {
+      if (error instanceof PasswordResetRateLimitUnavailableError) {
+        console.error('Password reset rate limit unavailable:', error.message);
+        return json(
+          {
+            ok: false,
+            code: 'RATE_LIMIT_UNAVAILABLE',
+            message: GENERIC_UNAVAILABLE_MESSAGE,
+            remainingSeconds: 0,
+          },
+          503
+        );
+      }
+      throw error;
+    }
+
+    if (!rateLimit.allowed) {
+      return json(
+        {
+          ok: false,
+          code: rateLimit.code,
+          message:
+            rateLimit.code === 'HOURLY_LIMIT'
+              ? 'Too many reset requests. Please try again later.'
+              : `Please wait ${rateLimit.remainingSeconds} seconds before requesting another reset link.`,
+          remainingSeconds: rateLimit.remainingSeconds,
+        },
+        429
+      );
+    }
+
+    const { url, anonKey } = configuredSupabase(env);
+    if (!url || !anonKey) {
+      return json(
+        {
+          ok: false,
+          code: 'PROVIDER_UNAVAILABLE',
+          message: GENERIC_UNAVAILABLE_MESSAGE,
+          remainingSeconds: rateLimit.remainingSeconds,
+        },
+        503
+      );
+    }
+
+    let providerOk = false;
+    try {
+      const response = await fetch(`${url}/auth/v1/recover`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: anonKey,
+          Authorization: `Bearer ${anonKey}`,
+        },
+        body: JSON.stringify({ email, redirect_to: callbackUrl }),
+      });
+      providerOk = response.ok;
+      await response.body?.cancel().catch(() => undefined);
+    } catch (error) {
+      console.error('Password reset provider request failed:', error instanceof Error ? error.message : error);
+    }
+
+    if (!providerOk) {
+      return json(
+        {
+          ok: false,
+          code: 'PROVIDER_ERROR',
+          message: GENERIC_UNAVAILABLE_MESSAGE,
+          remainingSeconds: rateLimit.remainingSeconds,
+        },
+        502
+      );
+    }
+
+    return json(
+      {
+        ok: true,
+        code: 'SUCCESS',
+        message: GENERIC_RESET_MESSAGE,
+        remainingSeconds: rateLimit.remainingSeconds,
+      },
+      200
+    );
+  } catch (error) {
+    console.error('Password reset request failed:', error instanceof Error ? error.message : error);
+    return json(
+      {
+        ok: false,
+        code: 'PROVIDER_ERROR',
+        message: GENERIC_UNAVAILABLE_MESSAGE,
+        remainingSeconds: 0,
+      },
+      500
+    );
+  }
+}

@@ -109,7 +109,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   const sendResult = await sendTransactionalEmail(env, {
     to: cleanEmail,
-    subject: `${rawOtp} is your new Vijay Visuals verification code`,
+    subject: 'Your new verification code',
     html: emailHtml,
     text: emailText,
     eventType: 'registration_otp_resend',

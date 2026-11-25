@@ -1,15 +1,19 @@
 // ============================================================================
 // Supabase password-recovery helpers
 // Pure, dependency-free helpers used by AuthModal/useAuth and local tests.
-// No fake success paths: every success requires a real Supabase client call.
+// Reset requests are gated by the server-side D1 rate limiter; no fake success
+// paths exist and completion still requires the real Supabase recovery session.
 // ============================================================================
 
 export const PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS = 60;
+export const PASSWORD_RESET_COOLDOWN_STORAGE_KEY = 'vv_password_reset_requested_at';
 
 export const PASSWORD_RESET_GENERIC_MESSAGE =
   'If an account exists for this email, password reset instructions have been sent. Please check your inbox.';
 export const PASSWORD_RESET_UNAVAILABLE_MESSAGE =
   'Password reset is unavailable right now. Please try again later.';
+export const PASSWORD_RESET_RATE_LIMIT_MESSAGE =
+  'Too many reset requests. Please wait before trying again.';
 export const PASSWORD_RESET_INVALID_EMAIL_MESSAGE = 'Please enter a valid email address.';
 export const PASSWORD_RESET_NO_CALLBACK_MESSAGE =
   'Unable to determine the password reset callback URL. Please try again from the site.';
@@ -57,11 +61,13 @@ export interface RecoveryActionResult {
     | 'INVALID_EMAIL'
     | 'NO_CLIENT'
     | 'NO_CALLBACK'
+    | 'RATE_LIMITED'
     | 'PROVIDER_ERROR'
     | 'INVALID_RECOVERY_SESSION'
     | 'INVALID_PASSWORD'
     | 'PASSWORD_MISMATCH';
   sessionsRevoked?: boolean;
+  remainingSeconds?: number;
 }
 
 export function normalizeEmail(raw: unknown): string {
@@ -89,6 +95,61 @@ export function remainingResetCooldownSeconds(
   return remaining > 0 ? remaining : 0;
 }
 
+export interface CooldownStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/** localStorage holds only a timestamp — no email, token, or reset link. */
+export function getPasswordResetCooldownStorage(): CooldownStorage | null {
+  try {
+    if (typeof localStorage !== 'undefined') return localStorage;
+  } catch {
+    // Storage can be disabled by browser privacy settings.
+  }
+  return null;
+}
+
+export function loadPasswordResetRequestTimestamp(
+  storage: CooldownStorage | null | undefined = getPasswordResetCooldownStorage()
+): number | null {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(PASSWORD_RESET_COOLDOWN_STORAGE_KEY);
+    if (raw === null) return null;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return Math.min(value, Date.now());
+  } catch {
+    return null;
+  }
+}
+
+export function savePasswordResetRequestTimestamp(
+  timestamp: number,
+  storage: CooldownStorage | null | undefined = getPasswordResetCooldownStorage()
+): number {
+  const now = Date.now();
+  const clean = Number.isFinite(timestamp) && timestamp > 0 ? Math.min(timestamp, now) : now;
+  try {
+    storage?.setItem(PASSWORD_RESET_COOLDOWN_STORAGE_KEY, String(clean));
+  } catch {
+    // In-memory state still enforces the cooldown for this session.
+  }
+  return clean;
+}
+
+export function restorePasswordResetCooldown(
+  storage: CooldownStorage | null | undefined = getPasswordResetCooldownStorage(),
+  now: number = Date.now()
+): { lastRequestedAt: number | null; remainingSeconds: number } {
+  const lastRequestedAt = loadPasswordResetRequestTimestamp(storage);
+  return {
+    lastRequestedAt,
+    remainingSeconds: remainingResetCooldownSeconds(lastRequestedAt, now),
+  };
+}
+
 export function isRecoverySession(session: unknown): session is RecoverySession {
   if (!session || typeof session !== 'object') return false;
   const candidate = session as RecoverySession;
@@ -105,15 +166,22 @@ export async function verifyRecoverySession(client: PasswordRecoveryClient): Pro
   }
 }
 
-export async function requestPasswordReset(
-  client: PasswordRecoveryClient | null | undefined,
-  rawEmail: unknown,
-  redirectTo: unknown
-): Promise<RecoveryActionResult> {
-  if (!client) {
-    return { ok: false, code: 'NO_CLIENT', message: PASSWORD_RESET_UNAVAILABLE_MESSAGE };
-  }
+export type PasswordResetFetch = (
+  input: string,
+  init?: RequestInit
+) => Promise<Response>;
 
+/**
+ * Requests a reset through the server-side D1 rate-limit gate. The client
+ * Supabase SDK is intentionally not used here; bypassing this endpoint cannot
+ * bypass the server cooldown.
+ */
+export async function requestPasswordReset(
+  _client: PasswordRecoveryClient | null | undefined,
+  rawEmail: unknown,
+  redirectTo: unknown,
+  fetchImpl: PasswordResetFetch = (input, init) => fetch(input, init)
+): Promise<RecoveryActionResult> {
   const email = normalizeEmail(rawEmail);
   if (!isValidEmail(email)) {
     return { ok: false, code: 'INVALID_EMAIL', message: PASSWORD_RESET_INVALID_EMAIL_MESSAGE };
@@ -125,16 +193,55 @@ export async function requestPasswordReset(
   }
 
   try {
-    const { error } = await client.auth.resetPasswordForEmail(email, {
-      redirectTo: callbackUrl,
+    const response = await fetchImpl('/api/auth/password/reset-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, redirectTo: callbackUrl }),
     });
-    if (error) {
-      return { ok: false, code: 'PROVIDER_ERROR', message: AUTH_PROVIDER_ERROR_MESSAGE };
+    const payload = (await response.json().catch(() => ({}))) as {
+      ok?: boolean;
+      code?: string;
+      remainingSeconds?: number;
+    };
+    const remainingSeconds =
+      Number.isFinite(payload.remainingSeconds) && Number(payload.remainingSeconds) > 0
+        ? Math.ceil(Number(payload.remainingSeconds))
+        : 0;
+
+    if (response.ok && payload.ok) {
+      return {
+        ok: true,
+        code: 'SUCCESS',
+        message: PASSWORD_RESET_GENERIC_MESSAGE,
+        remainingSeconds: remainingSeconds || PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS,
+      };
     }
-    // Identical response for registered and unregistered emails to prevent enumeration.
-    return { ok: true, code: 'SUCCESS', message: PASSWORD_RESET_GENERIC_MESSAGE };
+
+    if (payload.code === 'COOLDOWN' || response.status === 429) {
+      return {
+        ok: false,
+        code: 'RATE_LIMITED',
+        message:
+          payload.code === 'HOURLY_LIMIT'
+            ? PASSWORD_RESET_RATE_LIMIT_MESSAGE
+            : `Please wait ${remainingSeconds || PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS} seconds before requesting another reset link.`,
+        remainingSeconds: remainingSeconds || PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS,
+      };
+    }
+
+    return {
+      ok: false,
+      code: 'PROVIDER_ERROR',
+      message: AUTH_PROVIDER_ERROR_MESSAGE,
+      remainingSeconds,
+    };
   } catch {
-    return { ok: false, code: 'PROVIDER_ERROR', message: AUTH_PROVIDER_ERROR_MESSAGE };
+    return {
+      ok: false,
+      code: 'PROVIDER_ERROR',
+      message: AUTH_PROVIDER_ERROR_MESSAGE,
+      remainingSeconds: 0,
+    };
   }
 }
 

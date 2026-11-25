@@ -45,6 +45,7 @@
 | 34 | `GOOGLE_MAPS_API_KEY` / `VITE_GOOGLE_MAPS_API_KEY` | **Optional (Maps & Branch Picker)** | Google Maps Platform | Public Browser Key (HTTP-referrer restricted to `vijay-visuals-site.pages.dev/*`) | Restrict key by HTTP Referrer and Maps JS / Places / Geocoding APIs in Google Cloud Console. | Manual address entry + "Get Directions" links work cleanly without Maps JS key. |
 | 35 | `CRON_SECRET` | **Recommended** | Scheduled Domain Renewal Scanner (`/api/admin/domains/run-renewal-scan`) | **Cloudflare Secret (Encrypted)** | Generate 32-byte random hex string; pass in `X-Cron-Secret` header from a scheduled Cloudflare Worker Cron Trigger. | Endpoint still works manually via authenticated Super Admin JWT. |
 | 36 | `APP_URL` / `CUSTOM_DOMAIN_CNAME_TARGET` | **Recommended** | Platform Canonical URL & Custom Domain CNAME | Public Server Variable | Set `APP_URL=https://vijay-visuals-site.pages.dev` and `CUSTOM_DOMAIN_CNAME_TARGET=vijay-visuals-site.pages.dev`. | Defaults cleanly to `vijay-visuals-site.pages.dev`. |
+| 37 | `RESEND_VERIFIED_SENDER_DOMAINS` | **Optional (Tenant Sender Identity)** | Verified email sender domains (comma-separated) | Public Server Variable | List only domains already verified in the email provider, e.g. `shop.example.test`. Customer emails fall back to neutral `Store Notifications <onboarding@resend.dev>` unless the tenant domain is both verified in D1 and present here. | Never spoof unverified customer domains; platform emails keep platform sender/branding. |
 
 ---
 

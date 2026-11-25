@@ -3,8 +3,10 @@ import { initSupabaseClient, authService, UserProfile, UserRole } from '../../li
 import {
   PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS,
   completePasswordRecovery,
+  loadPasswordResetRequestTimestamp,
   remainingResetCooldownSeconds,
   requestPasswordReset,
+  savePasswordResetRequestTimestamp,
   type PasswordRecoveryClient,
 } from '../../lib/authRecovery';
 import { X, Lock, Mail, User, Phone, KeyRound, CheckCircle2, ShieldCheck, ArrowLeft, RefreshCw } from 'lucide-react';
@@ -45,29 +47,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const otpInputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
-    if (isOpen) {
-      setMode(initialMode);
-      setError(null);
-      setInfo(null);
-      setOtpDigits(['', '', '', '', '', '']);
-      setOtpCooldown(0);
-      setResetCooldown(0);
-      setLastResetRequestAt(null);
-    }
+    if (!isOpen) return;
+    setMode(initialMode);
+    setError(null);
+    setInfo(null);
+    setOtpDigits(['', '', '', '', '', '']);
+    setOtpCooldown(0);
+    // Reopening or changing the initial mode must restore, never clear, the cooldown.
+    const restoredAt = loadPasswordResetRequestTimestamp();
+    setLastResetRequestAt(restoredAt);
+    setResetCooldown(remainingResetCooldownSeconds(restoredAt));
   }, [isOpen, initialMode]);
 
-  // Live 60-second countdown for password reset requests
+  // Live 60-second countdown for password reset requests, derived from the real timestamp.
   useEffect(() => {
-    let timer: any;
-    if (resetCooldown > 0) {
-      timer = setInterval(() => {
-        setResetCooldown((prev) => (prev > 0 ? prev - 1 : 0));
-      }, 1000);
-    }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [resetCooldown]);
+    if (!isOpen) return;
+    setResetCooldown(remainingResetCooldownSeconds(lastResetRequestAt));
+    if (!lastResetRequestAt) return;
+    const timer = setInterval(() => {
+      setResetCooldown(remainingResetCooldownSeconds(lastResetRequestAt));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isOpen, lastResetRequestAt]);
 
   // Live 60-second countdown for OTP resend
   useEffect(() => {
@@ -185,19 +186,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           return;
         }
 
-        const client = await initSupabaseClient();
-        const result = await requestPasswordReset(
-          client as unknown as PasswordRecoveryClient | null,
-          email,
-          window.location.origin
-        );
+        // Reset dispatch is server-gated; no browser Supabase client is needed here.
+        const result = await requestPasswordReset(null, email, window.location.origin);
         if (!result.ok) {
+          // The server consumed the cooldown even if the provider failed; mirror it locally.
+          if (result.remainingSeconds && result.remainingSeconds > 0) {
+            const derivedAt =
+              Date.now() -
+              (PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS - result.remainingSeconds) * 1000;
+            const persistedAt = savePasswordResetRequestTimestamp(derivedAt);
+            setLastResetRequestAt(persistedAt);
+            setResetCooldown(remainingResetCooldownSeconds(persistedAt));
+          }
           setError(result.message);
           return;
         }
 
-        setLastResetRequestAt(Date.now());
-        setResetCooldown(PASSWORD_RESET_REQUEST_COOLDOWN_SECONDS);
+        const persistedAt = savePasswordResetRequestTimestamp(Date.now());
+        setLastResetRequestAt(persistedAt);
+        setResetCooldown(remainingResetCooldownSeconds(persistedAt));
         setInfo(result.message);
         return;
       }

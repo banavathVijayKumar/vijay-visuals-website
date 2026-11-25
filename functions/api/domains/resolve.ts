@@ -123,8 +123,10 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         tenantSlug: pub.public_slug,
         businessName: pub.business_name,
         domainName: lookupHost,
-        status: 'live',
-        sslStatus: 'active',
+        // Honest delivery state: code can resolve the slug, but wildcard DNS/TLS
+        // provisioning is an external prerequisite and is not asserted here.
+        status: 'requires_wildcard_dns_tls',
+        sslStatus: 'pending',
         wwwMode: 'both',
         redirectUrl: null,
         isDefaultDeliverySubdomain: true,

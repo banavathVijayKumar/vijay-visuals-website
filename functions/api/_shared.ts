@@ -68,6 +68,11 @@ export interface CloudflareEnv {
   SMTP_HOST?: string;
   SMTP_USER?: string;
   SMTP_PASS?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM?: string;
+  SENDGRID_API_KEY?: string;
+  /** Comma-separated provider-verified domains eligible for tenant sender identities. */
+  RESEND_VERIFIED_SENDER_DOMAINS?: string;
   WHATSAPP_CLOUD_API_TOKEN?: string;
   WHATSAPP_PHONE_NUMBER_ID?: string;
   SMS_PROVIDER_API_KEY?: string;

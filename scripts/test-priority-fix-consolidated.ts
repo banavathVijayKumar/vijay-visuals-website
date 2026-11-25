@@ -17,24 +17,44 @@ import { onRequestPatch as publishWebsite } from '../functions/api/owner/tenants
 import { onRequestGet as getPackageStatus } from '../functions/api/customer/package-status';
 import { onRequestGet as getPaymentHistory } from '../functions/api/payments/platform/history';
 import { onRequest as handleTenantMiddleware } from '../functions/_middleware';
+import { onRequestGet as resolveDomain } from '../functions/api/domains/resolve';
 import { parseTenantDeliveryHostname } from '../shared/tenantHost';
 import {
   buildOrderConfirmationEmailHtml,
+  buildPaymentReceiptEmailHtml,
+  buildStorePaymentReceiptEmailHtml,
+  buildStorePaymentWhatsAppText,
+  resolveEmailSender,
+  resolveVerifiedTenantSender,
   sendTransactionalEmail,
   redactSensitiveLogText,
 } from '../functions/api/_email';
+import { onRequestPost as sendOtp } from '../functions/api/auth/otp/send';
+import { onRequestPost as resendOtp } from '../functions/api/auth/otp/resend';
+import { onRequestPost as resetRequestEndpoint } from '../functions/api/auth/password/reset-request';
+import {
+  authorizePasswordResetRequest,
+  hashPasswordResetEmail,
+  MAX_PASSWORD_RESET_REQUESTS_PER_HOUR,
+} from '../functions/api/auth/_passwordResetRateLimit';
 import {
   AUTH_PROVIDER_ERROR_MESSAGE,
+  PASSWORD_RESET_COOLDOWN_STORAGE_KEY,
   PASSWORD_RESET_GENERIC_MESSAGE,
   PASSWORD_RECOVERY_INVALID_MESSAGE,
   PASSWORD_UPDATE_SUCCESS_MESSAGE,
   completePasswordRecovery,
   getPasswordResetRedirectUrl,
   isRecoverySession,
+  loadPasswordResetRequestTimestamp,
   remainingResetCooldownSeconds,
   requestPasswordReset,
+  restorePasswordResetCooldown,
+  savePasswordResetRequestTimestamp,
+  type CooldownStorage,
   type PasswordRecoveryClient,
 } from '../src/lib/authRecovery';
+import { formatVerifiedPaymentLabel, isVerifiedPayment } from '../src/lib/paymentDisplay';
 import { CloudflareEnv, D1Database, PagesContext } from '../functions/api/_shared';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -127,6 +147,8 @@ async function readJson(response: Response): Promise<any> {
 
 const originalFetch = globalThis.fetch;
 let resendPayload: any = null;
+let recoverMode: 'ok' | 'error' = 'ok';
+let recoverCalls: Array<{ email: string; redirectTo: string }> = [];
 
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   const url = String(input);
@@ -141,6 +163,14 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
           ? 'auth-customer'
           : '';
 
+  if (url.includes('/auth/v1/recover')) {
+    const payload = JSON.parse(String(init?.body || '{}')) as { email?: string; redirect_to?: string };
+    recoverCalls.push({ email: payload.email || '', redirectTo: payload.redirect_to || '' });
+    if (recoverMode === 'error') {
+      return new Response(JSON.stringify({ message: 'provider rejected request' }), { status: 400 });
+    }
+    return new Response('{}', { status: 200 });
+  }
   if (url.includes('/auth/v1/user')) {
     if (!subject) return new Response('{}', { status: 401 });
     return new Response(JSON.stringify({ id: subject, email: `${subject}@example.invalid` }), {
@@ -302,38 +332,137 @@ async function runDraftSnapshotTests(): Promise<void> {
   });
 }
 
+let resetEmailCounter = 0;
+function uniqueResetEmail(label: string): string {
+  resetEmailCounter += 1;
+  return `${label}-${resetEmailCounter}-${Date.now()}@example.invalid`;
+}
+
+function createMemoryStorage(): CooldownStorage {
+  const values = new Map<string, string>();
+  return {
+    getItem(key) {
+      return values.has(key) ? values.get(key)! : null;
+    },
+    setItem(key, value) {
+      values.set(key, String(value));
+    },
+  };
+}
+
+async function callResetRequest(
+  env: CloudflareEnv,
+  email: string,
+  redirectTo = 'https://preview.example.test'
+): Promise<Awaited<ReturnType<typeof requestPasswordReset>>> {
+  return requestPasswordReset(null, email, redirectTo, async (input, init) => {
+    assert.equal(input, '/api/auth/password/reset-request');
+    const body = JSON.parse(String(init?.body || '{}'));
+    return resetRequestEndpoint(makeContext(env, body, undefined, 'POST'));
+  });
+}
+
+function configuredResetEnv(): CloudflareEnv {
+  const { d1 } = createD1();
+  return {
+    DB: d1,
+    SUPABASE_URL: 'https://supabase.invalid',
+    SUPABASE_ANON_KEY: 'anon-test-key',
+  };
+}
+
 async function runPasswordRecoveryTests(): Promise<void> {
   console.log('\nPassword recovery hardening regressions');
 
-  await it('registered and unregistered emails receive the identical generic response', async () => {
-    const registered = createMockClient();
-    const unregistered = createMockClient();
-    const a = await requestPasswordReset(registered.client as PasswordRecoveryClient, 'Customer@Example.com', 'https://preview.example.test');
-    const b = await requestPasswordReset(unregistered.client as PasswordRecoveryClient, 'nobody@example.com', 'https://preview.example.test');
+  await it('successful requests for registered and unregistered emails receive identical generic responses', async () => {
+    recoverMode = 'ok';
+    recoverCalls = [];
+    const env = configuredResetEnv();
+    const registeredEmail = uniqueResetEmail('registered');
+    const unknownEmail = uniqueResetEmail('unknown');
+    const a = await callResetRequest(env, registeredEmail.toUpperCase());
+    const b = await callResetRequest(env, unknownEmail);
     assert.equal(a.ok, true);
     assert.equal(b.ok, true);
     assert.equal(a.message, b.message);
     assert.equal(a.message, PASSWORD_RESET_GENERIC_MESSAGE);
-    assert.deepEqual(registered.calls.resetPasswordForEmail[0], {
-      email: 'customer@example.com',
-      redirectTo: 'https://preview.example.test/',
-    });
+    assert.deepEqual(recoverCalls.map((call) => call.email), [registeredEmail, unknownEmail]);
+    assert.deepEqual(recoverCalls.map((call) => call.redirectTo), [
+      'https://preview.example.test/',
+      'https://preview.example.test/',
+    ]);
   });
 
-  await it('provider errors never expose raw provider text', async () => {
-    const { client } = createMockClient({ resetError: 'account for email does not exist (code 400)' });
-    const result = await requestPasswordReset(client as PasswordRecoveryClient, 'user@example.com', 'https://preview.example.test');
+  await it('failed provider requests never expose raw provider text or claim success', async () => {
+    recoverMode = 'error';
+    recoverCalls = [];
+    const result = await callResetRequest(configuredResetEnv(), uniqueResetEmail('provider-failure'));
+    recoverMode = 'ok';
     assert.equal(result.ok, false);
     assert.equal(result.message, AUTH_PROVIDER_ERROR_MESSAGE);
-    assert.equal(result.message.includes('does not exist'), false);
+    assert.equal(result.message.includes('rejected'), false);
+    assert.equal(result.message.includes('sent'), false);
+    assert.equal(recoverCalls.length, 1);
   });
 
-  await it('missing Supabase client never reports fake success', async () => {
-    const { client } = createMockClient({ clientMissing: true });
-    const result = await requestPasswordReset(client, 'user@example.com', 'https://preview.example.test');
+  await it('missing provider configuration never reports fake success', async () => {
+    const { d1 } = createD1();
+    const result = await callResetRequest({ DB: d1 }, uniqueResetEmail('unconfigured'));
     assert.equal(result.ok, false);
-    assert.equal(result.code, 'NO_CLIENT');
     assert.equal(result.message.includes('sent'), false);
+  });
+
+  await it('cooldown survives modal reopen and simulated page reload with no sensitive token stored', async () => {
+    const storage = createMemoryStorage();
+    const firstMount = loadPasswordResetRequestTimestamp(storage);
+    assert.equal(firstMount, null);
+    const requestedAt = savePasswordResetRequestTimestamp(1_700_000_000_000, storage);
+    const reopenedMount = loadPasswordResetRequestTimestamp(storage);
+    const pageReloadMount = loadPasswordResetRequestTimestamp(storage);
+    assert.equal(reopenedMount, requestedAt);
+    assert.equal(pageReloadMount, requestedAt);
+    assert.equal(remainingResetCooldownSeconds(reopenedMount, requestedAt + 1_000), 59);
+    assert.equal(typeof PASSWORD_RESET_COOLDOWN_STORAGE_KEY, 'string');
+    assert.equal(String(requestedAt).includes('token'), false);
+  });
+
+  await it('repeated reset requests are blocked server-side with accurate remaining seconds', async () => {
+    recoverMode = 'ok';
+    const email = uniqueResetEmail('repeat');
+    const env = configuredResetEnv();
+    const first = await callResetRequest(env, email);
+    const second = await callResetRequest(env, email);
+    assert.equal(first.ok, true);
+    assert.equal(first.remainingSeconds, 60);
+    assert.equal(second.ok, false);
+    assert.equal(second.code, 'RATE_LIMITED');
+    assert.ok((second.remainingSeconds || 0) > 0 && (second.remainingSeconds || 0) <= 60);
+    assert.match(second.message || '', /wait \d+ seconds/);
+  });
+
+  await it('server rate limit stores only an email hash and enforces the hourly maximum', async () => {
+    const env = configuredResetEnv();
+    const email = uniqueResetEmail('hourly');
+    const hash = await hashPasswordResetEmail(email);
+    assert.equal(hash.includes(email), false);
+    assert.equal(hash.length, 64);
+
+    for (let index = 0; index < MAX_PASSWORD_RESET_REQUESTS_PER_HOUR; index += 1) {
+      const result = await authorizePasswordResetRequest(env, email, 1_800_000_000_000 + index * 61_000);
+      assert.equal(result.allowed, true);
+    }
+    const blocked = await authorizePasswordResetRequest(
+      env,
+      email,
+      1_800_000_000_000 + MAX_PASSWORD_RESET_REQUESTS_PER_HOUR * 61_000
+    );
+    assert.equal(blocked.allowed, false);
+    assert.equal(blocked.code, 'HOURLY_LIMIT');
+
+    const stored = (await env.DB!.prepare(
+      'SELECT email_hash FROM password_reset_rate_limits LIMIT 1'
+    ).first()) as any;
+    assert.equal(String(stored.email_hash).includes(email), false);
   });
 
   await it('valid recovery session updates password and revokes other sessions', async () => {
@@ -390,6 +519,8 @@ async function runPasswordRecoveryTests(): Promise<void> {
     assert.equal(remainingResetCooldownSeconds(null, start), 0);
     assert.equal(remainingResetCooldownSeconds(start, start + 1_000), 59);
     assert.equal(remainingResetCooldownSeconds(start, start + 60_000), 0);
+    const restored = restorePasswordResetCooldown(createMemoryStorage(), start);
+    assert.equal(restored.remainingSeconds, 0);
   });
 
   await it('callback URL is derived from the current origin only', async () => {
@@ -397,6 +528,31 @@ async function runPasswordRecoveryTests(): Promise<void> {
     assert.equal(getPasswordResetRedirectUrl('https://feat-multi-tenant-website-bu.vijay-visuals-site.pages.dev/'), 'https://feat-multi-tenant-website-bu.vijay-visuals-site.pages.dev/');
     assert.equal(getPasswordResetRedirectUrl(''), '');
   });
+}
+
+function assertNoRawOtpInLogs(db: DatabaseSync, eventType: string, rawOtp: string): void {
+  const log = db
+    .prepare(
+      'SELECT * FROM notification_logs WHERE event_type = ? ORDER BY id DESC LIMIT 1'
+    )
+    .get(eventType) as Record<string, unknown> | undefined;
+  assert.ok(log, `missing notification log for ${eventType}`);
+  for (const [field, value] of Object.entries(log)) {
+    if (typeof value === 'string') {
+      assert.equal(
+        value.includes(rawOtp),
+        false,
+        `${field} must not contain raw OTP`
+      );
+    }
+  }
+}
+
+function extractRawOtpFromPayload(): string {
+  assert.ok(resendPayload, 'Resend payload was not captured');
+  const match = String(resendPayload.html).match(/\b\d{6}\b/);
+  assert.ok(match, 'No 6-digit OTP found in local mock email payload');
+  return match![0];
 }
 
 async function runLoggingRedactionTests(): Promise<void> {
@@ -409,7 +565,7 @@ async function runLoggingRedactionTests(): Promise<void> {
     assert.match(redacted, /\[REDACTED\]/);
   });
 
-  await it('notification_logs never store the raw OTP preview', async () => {
+  await it('direct email logging redacts subject, preview and error detail', async () => {
     const { db, d1 } = createD1();
     const env: CloudflareEnv = {
       DB: d1,
@@ -417,23 +573,53 @@ async function runLoggingRedactionTests(): Promise<void> {
       RESEND_FROM: 'Local Test <test@example.invalid>',
     };
     const rawOtp = '482913';
+    resendPayload = null;
     const result = await sendTransactionalEmail(env, {
       to: 'customer@example.invalid',
-      subject: `${rawOtp} is your verification code`,
+      subject: 'Your verification code',
       html: `<p>Your code is ${rawOtp}</p>`,
-      text: `Your Vijay Visuals verification code is ${rawOtp}. Never share it.`,
+      text: `Your verification code is ${rawOtp}. Never share it.`,
       eventType: 'registration_otp',
       idempotencyKey: 'local_otp_redaction_test',
     });
     assert.equal(result.ok, true);
-    assert.ok(resendPayload);
-    const log = db
-      .prepare("SELECT message_preview, subject FROM notification_logs WHERE event_type = 'registration_otp' ORDER BY id DESC LIMIT 1")
-      .get() as any;
-    assert.ok(log);
-    assert.equal(log.message_preview.includes(rawOtp), false);
-    assert.equal(log.subject.includes(rawOtp), true);
-    assert.match(log.message_preview, /\[REDACTED\]/);
+    assert.equal(resendPayload.subject, 'Your verification code');
+    assertNoRawOtpInLogs(db, 'registration_otp', rawOtp);
+  });
+
+  await it('OTP send uses a generic subject and persists no raw OTP in any log field', async () => {
+    const { db, d1 } = createD1();
+    const env: CloudflareEnv = { DB: d1, RESEND_API_KEY: 'local-mock-key' };
+    resendPayload = null;
+    const response = await sendOtp(
+      makeContext(env, { email: 'send-otp@example.invalid', purpose: 'registration' }, undefined, 'POST')
+    );
+    assert.equal(response.status, 200);
+    const rawOtp = extractRawOtpFromPayload();
+    assert.equal(resendPayload.subject, 'Your verification code');
+    assertNoRawOtpInLogs(db, 'registration_otp', rawOtp);
+  });
+
+  await it('OTP resend uses a generic subject and persists no raw OTP in any log field', async () => {
+    const { db, d1 } = createD1();
+    const env: CloudflareEnv = { DB: d1, RESEND_API_KEY: 'local-mock-key' };
+    const email = 'resend-otp@example.invalid';
+    db.prepare(
+      `INSERT INTO auth_email_otps
+        (email, otp_hash, salt, purpose, metadata_json, attempts, max_attempts,
+         expires_at, resend_available_at, created_at)
+       VALUES (?, ?, ?, 'registration', '{}', 0, 5,
+         datetime('now', '+10 minutes'), datetime('now', '-1 second'), datetime('now'))`
+    ).run(email, 'local-hash', 'local-salt');
+
+    resendPayload = null;
+    const response = await resendOtp(
+      makeContext(env, { email, purpose: 'registration' }, undefined, 'POST')
+    );
+    assert.equal(response.status, 200);
+    const rawOtp = extractRawOtpFromPayload();
+    assert.equal(resendPayload.subject, 'Your new verification code');
+    assertNoRawOtpInLogs(db, 'registration_otp_resend', rawOtp);
   });
 }
 
@@ -668,7 +854,10 @@ async function runWhiteLabelAndDeliveryTests(): Promise<void> {
   await it('published delivery subdomain resolves without a tenant_domains row', async () => {
     assert.equal(deliveryResponse.status, 200);
     assert.equal(deliveryResponse.headers.get('X-VV-Tenant-Slug'), 'tenant-a');
-    assert.equal(deliveryResponse.headers.get('X-VV-Domain-Status'), 'live');
+    assert.equal(
+      deliveryResponse.headers.get('X-VV-Domain-Status'),
+      'requires_wildcard_dns_tls'
+    );
     assert.match(deliveryHtml, /meta name="vv-tenant-slug" content="tenant-a"/);
     assert.match(deliveryHtml, /<link rel="canonical" href="https:\/\/tenant-a\.vijay-visuals-site\.pages\.dev"/);
   });
@@ -796,6 +985,166 @@ async function runWhiteLabelAndDeliveryTests(): Promise<void> {
       assert.equal(source.includes('any Vijay Visuals storefront'), false, file);
     }
   });
+
+  await it('customer email sender is neutral when no verified tenant identity is configured', async () => {
+    const sender = resolveEmailSender(
+      { RESEND_API_KEY: 'local-mock-key' },
+      { audience: 'customer', tenantBrandName: 'Tenant A' }
+    );
+    assert.equal(sender.formatted, 'Store Notifications <onboarding@resend.dev>');
+    assert.equal(sender.formatted.includes('Vijay Visuals'), false);
+
+    const platformSender = resolveEmailSender({ RESEND_FROM: 'Platform <platform@example.invalid>' });
+    assert.equal(platformSender.formatted, 'Platform <platform@example.invalid>');
+  });
+
+  await it('tenant sender requires real domain verification and provider allowlist agreement', async () => {
+    const { db, d1 } = createD1();
+    db.prepare(
+      `INSERT INTO customer_website_publications
+        (website_id, owner_id, public_slug, business_name, website_json, status)
+       VALUES ('web_sender', 'auth-owner', 'sender-store', 'Sender Store', '{}', 'published')`
+    ).run();
+    db.prepare(
+      `INSERT INTO tenant_domains
+        (website_id, owner_id, domain_name, status, www_mode,
+         dns_verification_status, ssl_status, verification_token)
+       VALUES ('web_sender', 'auth-owner', 'shop.sender.test', 'live', 'both',
+         'verified', 'active', 'local-token')`
+    ).run();
+
+    const allowedEnv: CloudflareEnv = {
+      DB: d1,
+      RESEND_VERIFIED_SENDER_DOMAINS: 'shop.sender.test, other.test',
+    };
+    const verified = await resolveVerifiedTenantSender(allowedEnv, 'web_sender');
+    assert.deepEqual(verified, {
+      email: 'notifications@shop.sender.test',
+      domain: 'shop.sender.test',
+    });
+    const sender = resolveEmailSender(allowedEnv, {
+      audience: 'customer',
+      tenantBrandName: 'Vijay Visuals Impersonation',
+      verifiedSenderEmail: verified?.email,
+      verifiedSenderDomain: verified?.domain,
+    });
+    assert.equal(sender.formatted, 'Store Notifications Impersonation <notifications@shop.sender.test>');
+
+    assert.equal(await resolveVerifiedTenantSender({ DB: d1 }, 'web_sender'), null);
+    const spoofed = resolveEmailSender(
+      { DB: d1 },
+      {
+        audience: 'customer',
+        tenantBrandName: 'Sender Store',
+        verifiedSenderEmail: 'billing@unverified.test',
+        verifiedSenderDomain: 'unverified.test',
+      }
+    );
+    assert.equal(spoofed.formatted, 'Store Notifications <onboarding@resend.dev>');
+  });
+
+  await it('store payment notifications are tenant-only and platform receipts stay platform-owned', async () => {
+    const storeHtml = buildStorePaymentReceiptEmailHtml({
+      customerName: 'A Customer',
+      orderNumber: 'ORD-STORE-1',
+      paymentId: 'pay_local',
+      amountFormatted: '₹1,000',
+      paymentTime: '2026-01-01T00:00:00Z',
+      storeName: 'Sender Store',
+      storeUrl: 'https://vijay-visuals-site.pages.dev/site/sender-store',
+    });
+    assert.equal(/Vijay Visuals/i.test(storeHtml), false);
+    assert.equal(storeHtml.includes('/dashboard'), false);
+    assert.equal(storeHtml.includes('3–5 Business Days'), false);
+    assert.match(storeHtml, /View Store/);
+    assert.match(storeHtml, /site\/sender-store/);
+
+    const storeWa = buildStorePaymentWhatsAppText({
+      storeName: 'Sender Store',
+      customerName: 'A Customer',
+      orderNumber: 'ORD-STORE-1',
+      amountFormatted: '₹1,000',
+      paymentId: 'pay_local',
+      storeUrl: 'https://vijay-visuals-site.pages.dev/site/sender-store',
+    });
+    assert.equal(/VIJAY VISUALS/i.test(storeWa), false);
+    assert.equal(storeWa.includes('/dashboard'), false);
+    assert.equal(storeWa.includes('3–5'), false);
+    assert.match(storeWa, /site\/sender-store/);
+
+    const platformHtml = buildPaymentReceiptEmailHtml({
+      customerName: 'A Customer',
+      orderNumber: 'PLATFORM-1',
+      paymentId: 'pay_platform',
+      amountFormatted: '₹7,999',
+      paymentTime: '2026-01-01T00:00:00Z',
+      dashboardUrl: 'https://vijay-visuals-site.pages.dev/dashboard',
+    });
+    assert.match(platformHtml, /VIJAY VISUALS/);
+    assert.match(platformHtml, /Track Project Progress/);
+  });
+
+  const resolverResponse = await handleTenantMiddleware({
+    request: new Request('https://tenant-a.vijay-visuals-site.pages.dev/'),
+    env,
+    params: {},
+    next,
+  });
+  assert.equal(
+    resolverResponse.headers.get('X-VV-Domain-Status'),
+    'requires_wildcard_dns_tls'
+  );
+
+  const domainResolution = await resolveDomain({
+    request: new Request(
+      'https://vijay-visuals-site.pages.dev/api/domains/resolve?host=tenant-a.vijay-visuals-site.pages.dev'
+    ),
+    env,
+    params: {},
+    next: async () => new Response(null, { status: 204 }),
+  } as PagesContext);
+  const domainBody = await readJson(domainResolution);
+  assert.equal(domainBody.matched, true);
+  assert.equal(domainBody.status, 'requires_wildcard_dns_tls');
+  assert.equal(domainBody.sslStatus, 'pending');
+}
+
+async function runVerifiedPaymentDisplayTests(): Promise<void> {
+  console.log('\nVerified payment display regressions');
+
+  await it('verified label requires paid status and authoritative signature verification', async () => {
+    const verified = {
+      amountInr: 7999,
+      paymentStatus: 'paid',
+      signatureVerified: true,
+    };
+    assert.equal(isVerifiedPayment(verified), true);
+    assert.equal(formatVerifiedPaymentLabel(verified), '₹7,999 verified payment');
+  });
+
+  await it('pending, failed, refunded and unverified payments are never labelled verified', async () => {
+    for (const state of [
+      { amountInr: 7999, paymentStatus: 'pending', signatureVerified: true },
+      { amountInr: 7999, paymentStatus: 'failed', signatureVerified: true },
+      { amountInr: 7999, paymentStatus: 'refunded', signatureVerified: true },
+      { amountInr: 7999, paymentStatus: 'paid', signatureVerified: false },
+      { amountInr: 7999, paymentStatus: 'paid', signatureVerified: null },
+      { amountInr: 7999, paymentStatus: null, signatureVerified: true },
+    ]) {
+      assert.equal(isVerifiedPayment(state), false);
+      assert.equal(formatVerifiedPaymentLabel(state), 'No verified payment recorded');
+    }
+  });
+
+  await it('payment verification display stays separate from entitlement status', async () => {
+    const state = {
+      amountInr: 7999,
+      paymentStatus: 'created',
+      signatureVerified: false,
+    };
+    assert.equal(formatVerifiedPaymentLabel(state), 'No verified payment recorded');
+    assert.equal(isVerifiedPayment(state), false);
+  });
 }
 
 async function main(): Promise<void> {
@@ -806,6 +1155,7 @@ async function main(): Promise<void> {
     await runDraftSnapshotTests();
     await runPasswordRecoveryTests();
     await runPackageStatusTests();
+    await runVerifiedPaymentDisplayTests();
     await runWhiteLabelAndDeliveryTests();
     await runLoggingRedactionTests();
   } finally {

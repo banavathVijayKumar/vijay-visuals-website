@@ -42,6 +42,7 @@ import {
 import { apiFetch } from '../lib/api';
 import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
 import { readAndOptimizeImageFile } from '../lib/imageUpload';
+import { formatVerifiedPaymentLabel } from '../lib/paymentDisplay';
 import { useAuth } from '../hooks/useAuth';
 import {
   AppointmentRecord,
@@ -100,6 +101,7 @@ interface CustomerPackageStatus {
   planCode: string;
   planName: string;
   paymentStatus: string | null;
+  signatureVerified?: boolean | null;
   canPublish: boolean;
   currentPeriodEnd: string | null;
   isFreeStart: boolean;
@@ -3207,8 +3209,12 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       {packageStatus?.planName || 'No package selected'}
                     </p>
                     <p className="font-mono-tabular text-sm text-[#ECC86A] font-semibold">
-                      {packageStatus?.amountInr
-                        ? `₹${packageStatus.amountInr.toLocaleString('en-IN')} verified payment`
+                      {packageStatus
+                        ? formatVerifiedPaymentLabel({
+                            amountInr: packageStatus.amountInr,
+                            paymentStatus: packageStatus.paymentStatus,
+                            signatureVerified: packageStatus.signatureVerified,
+                          })
                         : 'No verified payment recorded'}
                     </p>
                     <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${getPackageStatusClass(packageStatus?.packageStatus || 'none')}`}>

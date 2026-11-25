@@ -16,6 +16,11 @@ export interface EmailSendOptions {
   websiteId?: string | null;
   recipientUserId?: string | null;
   idempotencyKey?: string;
+  /** Platform messages keep platform branding; customer messages require verified tenant or neutral sender. */
+  audience?: 'platform' | 'customer';
+  tenantBrandName?: string;
+  verifiedSenderEmail?: string;
+  verifiedSenderDomain?: string;
 }
 
 export interface EmailSendResult {
@@ -27,17 +32,119 @@ export interface EmailSendResult {
 }
 
 const DEFAULT_SENDER = 'Vijay Visuals <notifications@vijayvisuals.com>';
-const ONBOARDING_SENDER = 'Vijay Visuals <onboarding@resend.dev>';
+const NEUTRAL_CUSTOMER_SENDER = 'Store Notifications <onboarding@resend.dev>';
+const NEUTRAL_CUSTOMER_SENDER_EMAIL = 'onboarding@resend.dev';
+const NEUTRAL_CUSTOMER_SENDER_NAME = 'Store Notifications';
 
 /**
- * Returns the effective sender address.
- * If user configured RESEND_FROM, uses that. Otherwise defaults to official domain,
- * or onboarding@resend.dev if testing with unverified domain.
+ * Returns the effective platform sender. Customer store messages never use this
+ * platform identity — they use a verified tenant identity or a neutral fallback.
  */
 export function getSenderEmail(env: CloudflareEnv): string {
   const custom = (env.RESEND_FROM || '').trim();
   if (custom) return custom;
   return DEFAULT_SENDER;
+}
+
+export interface EmailSenderIdentity {
+  email: string;
+  name: string;
+  formatted: string;
+}
+
+function normalizeSenderDomain(raw: unknown): string {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^@/, '')
+    .replace(/\.$/, '');
+}
+
+function configuredVerifiedDomains(env: CloudflareEnv): string[] {
+  return String(env.RESEND_VERIFIED_SENDER_DOMAINS || '')
+    .split(',')
+    .map(normalizeSenderDomain)
+    .filter((domain) => /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain));
+}
+
+function safeTenantSenderName(raw: unknown): string {
+  const cleaned = sanitizeText(String(raw || ''), 80)
+    .replace(/[<>\r\n]/g, ' ')
+    .replace(/\bVijay\s+Visuals\b/gi, NEUTRAL_CUSTOMER_SENDER_NAME)
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || NEUTRAL_CUSTOMER_SENDER_NAME;
+}
+
+/**
+ * Resolves a sender identity without ever spoofing an unverified customer domain.
+ * A tenant email is accepted only when both a verified tenant domain and the
+ * provider-verified domain allowlist agree.
+ */
+export function resolveEmailSender(
+  env: CloudflareEnv,
+  options: Pick<EmailSendOptions, 'audience' | 'tenantBrandName' | 'verifiedSenderEmail' | 'verifiedSenderDomain'> = {}
+): EmailSenderIdentity {
+  if (options.audience === 'customer') {
+    const domain = normalizeSenderDomain(options.verifiedSenderDomain);
+    const email = String(options.verifiedSenderEmail || '').trim().toLowerCase();
+    const emailDomain = email.split('@')[1] || '';
+    if (
+      domain &&
+      email.includes('@') &&
+      emailDomain === domain &&
+      configuredVerifiedDomains(env).includes(domain)
+    ) {
+      const name = safeTenantSenderName(options.tenantBrandName);
+      return { email, name, formatted: `${name} <${email}>` };
+    }
+    return {
+      email: NEUTRAL_CUSTOMER_SENDER_EMAIL,
+      name: NEUTRAL_CUSTOMER_SENDER_NAME,
+      formatted: NEUTRAL_CUSTOMER_SENDER,
+    };
+  }
+
+  const configured = getSenderEmail(env);
+  const match = configured.match(/^(.*)<([^>]+)>$/);
+  if (!match) {
+    return { email: configured, name: '', formatted: configured };
+  }
+  return {
+    email: match[2].trim(),
+    name: match[1].trim().replace(/^"|"$/g, ''),
+    formatted: configured,
+  };
+}
+
+/** Reads a verified customer domain from D1; never invents or fabricates verification. */
+export async function resolveVerifiedTenantSender(
+  env: CloudflareEnv,
+  websiteId?: string | null
+): Promise<{ email: string; domain: string } | null> {
+  if (!env.DB || !websiteId) return null;
+  const allowedDomains = configuredVerifiedDomains(env);
+  if (allowedDomains.length === 0) return null;
+
+  try {
+    const row = await env.DB.prepare(
+      `SELECT domain_name
+       FROM tenant_domains
+       WHERE website_id = ?
+         AND dns_verification_status = 'verified'
+         AND ssl_status = 'active'
+         AND status IN ('live', 'expiring_soon')
+       ORDER BY is_primary DESC, id ASC
+       LIMIT 1`
+    )
+      .bind(websiteId)
+      .first<{ domain_name: string }>();
+    const domain = normalizeSenderDomain(row?.domain_name);
+    if (!domain || !allowedDomains.includes(domain)) return null;
+    return { email: `notifications@${domain}`, domain };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -63,7 +170,20 @@ export async function sendTransactionalEmail(
   env: CloudflareEnv,
   options: EmailSendOptions
 ): Promise<EmailSendResult> {
-  const { to, subject, html, text, eventType, websiteId, recipientUserId, idempotencyKey } = options;
+  const {
+    to,
+    subject,
+    html,
+    text,
+    eventType,
+    websiteId,
+    recipientUserId,
+    idempotencyKey,
+    audience = 'platform',
+    tenantBrandName,
+    verifiedSenderEmail,
+    verifiedSenderDomain,
+  } = options;
   const cleanEmail = sanitizeText(to || '', 140).toLowerCase();
 
   if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -113,7 +233,7 @@ export async function sendTransactionalEmail(
             recipientUserId || null,
             cleanEmail,
             eventType,
-            subject,
+            redactSensitiveLogText(subject),
             redactSensitiveLogText(text || subject),
             notice
           )
@@ -137,10 +257,15 @@ export async function sendTransactionalEmail(
 
   // 1. Resend API Dispatch
   if (resendApiKey) {
-    const fromAddress = getSenderEmail(env);
+    const sender = resolveEmailSender(env, {
+      audience,
+      tenantBrandName,
+      verifiedSenderEmail,
+      verifiedSenderDomain,
+    });
     try {
       const payload: Record<string, any> = {
-        from: fromAddress,
+        from: sender.formatted,
         to: cleanEmail,
         subject,
         html,
@@ -176,6 +301,12 @@ export async function sendTransactionalEmail(
     }
   } else if (sendgridApiKey) {
     // 2. Fallback to SendGrid if configured
+    const sender = resolveEmailSender(env, {
+      audience,
+      tenantBrandName,
+      verifiedSenderEmail,
+      verifiedSenderDomain,
+    });
     try {
       const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
@@ -185,7 +316,10 @@ export async function sendTransactionalEmail(
         },
         body: JSON.stringify({
           personalizations: [{ to: [{ email: cleanEmail }] }],
-          from: { email: 'notifications@vijayvisuals.com', name: 'Vijay Visuals' },
+          from:
+            audience === 'customer'
+              ? { email: sender.email, name: sender.name }
+              : { email: 'notifications@vijayvisuals.com', name: 'Vijay Visuals' },
           subject,
           content: [
             ...(text ? [{ type: 'text/plain', value: text }] : []),
@@ -223,7 +357,7 @@ export async function sendTransactionalEmail(
           recipientUserId || null,
           cleanEmail,
           eventType,
-          subject,
+          redactSensitiveLogText(subject),
           redactSensitiveLogText(text || subject),
           deliveryStatus,
           providerMessageId || (idempotencyKey ? `idemp_${idempotencyKey}` : ''),
@@ -263,6 +397,17 @@ const DEFAULT_EMAIL_FOOTER_HTML = `
               </p>
               <p style="margin: 0; font-size: 10px; color: #505062;">
                 This is an automated system transmission. Please do not reply directly with passwords or private tokens.
+              </p>`;
+
+const NEUTRAL_CUSTOMER_EMAIL_FOOTER_HTML = `
+              <p style="margin: 0 0 8px 0; color: #B38D2C; font-weight: 600;">
+                Order updates are sent by the store.
+              </p>
+              <p style="margin: 0 0 8px 0;">
+                Please contact the business directly if you need help with this order.
+              </p>
+              <p style="margin: 0; font-size: 10px; color: #505062;">
+                This is an automated order notification. Please do not reply with passwords or private tokens.
               </p>`;
 
 function baseEmailWrapper(
@@ -485,6 +630,102 @@ export function buildPaymentReceiptEmailHtml(params: {
     </div>
   `;
   return baseEmailWrapper(content, `Payment Receipt: ${orderNumber}`);
+}
+
+/**
+ * Customer storefront payment confirmation — deliberately separate from the
+ * platform subscription receipt above. No platform dashboard, no VIJAY VISUALS
+ * branding, and no invented delivery timeline.
+ */
+export function buildStorePaymentReceiptEmailHtml(params: {
+  customerName: string;
+  orderNumber: string;
+  paymentId: string;
+  amountFormatted: string;
+  paymentTime: string;
+  storeName: string;
+  storeUrl: string;
+}): string {
+  const storeName = sanitizeText(params.storeName, 120) || 'Your Store';
+  const safeCustomer = escapeHtml(sanitizeText(params.customerName, 80));
+  const safeOrder = escapeHtml(sanitizeText(params.orderNumber, 80));
+  const safePaymentId = escapeHtml(sanitizeText(params.paymentId, 80));
+  const safeAmount = escapeHtml(sanitizeText(params.amountFormatted, 40));
+  const safeTime = escapeHtml(sanitizeText(params.paymentTime, 60));
+  const safeStoreUrl = escapeHtml(sanitizeText(params.storeUrl, 300));
+
+  const content = `
+    <h2 style="margin: 0 0 8px 0; font-size: 20px; font-weight: 700; color: #22C55E;">
+      ✓ Payment Confirmed
+    </h2>
+    <p style="margin: 0 0 20px 0; font-size: 14px; color: #A0A0B2;">
+      Dear ${safeCustomer},
+    </p>
+    <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #CCCCCC;">
+      We have received payment for your order from <strong>${escapeHtml(storeName)}</strong>. The store will confirm fulfilment directly.
+    </p>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #14141E; border: 1px solid #242436; border-radius: 8px; margin: 20px 0; padding: 16px;">
+      <tr>
+        <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94;">ORDER NUMBER</td>
+        <td style="padding: 8px 12px; font-size: 13px; font-weight: 700; color: #FFFFFF; text-align: right;">${safeOrder}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">PAYMENT ID</td>
+        <td style="padding: 8px 12px; font-size: 12px; font-family: monospace; color: #DFBA5A; text-align: right; border-top: 1px solid #1E1E2C;">${safePaymentId}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">AMOUNT PAID</td>
+        <td style="padding: 8px 12px; font-size: 15px; font-weight: 800; color: #22C55E; text-align: right; border-top: 1px solid #1E1E2C;">${safeAmount}</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">PAYMENT TIME</td>
+        <td style="padding: 8px 12px; font-size: 12px; color: #FFFFFF; text-align: right; border-top: 1px solid #1E1E2C;">${safeTime}</td>
+      </tr>
+    </table>
+
+    ${safeStoreUrl ? `
+    <div style="text-align: center; margin: 32px 0 16px 0;">
+      <a href="${safeStoreUrl}" style="background: linear-gradient(135deg, #ECC86A 0%, #DFBA5A 50%, #B38D2C 100%); color: #08080C; text-decoration: none; padding: 14px 28px; font-weight: 700; border-radius: 6px; font-size: 13px; display: inline-block; letter-spacing: 0.5px; text-transform: uppercase;">
+        View Store
+      </a>
+    </div>` : ''}
+  `;
+  return baseEmailWrapper(content, `Payment Confirmed: ${safeOrder}`, {
+    brandName: storeName,
+    brandSubtitle: 'Order Payment Confirmation',
+    footerHtml: NEUTRAL_CUSTOMER_EMAIL_FOOTER_HTML,
+  });
+}
+
+/** WhatsApp copy for customer storefront payments; no platform claims or timelines. */
+export function buildStorePaymentWhatsAppText(params: {
+  storeName: string;
+  customerName: string;
+  orderNumber: string;
+  amountFormatted: string;
+  paymentId: string;
+  storeUrl: string;
+}): string {
+  const storeName = sanitizeText(params.storeName, 120) || 'Your Store';
+  const customerName = sanitizeText(params.customerName, 80) || 'Customer';
+  const orderNumber = sanitizeText(params.orderNumber, 80);
+  const amountFormatted = sanitizeText(params.amountFormatted, 40);
+  const paymentId = sanitizeText(params.paymentId, 80);
+  const storeUrl = sanitizeText(params.storeUrl, 300);
+
+  return [
+    `*${storeName} — Payment Confirmed*`,
+    ``,
+    `Dear ${customerName},`,
+    `Your payment of *${amountFormatted}* for order *#${orderNumber}* has been received.`,
+    ``,
+    `Payment ID: ${paymentId}`,
+    `Store order: ${orderNumber}`,
+    `Track your order and contact the store: ${storeUrl}`,
+    ``,
+    `Thank you for shopping with us!`,
+  ].join('\n');
 }
 
 /**

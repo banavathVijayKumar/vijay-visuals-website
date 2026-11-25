@@ -8,7 +8,11 @@
 // ============================================================================
 
 import { requireUser } from './_auth';
-import { sendTransactionalEmail, buildOrderConfirmationEmailHtml } from './_email';
+import {
+  sendTransactionalEmail,
+  buildOrderConfirmationEmailHtml,
+  resolveVerifiedTenantSender,
+} from './_email';
 import { sendWhatsAppNotification } from './_whatsapp';
 import {
   PagesContext,
@@ -424,6 +428,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     const formattedAmount = `₹${(total || 0).toLocaleString('en-IN')}`;
     const storeName = pub.business_name || 'Your Store';
     const storeUrl = `https://vijay-visuals-site.pages.dev/site/${encodeURIComponent(pub.public_slug || '')}`;
+    const verifiedTenantSender = await resolveVerifiedTenantSender(env, pub.website_id);
     if (customerEmail && customerEmail.includes('@')) {
       try {
         const orderEmailHtml = buildOrderConfirmationEmailHtml({
@@ -442,6 +447,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           text: `Your order #${orderNumber} for ${formattedAmount} has been placed.`,
           eventType: 'order_received',
           websiteId: pub.website_id,
+          audience: 'customer',
+          tenantBrandName: storeName,
+          verifiedSenderEmail: verifiedTenantSender?.email,
+          verifiedSenderDomain: verifiedTenantSender?.domain,
           idempotencyKey: `ord_em_${orderNumber}`,
         });
       } catch (err) {

@@ -12,7 +12,13 @@ import { PagesContext, errorJson, handleOptions, json, sanitizeText, writeAuditL
 import { provisionLifetimeEntitlement } from '../_tenantAccess';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from '../plans';
 import { FREE_START_PLAN_CODE } from '../_planTiers';
-import { sendTransactionalEmail, buildPaymentReceiptEmailHtml } from '../_email';
+import {
+  sendTransactionalEmail,
+  buildPaymentReceiptEmailHtml,
+  buildStorePaymentReceiptEmailHtml,
+  buildStorePaymentWhatsAppText,
+  resolveVerifiedTenantSender,
+} from '../_email';
 import { sendWhatsAppNotification } from '../_whatsapp';
 import {
   fetchEdgeCashfreeOrder,
@@ -451,30 +457,74 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         .run();
     }
 
-    // 6. Trigger Verified Payment Notifications (Resend Email & WhatsApp)
+    // 6. Verified payment notifications. Storefront orders and platform package
+    // payments are separate flows with separate branding, links, and sender identity.
     const customerEmail =
       existingPayment?.user_email || storeOrder?.customer_email || body.data?.customer_details?.customer_email || '';
     const customerPhone =
       existingPayment?.user_phone || storeOrder?.customer_phone || body.data?.customer_details?.customer_phone || '';
     const customerName = storeOrder?.customer_name || body.data?.customer_details?.customer_name || 'Customer';
     const formattedPaid = `₹${(paymentPaise / 100).toLocaleString('en-IN')}`;
+    const isStoreOrderPayment = Boolean(storeOrder);
+
+    let storeName = 'Your Store';
+    let storeUrl = '';
+    let storeOrderNumber = orderId;
+    if (storeOrder) {
+      storeOrderNumber = storeOrder.order_number || orderId;
+      const publication = await env.DB.prepare(
+        `SELECT public_slug, business_name
+         FROM customer_website_publications
+         WHERE website_id = ?
+         LIMIT 1`
+      )
+        .bind(storeOrder.website_id)
+        .first<{ public_slug: string; business_name: string }>();
+      storeName = publication?.business_name || 'Your Store';
+      storeUrl = publication?.public_slug
+        ? `https://vijay-visuals-site.pages.dev/site/${encodeURIComponent(publication.public_slug)}`
+        : '';
+    }
+    const verifiedTenantSender = storeOrder
+      ? await resolveVerifiedTenantSender(env, storeOrder.website_id)
+      : null;
 
     if (customerEmail && customerEmail.includes('@')) {
       try {
-        const paymentReceiptHtml = buildPaymentReceiptEmailHtml({
-          customerName,
-          orderNumber: orderId,
-          paymentId: cfPaymentId,
-          amountFormatted: formattedPaid,
-          paymentTime: paymentData?.payment_time || new Date().toISOString(),
-          dashboardUrl: 'https://vijay-visuals-site.pages.dev/dashboard',
-        });
+        const orderPaymentAmount = storeOrder ? `₹${Number(storeOrder.total_inr || 0).toLocaleString('en-IN')}` : formattedPaid;
+        const paymentReceiptHtml = isStoreOrderPayment
+          ? buildStorePaymentReceiptEmailHtml({
+              customerName,
+              orderNumber: storeOrderNumber,
+              paymentId: cfPaymentId,
+              amountFormatted: orderPaymentAmount,
+              paymentTime: paymentData?.payment_time || new Date().toISOString(),
+              storeName,
+              storeUrl,
+            })
+          : buildPaymentReceiptEmailHtml({
+              customerName,
+              orderNumber: orderId,
+              paymentId: cfPaymentId,
+              amountFormatted: formattedPaid,
+              paymentTime: paymentData?.payment_time || new Date().toISOString(),
+              dashboardUrl: 'https://vijay-visuals-site.pages.dev/dashboard',
+            });
         await sendTransactionalEmail(env, {
           to: customerEmail,
-          subject: `Payment Confirmed: Order #${orderId}`,
+          subject: isStoreOrderPayment
+            ? `Payment Confirmed: Order #${storeOrderNumber}`
+            : `Payment Confirmed: Order #${orderId}`,
           html: paymentReceiptHtml,
-          text: `Payment confirmed for Order #${orderId}. Amount: ${formattedPaid}. Payment ID: ${cfPaymentId}.`,
+          text: isStoreOrderPayment
+            ? `Payment confirmed for ${storeName} order #${storeOrderNumber}. Amount: ${orderPaymentAmount}. Payment ID: ${cfPaymentId}.`
+            : `Payment confirmed for Order #${orderId}. Amount: ${formattedPaid}. Payment ID: ${cfPaymentId}.`,
           eventType: 'payment_confirmed',
+          websiteId: storeOrder?.website_id || existingPayment?.website_id || null,
+          audience: isStoreOrderPayment ? 'customer' : 'platform',
+          tenantBrandName: isStoreOrderPayment ? storeName : undefined,
+          verifiedSenderEmail: isStoreOrderPayment ? verifiedTenantSender?.email : undefined,
+          verifiedSenderDomain: isStoreOrderPayment ? verifiedTenantSender?.domain : undefined,
           idempotencyKey: `pay_em_${orderId}_${cfPaymentId}`,
         });
       } catch (notifyErr) {
@@ -484,25 +534,35 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
     if (customerPhone) {
       try {
-        const waText = [
-          `🌟 *VIJAY VISUALS — Payment Confirmed* 🌟`,
-          ``,
-          `Dear ${customerName},`,
-          `Your payment of *${formattedPaid}* for Order *#${orderId}* has been verified successfully.`,
-          ``,
-          `💳 *Transaction ID:* ${cfPaymentId}`,
-          `📋 *Status:* Confirmed & Scheduled for Development`,
-          `⏱ *Timeline:* 3–5 Business Days`,
-          `🔍 *Track Order:* https://vijay-visuals-site.pages.dev/dashboard`,
-          ``,
-          `Thank you for choosing Vijay Visuals!`,
-          `Official Mobile: +91 93610 24823`,
-        ].join('\n');
+        const waText = isStoreOrderPayment
+          ? buildStorePaymentWhatsAppText({
+              storeName,
+              customerName,
+              orderNumber: storeOrderNumber,
+              amountFormatted: `₹${Number(storeOrder?.total_inr || 0).toLocaleString('en-IN')}`,
+              paymentId: cfPaymentId,
+              storeUrl,
+            })
+          : [
+              `🌟 *VIJAY VISUALS — Payment Confirmed* 🌟`,
+              ``,
+              `Dear ${customerName},`,
+              `Your payment of *${formattedPaid}* for Order *#${orderId}* has been verified successfully.`,
+              ``,
+              `💳 *Transaction ID:* ${cfPaymentId}`,
+              `📋 *Status:* Confirmed & Scheduled for Development`,
+              `⏱ *Timeline:* 3–5 Business Days`,
+              `🔍 *Track Order:* https://vijay-visuals-site.pages.dev/dashboard`,
+              ``,
+              `Thank you for choosing Vijay Visuals!`,
+              `Official Mobile: +91 93610 24823`,
+            ].join('\n');
 
         await sendWhatsAppNotification(env, {
           toPhone: customerPhone,
           messageText: waText,
-          eventType: 'payment_confirmed',
+          eventType: isStoreOrderPayment ? 'store_order_payment_confirmed' : 'payment_confirmed',
+          websiteId: storeOrder?.website_id || existingPayment?.website_id || null,
           idempotencyKey: `pay_wa_${orderId}_${cfPaymentId}`,
         });
       } catch (notifyErr) {
