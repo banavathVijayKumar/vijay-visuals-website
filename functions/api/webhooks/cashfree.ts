@@ -146,6 +146,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         id: number;
         status: string;
         user_id: string;
+        user_email?: string | null;
+        user_phone?: string | null;
         website_id: string | null;
         entity_type: string;
         reference_id: string;
@@ -156,7 +158,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }>();
 
     const storeOrder = await env.DB.prepare(
-      'SELECT id, website_id, owner_id, order_number, total_inr, payment_status FROM store_orders WHERE gateway_order_id = ? LIMIT 1'
+      'SELECT id, website_id, owner_id, order_number, customer_name, customer_email, customer_phone, total_inr, payment_status FROM store_orders WHERE gateway_order_id = ? LIMIT 1'
     )
       .bind(orderId)
       .first<{
@@ -164,6 +166,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         website_id: string;
         owner_id: string;
         order_number: string;
+        customer_name?: string | null;
+        customer_email?: string | null;
+        customer_phone?: string | null;
         total_inr: number;
         payment_status: string;
       }>();

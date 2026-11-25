@@ -58,50 +58,48 @@ export function timingSafeEqual(a: string, b: string): boolean {
 
 /**
  * Ensures the `auth_email_otps` table and indexes exist in D1.
+ * Safely guards optional db.exec method and throws if required persistence cannot be verified.
  */
 export async function ensureOtpTable(db: D1Database): Promise<void> {
+  const ddl = `
+    CREATE TABLE IF NOT EXISTS auth_email_otps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL,
+      otp_hash TEXT NOT NULL,
+      salt TEXT NOT NULL,
+      purpose TEXT NOT NULL DEFAULT 'registration',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      expires_at TEXT NOT NULL,
+      resend_available_at TEXT NOT NULL,
+      consumed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      ip_address TEXT NOT NULL DEFAULT ''
+    )
+  `;
+
   try {
-    await db.exec(`
-      CREATE TABLE IF NOT EXISTS auth_email_otps (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT NOT NULL,
-        otp_hash TEXT NOT NULL,
-        salt TEXT NOT NULL,
-        purpose TEXT NOT NULL DEFAULT 'registration',
-        metadata_json TEXT NOT NULL DEFAULT '{}',
-        attempts INTEGER NOT NULL DEFAULT 0,
-        max_attempts INTEGER NOT NULL DEFAULT 5,
-        expires_at TEXT NOT NULL,
-        resend_available_at TEXT NOT NULL,
-        consumed_at TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        ip_address TEXT NOT NULL DEFAULT ''
-      );
-      CREATE INDEX IF NOT EXISTS idx_auth_email_otps_lookup ON auth_email_otps(email, purpose, consumed_at);
-      CREATE INDEX IF NOT EXISTS idx_auth_email_otps_expiry ON auth_email_otps(expires_at);
-    `);
-  } catch (err) {
-    // If db.exec is not supported in environment, fallback to prepare/run
-    try {
-      await db.prepare(`
-        CREATE TABLE IF NOT EXISTS auth_email_otps (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          email TEXT NOT NULL,
-          otp_hash TEXT NOT NULL,
-          salt TEXT NOT NULL,
-          purpose TEXT NOT NULL DEFAULT 'registration',
-          metadata_json TEXT NOT NULL DEFAULT '{}',
-          attempts INTEGER NOT NULL DEFAULT 0,
-          max_attempts INTEGER NOT NULL DEFAULT 5,
-          expires_at TEXT NOT NULL,
-          resend_available_at TEXT NOT NULL,
-          consumed_at TEXT,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          ip_address TEXT NOT NULL DEFAULT ''
-        )
-      `).run();
-    } catch {
-      // Table may already exist
+    if (typeof db.exec === 'function') {
+      await db.exec(`
+        ${ddl};
+        CREATE INDEX IF NOT EXISTS idx_auth_email_otps_lookup ON auth_email_otps(email, purpose, consumed_at);
+        CREATE INDEX IF NOT EXISTS idx_auth_email_otps_expiry ON auth_email_otps(expires_at);
+      `);
+    } else {
+      await db.prepare(ddl).run();
+      try {
+        await db.prepare('CREATE INDEX IF NOT EXISTS idx_auth_email_otps_lookup ON auth_email_otps(email, purpose, consumed_at)').run();
+        await db.prepare('CREATE INDEX IF NOT EXISTS idx_auth_email_otps_expiry ON auth_email_otps(expires_at)').run();
+      } catch {
+        // Indexes are non-fatal optimizations if already present
+      }
+    }
+  } catch (err: any) {
+    const msg = String(err?.message || err).toLowerCase();
+    if (!msg.includes('already exists')) {
+      console.error('Failed to ensure auth_email_otps table in D1:', err);
+      throw new Error('Database initialization failed for OTP persistence.', { cause: err });
     }
   }
 }

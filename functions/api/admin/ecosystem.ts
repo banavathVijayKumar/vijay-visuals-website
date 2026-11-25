@@ -25,6 +25,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   const sellerTransfers: Array<Record<string, unknown>> = [];
   const announcements: Array<Record<string, unknown>> = [];
   const webhookEvents: Array<{ id: number; event?: string; createdAt?: string }> = [];
+  const notificationLogs: Array<Record<string, unknown>> = [];
 
   if (env.DB) {
     // 1. Platform Payments (from cashfree_payments ledger with fallback to platform_payments)
@@ -170,7 +171,6 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     } catch {}
 
     // 6. Transactional Notifications (Email & WhatsApp visibility)
-    const notificationLogs: Array<Record<string, unknown>> = [];
     try {
       const notifRes = await env.DB.prepare(
         `SELECT id, recipient_contact, channel, event_type, subject,
