@@ -20,6 +20,18 @@ import {
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 
+function safeAttachmentUrl(raw: unknown): string | null {
+  try {
+    const value = String(raw || '').trim();
+    if (!value) return null;
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || !url.hostname) return null;
+    return url.toString().slice(0, 500);
+  } catch {
+    return null;
+  }
+}
+
 export interface SupportTicket {
   id: number;
   ticketNumber: string;
@@ -187,7 +199,10 @@ export const CustomerSupportCenter: React.FC<CustomerSupportCenterProps> = ({
           message: tktMessage.trim(),
           tenantId,
           websiteId,
-          attachments: tktAttachment.trim() ? [tktAttachment.trim()] : [],
+          attachments: (() => {
+            const safe = safeAttachmentUrl(tktAttachment);
+            return safe ? [safe] : [];
+          })(),
         }),
       });
       setTktSubject('');
@@ -211,7 +226,10 @@ export const CustomerSupportCenter: React.FC<CustomerSupportCenterProps> = ({
         body: JSON.stringify({
           ticketId: selectedTicket.id,
           message: replyMessage.trim(),
-          attachments: replyAttachment.trim() ? [replyAttachment.trim()] : [],
+          attachments: (() => {
+            const safe = safeAttachmentUrl(replyAttachment);
+            return safe ? [safe] : [];
+          })(),
         }),
       });
       setReplyMessage('');
@@ -240,7 +258,10 @@ export const CustomerSupportCenter: React.FC<CustomerSupportCenterProps> = ({
             title: crTitle.trim(),
             category: crCategory,
             description: crDescription.trim(),
-            attachments: crAttachment.trim() ? [crAttachment.trim()] : [],
+            attachments: (() => {
+              const safe = safeAttachmentUrl(crAttachment);
+              return safe ? [safe] : [];
+            })(),
           }),
         }
       );
@@ -259,17 +280,38 @@ export const CustomerSupportCenter: React.FC<CustomerSupportCenterProps> = ({
     }
   };
 
-  // Handle Approve / Reject Quotation
-  const handleQuotationDecision = async (requestId: number, decision: 'approved' | 'rejected') => {
+  // Handle quotation approval and customer acceptance of completed work
+  type ChangeDecision = 'approved' | 'rejected' | 'accept_review' | 'request_changes';
+  const handleChangeDecision = async (requestId: number, decision: ChangeDecision) => {
+    const messages: Record<ChangeDecision, string> = {
+      approved: 'Quotation approved. Work may commence after scheduling.',
+      rejected: 'Quotation declined.',
+      accept_review: 'Completed work accepted. You can now request publishing.',
+      request_changes: 'Change request recorded. The team will revise the work before publishing.',
+    };
     try {
       await apiFetch(`/api/owner/tenants/${tenantId}/change-requests`, {
         method: 'PATCH',
         body: JSON.stringify({ requestId, decision }),
       });
       await loadData();
-      onNotify(`Quotation ${decision === 'approved' ? 'Approved' : 'Rejected'}.`);
+      onNotify(messages[decision]);
     } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Failed to update quotation decision.');
+      onNotify(err instanceof Error ? err.message : 'Failed to record your decision.');
+    }
+  };
+
+  // Staff-only developer task progression
+  const handleDeveloperTaskStatus = async (taskId: number, status: string) => {
+    try {
+      await apiFetch('/api/admin/developer-tasks', {
+        method: 'PATCH',
+        body: JSON.stringify({ taskId, status }),
+      });
+      await loadData();
+      onNotify('Developer task status updated.');
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Failed to update developer task status.');
     }
   };
 
@@ -447,18 +489,21 @@ export const CustomerSupportCenter: React.FC<CustomerSupportCenterProps> = ({
                           <p className="text-white whitespace-pre-wrap leading-relaxed">{m.text}</p>
                           {m.attachments && m.attachments.length > 0 && (
                             <div className="flex flex-wrap gap-2 pt-1 border-t border-[#1C1C26]">
-                              {m.attachments.map((url, aIdx) => (
-                                <a
-                                  key={aIdx}
-                                  href={url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-[10px] text-[#ECC86A] underline"
-                                >
-                                  <Paperclip className="w-3 h-3" />
-                                  <span>Attachment {aIdx + 1}</span>
-                                </a>
-                              ))}
+                              {(m.attachments || [])
+                                .map((url) => safeAttachmentUrl(url))
+                                .filter((url): url is string => Boolean(url))
+                                .map((url, aIdx) => (
+                                  <a
+                                    key={aIdx}
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[10px] text-[#ECC86A] underline"
+                                  >
+                                    <Paperclip className="w-3 h-3" />
+                                    <span>Attachment {aIdx + 1}</span>
+                                  </a>
+                                ))}
                             </div>
                           )}
                         </div>
@@ -584,14 +629,14 @@ export const CustomerSupportCenter: React.FC<CustomerSupportCenterProps> = ({
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => handleQuotationDecision(cr.id, 'approved')}
+                          onClick={() => handleChangeDecision(cr.id, 'approved')}
                           className="px-3 py-1 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-500"
                         >
                           Approve Quotation
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleQuotationDecision(cr.id, 'rejected')}
+                          onClick={() => handleChangeDecision(cr.id, 'rejected')}
                           className="px-3 py-1 rounded border border-rose-500/40 text-rose-300 hover:bg-rose-950/20"
                         >
                           Decline
@@ -607,9 +652,31 @@ export const CustomerSupportCenter: React.FC<CustomerSupportCenterProps> = ({
                     )}
 
                     {cr.status === 'review_ready' && (
-                      <span className="text-purple-300 font-semibold text-[11px] flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>Ready for Customer Review</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-purple-300 font-semibold text-[11px] flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>Ready for Customer Review</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleChangeDecision(cr.id, 'accept_review')}
+                          className="px-3 py-1 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-500"
+                        >
+                          Accept &amp; Approve Publishing
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleChangeDecision(cr.id, 'request_changes')}
+                          className="px-3 py-1 rounded border border-amber-500/40 text-amber-300 hover:bg-amber-950/20"
+                        >
+                          Request Changes
+                        </button>
+                      </div>
+                    )}
+
+                    {cr.status === 'completed' && (
+                      <span className="text-emerald-400 font-semibold text-[11px]">
+                        Customer approved · Ready to publish
                       </span>
                     )}
                   </div>
@@ -655,9 +722,23 @@ export const CustomerSupportCenter: React.FC<CustomerSupportCenterProps> = ({
                     Developer: <span className="text-[#DDDDE8]">{dt.assignedDeveloperName}</span> · Logged: {dt.actualHours}/{dt.estimatedHours} hrs
                   </p>
                 </div>
-                <span className="capitalize px-2.5 py-1 rounded text-[10px] font-semibold border border-[#2A2A38] bg-[#12121A] text-[#DDDDE8]">
-                  {dt.status.replace(/_/g, ' ')}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="capitalize px-2.5 py-1 rounded text-[10px] font-semibold border border-[#2A2A38] bg-[#12121A] text-[#DDDDE8]">
+                    {dt.status.replace(/_/g, ' ')}
+                  </span>
+                  <select
+                    aria-label={`Update status for ${dt.taskNumber}`}
+                    value={dt.status}
+                    onChange={(event) => handleDeveloperTaskStatus(dt.id, event.target.value)}
+                    className="rounded border border-[#2A2A38] bg-[#12121A] px-2 py-1 text-[10px] text-[#DDDDE8]"
+                  >
+                    {['assigned', 'in_progress', 'review_pending', 'completed', 'blocked'].map((status) => (
+                      <option key={status} value={status}>
+                        {status.replace(/_/g, ' ')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             ))}
           </div>

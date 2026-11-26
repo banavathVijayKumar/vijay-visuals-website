@@ -19,15 +19,13 @@ import {
 } from '../db/schema.ts';
 import { generateAiText } from '../lib/gemini.ts';
 import { AuthRequest, optionalAuth, requireAuth } from '../middleware/auth.ts';
-
-function xmlEscape(str: string): string {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
+import {
+  buildRobotsTxt,
+  buildSitemapXml,
+  OFFICIAL_SITE_URL,
+  safeLastmod,
+  STOREFRONT_ROUTE_PREFIX,
+} from '../../shared/seo';
 
 function getBaseUrl(req: Request): string {
   if (process.env.APP_URL && process.env.APP_URL.startsWith('http')) {
@@ -221,65 +219,22 @@ export function createGrowthRouter() {
   // =========================================================================
   // MODULE 4: TECHNICAL SEO — DYNAMIC /robots.txt AND /sitemap.xml
   // =========================================================================
-  router.get('/robots.txt', (req: Request, res: Response) => {
-    const baseUrl = getBaseUrl(req);
-    res.type('text/plain').send(
-      [
-        'User-agent: *',
-        'Allow: /',
-        'Disallow: /api/',
-        '',
-        `Sitemap: ${baseUrl}/sitemap.xml`,
-      ].join('\n')
-    );
+  router.get('/robots.txt', (_req: Request, res: Response) => {
+    res.type('text/plain').send(buildRobotsTxt(OFFICIAL_SITE_URL));
   });
 
-  router.get('/sitemap.xml', async (req: Request, res: Response) => {
+  router.get('/sitemap.xml', async (_req: Request, res: Response) => {
     try {
-      const baseUrl = getBaseUrl(req);
       const publishedTenants = await db.select().from(tenants).where(eq(tenants.published, true));
-      const allActiveProducts = await db.select().from(products).where(eq(products.active, true));
-
-      const urls: Array<{ loc: string; lastmod: string; changefreq: string; priority: string }> = [
-        {
-          loc: `${baseUrl}/`,
-          lastmod: new Date().toISOString().split('T')[0],
-          changefreq: 'daily',
-          priority: '1.0',
-        },
+      const entries = [
+        { loc: `${OFFICIAL_SITE_URL}/`, priority: '1.0', withHreflang: true },
+        ...publishedTenants.map((tenant) => ({
+          loc: `${OFFICIAL_SITE_URL}${STOREFRONT_ROUTE_PREFIX}${encodeURIComponent(tenant.slug)}`,
+          lastmod: safeLastmod(tenant.createdAt),
+          priority: '0.8',
+        })),
       ];
-
-      for (const t of publishedTenants) {
-        const lastmod = (t.createdAt ? new Date(t.createdAt) : new Date()).toISOString().split('T')[0];
-        urls.push({
-          loc: `${baseUrl}/site/${encodeURIComponent(t.slug)}`,
-          lastmod,
-          changefreq: 'daily',
-          priority: '0.9',
-        });
-
-        const tProducts = allActiveProducts.filter((p) => p.tenantId === t.id);
-        for (const p of tProducts) {
-          urls.push({
-            loc: `${baseUrl}/site/${encodeURIComponent(t.slug)}?product=${p.id}`,
-            lastmod,
-            changefreq: 'weekly',
-            priority: '0.7',
-          });
-        }
-      }
-
-      const xml = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-        ...urls.map(
-          (u) =>
-            `  <url>\n    <loc>${xmlEscape(u.loc)}</loc>\n    <lastmod>${xmlEscape(u.lastmod)}</lastmod>\n    <changefreq>${u.changefreq}</changefreq>\n    <priority>${u.priority}</priority>\n  </url>`
-        ),
-        '</urlset>',
-      ].join('\n');
-
-      res.type('application/xml').send(xml);
+      res.type('application/xml').send(buildSitemapXml(entries));
     } catch (error) {
       console.error('GET /sitemap.xml failed:', error);
       res.status(500).type('text/plain').send('Failed to generate sitemap.');
@@ -814,7 +769,7 @@ Include practical local SEO keywords, crisp title/meta description suggestions (
       gstInr,
       grandTotalInr,
       thirdPartyNote:
-        'Excludes third-party pass-through charges: custom domain registration/renewal, Razorpay transaction MDR, Meta WhatsApp Business API conversation fees, external SMS/SMTP, and cloud hosting/storage overages.',
+        'Excludes third-party pass-through charges: custom domain registration/renewal, Cashfree transaction MDR, Meta WhatsApp Business API conversation fees, external SMS/SMTP, and cloud hosting/storage overages.',
     };
   }
 

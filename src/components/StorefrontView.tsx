@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeft,
+  ArrowRight,
   Bot,
   Building2,
   Calendar,
@@ -42,6 +42,8 @@ import { requestSingleGpsPosition, reverseGeocodeViaProxy } from '../lib/mapsCli
 import { applyStorefrontMetadata } from '../lib/storefrontMetadata';
 import { useAuth } from '../hooks/useAuth';
 import { Lang } from '../data/content';
+import { OFFICIAL_SITE_URL, resolveTenantCanonicalUrl } from '../../shared/seo';
+import { validateIndiaWhatsAppNumber } from '../../shared/indiaWhatsapp';
 import {
   CartItem,
   CouponRecord,
@@ -55,7 +57,6 @@ import {
 import { PWAInstallButton } from './PWAControls';
 import { StorefrontMapPreview } from './StorefrontMapPreview';
 import { StorefrontReviews } from './StorefrontReviews';
-import defaultHeroBanner from '../assets/images/hero_vijay_studio_1795055804014.jpg';
 import restaurantFallbackBanner from '../assets/images/store_gourmet_dining_1795055802368.jpg';
 import fashionFallbackBanner from '../assets/images/store_fashion_royal_1795055802960.jpg';
 import groceryFallbackBanner from '../assets/images/store_grocery_organic_1795055803860.jpg';
@@ -75,7 +76,9 @@ function getCategoryFallbackBanner(category: string): string {
   if (c.includes('electronic') || c.includes('tech') || c.includes('gym') || c.includes('education')) {
     return electronicsFallbackBanner;
   }
-  return defaultHeroBanner;
+  // Generic category artwork only; no platform-specific hero asset is shown
+  // on a customer's white-label storefront.
+  return electronicsFallbackBanner;
 }
 
 function buildWhatsAppUrl(
@@ -230,6 +233,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
   const [quotePhone, setQuotePhone] = useState('');
   const [quoteEmail, setQuoteEmail] = useState('');
   const [quoteReq, setQuoteReq] = useState('');
+  const [quoteWhatsappOptIn, setQuoteWhatsappOptIn] = useState(false);
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [newsEmail, setNewsEmail] = useState('');
   const [newsName, setNewsName] = useState('');
@@ -281,7 +285,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           setPaymentMethod('cod');
         } else if (storeData.tenant.upiId) {
           setPaymentMethod('upi_reference');
-        } else if (storeData.tenant.cashfreeOnlineReady || storeData.tenant.razorpayOnlineReady) {
+        } else if (storeData.tenant.cashfreeOnlineReady) {
           setPaymentMethod('cashfree_online');
         }
 
@@ -362,14 +366,19 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
       bannerImage: tenant.bannerImage,
       primaryColor: tenant.primaryColor,
       currency: tenant.currency,
-      canonicalUrl: seoConfig?.canonicalUrl || `${window.location.origin}/site/${tenant.slug}`,
+      canonicalUrl: resolveTenantCanonicalUrl({
+        origin: publicHost ? window.location.origin : OFFICIAL_SITE_URL,
+        pathname: window.location.pathname,
+        platformSiteSlug: publicHost ? null : tenant.slug,
+        configuredUrl: seoConfig?.canonicalUrl,
+      }),
       robotsDirectives: seoConfig?.robotsDirectives,
       googleSiteVerification: seoConfig?.googleSiteVerification,
       googleMapsUrl: seoConfig?.googleMapsUrl,
       localBusinessType: seoConfig?.localBusinessType,
       products,
     });
-  }, [tenant, products, seoConfig]);
+  }, [tenant, products, seoConfig, publicHost]);
 
   // Persist cart to localStorage across refreshes
   useEffect(() => {
@@ -568,7 +577,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     const hasConfiguredMethod =
       Boolean(tenant.codEnabled) ||
       Boolean(tenant.upiId) ||
-      Boolean(tenant.cashfreeOnlineReady || tenant.razorpayOnlineReady);
+      Boolean(tenant.cashfreeOnlineReady);
     if (!hasConfiguredMethod) {
       onNotify('Online checkout payment methods are not configured for this store yet. Please use WhatsApp Order.');
       return;
@@ -616,16 +625,45 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           orderId: res.cfOrderId,
           environment: res.cashfreeEnvironment || 'sandbox',
           onSuccess: async () => {
+            // The popup callback is not payment proof. Only the server-side
+            // verification result may mark a Cashfree order as paid.
+            let verification: {
+              verified?: boolean;
+              status?: string;
+              entityType?: string;
+            } | null = null;
             try {
-              await apiFetch('/api/payments/cashfree/verify', {
+              verification = await apiFetch<{
+                verified?: boolean;
+                status?: string;
+                entityType?: string;
+              }>('/api/payments/cashfree/verify', {
                 method: 'POST',
                 body: JSON.stringify({
                   orderId: res.cfOrderId,
                   storefrontOrderId: res.order?.id,
                 }),
               });
-            } catch {}
-            setConfirmedOrder(res.order ? { ...res.order, paymentStatus: 'paid', status: 'confirmed' } : null);
+            } catch {
+              verification = null;
+            }
+
+            const isVerified =
+              verification?.verified === true &&
+              String(verification.status || '').toUpperCase() === 'PAID' &&
+              verification.entityType === 'storefront_order';
+
+            if (!isVerified) {
+              setConfirmedOrder(res.order);
+              onNotify(
+                `Payment could not be verified yet. Order #${res.order?.orderNumber || ''} is saved as pending and will be confirmed automatically after gateway settlement.`
+              );
+              return;
+            }
+
+            setConfirmedOrder(
+              res.order ? { ...res.order, paymentStatus: 'paid', status: 'confirmed' } : null
+            );
             setCart([]);
             setAppliedCoupon(null);
             setPaymentReference('');
@@ -813,19 +851,6 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
       <div className="border-b border-[#1E1E2A] bg-[#0C0C12] sticky top-0 z-30 backdrop-blur">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2.5 sm:gap-4">
           <div className="flex items-center gap-3">
-            {!publicHost && (
-              <>
-                <button
-                  type="button"
-                  onClick={onBack}
-                  className="inline-flex items-center gap-1.5 text-xs text-[#A3A3B5] hover:text-white"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Marketplace</span>
-                </button>
-                <span aria-hidden="true" className="text-[#3A3A4A]">·</span>
-              </>
-            )}
             <nav aria-label="Storefront sections" className="hidden md:flex items-center gap-4 text-xs text-[#B8B8C8]">
               <a href="#store-home" className="hover:text-[#ECC86A]">Home</a>
               {(modules.ecommerce || products.length > 0) && (
@@ -892,6 +917,10 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                 <img
                   src={tenant.logoImage}
                   alt={tenant.name}
+                  width={48}
+                  height={48}
+                  loading="lazy"
+                  decoding="async"
                   className="w-12 h-12 rounded-lg object-cover border border-white/15 shrink-0"
                 />
               ) : (
@@ -922,15 +951,34 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
               className="text-3xl md:text-4xl font-bold text-white mb-2 text-balance"
               style={{ fontFamily: tenant.fontFamily === 'Cinzel' ? 'Cinzel, serif' : 'Plus Jakarta Sans, sans-serif' }}
             >
-              {tenant.name}
+              {tenant.heroHeadline && tenant.heroHeadline !== tenant.name
+                ? tenant.heroHeadline
+                : tenant.name}
             </h1>
             {tenant.tagline && (
               <p className="text-base font-medium mb-3" style={{ color: tenant.primaryColor }}>
                 {tenant.tagline}
               </p>
             )}
+            {tenant.heroSubheadline &&
+              tenant.heroSubheadline !== tenant.tagline &&
+              tenant.heroSubheadline !== tenant.description && (
+                <p className="text-sm text-[#B4B4C6] leading-relaxed mb-5">
+                  {tenant.heroSubheadline}
+                </p>
+              )}
             {tenant.description && tenant.description !== tenant.tagline && (
               <p className="text-sm text-[#B4B4C6] leading-relaxed mb-5">{tenant.description}</p>
+            )}
+            {tenant.ctaText && (
+              <a
+                href="#store-catalog"
+                className="inline-flex items-center gap-2 mb-5 px-4 py-2 rounded-md font-semibold text-[#08080A]"
+                style={{ backgroundColor: tenant.primaryColor }}
+              >
+                {tenant.ctaText}
+                <ArrowRight className="w-3.5 h-3.5" />
+              </a>
             )}
             {Array.isArray(tenant.templateFeatures) && tenant.templateFeatures.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-5">
@@ -979,7 +1027,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                 </span>
               )}
             </div>
-            {pwaLicenseValid && (
+            {pwaLicenseValid && !publicHost && (
               <div className="mt-5 inline-flex items-center gap-2 text-xs text-[#C6C6D6]">
                 <Smartphone className="w-3.5 h-3.5 text-[#D4AF37]" />
                 <span>
@@ -993,6 +1041,10 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
               <img
                 src={tenant.bannerImage || getCategoryFallbackBanner(tenant.category)}
                 alt={tenant.name}
+                width={1200}
+                height={630}
+                loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
               />
@@ -1074,7 +1126,8 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
           {visibleProducts.length === 0 ? (
             <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-12 text-center text-sm text-[#9A9AAE]">
-              No products or services listed in this category yet. Store owners can add items from the Business Owner Dashboard.
+              No products or services listed in this category yet.
+              {!publicHost && ' Store owners can add items from the Business Owner Dashboard.'}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1108,7 +1161,10 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                       <img
                         src={product.imageUrl || tenant.bannerImage || getCategoryFallbackBanner(tenant.category)}
                         alt={product.name}
+                        width={1200}
+                        height={900}
                         loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover"
                       />
@@ -1252,7 +1308,10 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                     <img
                       src={rp.imageUrl || tenant.bannerImage || getCategoryFallbackBanner(tenant.category)}
                       alt={rp.name}
+                      width={1200}
+                      height={900}
                       loading="lazy"
+                      decoding="async"
                       className="w-full aspect-[4/3] rounded object-cover mb-2"
                     />
                     <p className="text-xs font-semibold text-white truncate">{rp.name}</p>
@@ -1308,7 +1367,10 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                   <img
                     src={item.url}
                     alt={item.title || `${tenant.name} photo ${idx + 1}`}
+                    width={1200}
+                    height={900}
                     loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 </div>
@@ -1576,16 +1638,25 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                const phoneCheck = validateIndiaWhatsAppNumber(quotePhone.trim());
+                if (!phoneCheck.ok) {
+                  onNotify(phoneCheck.error || 'Enter a valid Indian WhatsApp number.');
+                  return;
+                }
                 setQuoteBusy(true);
                 try {
-                  await apiFetch(`/api/public/tenants/${encodeURIComponent(tenant.slug)}/quote-request`, {
+                  const result = await apiFetch<{
+                    ok?: boolean;
+                    message?: string;
+                    whatsapp?: { status?: string; notice?: string };
+                  }>(`/api/public/tenants/${encodeURIComponent(tenant.slug)}/quote-request`, {
                     method: 'POST',
                     body: JSON.stringify({
                       name: quoteName.trim(),
-                      phone: quotePhone.trim(),
+                      phone: phoneCheck.value!.e164,
                       email: quoteEmail.trim(),
                       requirement: quoteReq.trim(),
-                      marketingConsent: true,
+                      whatsappOptIn: quoteWhatsappOptIn,
                     }),
                   });
                   setQuoteOpen(false);
@@ -1593,7 +1664,13 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                   setQuotePhone('');
                   setQuoteEmail('');
                   setQuoteReq('');
-                  onNotify(`Quote request sent directly to ${tenant.name} CRM!`);
+                  setQuoteWhatsappOptIn(false);
+                  const waStatus = result?.whatsapp?.status;
+                  onNotify(
+                    waStatus && waStatus !== 'sent'
+                      ? `Quote request saved. WhatsApp: ${waStatus.replace(/_/g, ' ')}.`
+                      : `Quote request sent directly to ${tenant.name} CRM!`
+                  );
                 } catch (err) {
                   onNotify(err instanceof Error ? err.message : 'Unable to send quote request.');
                 } finally {
@@ -1603,9 +1680,18 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
               className="space-y-3 text-xs"
             >
               <input type="text" required value={quoteName} onChange={(e) => setQuoteName(e.target.value)} placeholder="Your Name" className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white" />
-              <input type="tel" required value={quotePhone} onChange={(e) => setQuotePhone(e.target.value)} placeholder="Phone / WhatsApp Number" className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white" />
+              <input type="tel" required value={quotePhone} onChange={(e) => setQuotePhone(e.target.value)} placeholder="WhatsApp Number (+91 98765 43210)" className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white" />
               <input type="email" value={quoteEmail} onChange={(e) => setQuoteEmail(e.target.value)} placeholder="Email (optional)" className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white" />
               <textarea rows={3} required value={quoteReq} onChange={(e) => setQuoteReq(e.target.value)} placeholder="Describe items, bulk quantity, delivery city, or custom requirements..." className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white" />
+              <label className="flex items-start gap-2 text-[11px] text-[#9A9AAE] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={quoteWhatsappOptIn}
+                  onChange={(e) => setQuoteWhatsappOptIn(e.target.checked)}
+                  className="accent-[#D4AF37] mt-0.5"
+                />
+                <span>I explicitly agree to receive a WhatsApp reply about this enquiry from {tenant.name}.</span>
+              </label>
               <button type="submit" disabled={quoteBusy} className="w-full py-2.5 rounded bg-gold-gradient text-[#08080A] font-semibold">
                 {quoteBusy ? 'Sending Quote Request...' : 'Submit Quote Request'}
               </button>
@@ -1644,6 +1730,10 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                         <img
                           src={activeUrl}
                           alt={selectedProduct.name}
+                          width={1200}
+                          height={900}
+                          loading="lazy"
+                          decoding="async"
                           referrerPolicy="no-referrer"
                           className="w-full h-full object-cover"
                         />
@@ -1659,7 +1749,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                                 selectedProductImgIdx === i ? 'border-[#D4AF37]' : 'border-[#252534]'
                               }`}
                             >
-                              <img src={img} alt={`${selectedProduct.name} view ${i + 1}`} className="w-full h-full object-cover" />
+                              <img src={img} alt={`${selectedProduct.name} view ${i + 1}`} width={56} height={56} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                             </button>
                           ))}
                         </div>
@@ -1779,6 +1869,10 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                       <img
                         src={rel.imageUrl || tenant.bannerImage || getCategoryFallbackBanner(tenant.category)}
                         alt={rel.name}
+                        width={1200}
+                        height={900}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full aspect-[4/3] rounded object-cover mb-1.5"
                       />
                       <p className="text-[11px] font-semibold text-white truncate">{rel.name}</p>
@@ -2439,6 +2533,10 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
               <img
                 src={visibleGallery[lightboxIndex].url}
                 alt={visibleGallery[lightboxIndex].title || tenant.name}
+                width={1200}
+                height={900}
+                loading="lazy"
+                decoding="async"
                 className="max-h-[75vh] max-w-full rounded-xl object-contain border border-white/15"
               />
               {visibleGallery.length > 1 && (

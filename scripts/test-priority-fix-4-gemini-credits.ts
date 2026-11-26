@@ -98,7 +98,8 @@ class MockD1 {
         website_id TEXT,
         plan_code TEXT,
         plan_id TEXT,
-        status TEXT DEFAULT 'active'
+        status TEXT DEFAULT 'active',
+        current_period_end TEXT DEFAULT (datetime('now', '+30 days'))
       );
 
       CREATE TABLE IF NOT EXISTS store_products (
@@ -124,6 +125,13 @@ class MockD1 {
         user_id TEXT,
         role TEXT DEFAULT 'business_owner',
         status TEXT DEFAULT 'active'
+      );
+
+      CREATE TABLE IF NOT EXISTS api_rate_limits (
+        rate_key TEXT PRIMARY KEY,
+        window_start INTEGER NOT NULL,
+        hit_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       );
 
       INSERT INTO subscription_plans (id, code, name, monthly_ai_credits) VALUES
@@ -205,6 +213,8 @@ async function runPriorityFix4Tests() {
   const mockD1 = new MockD1();
   const mockEnv: any = {
     DB: mockD1,
+    SUPABASE_URL: 'https://supabase.invalid',
+    SUPABASE_ANON_KEY: 'anon-local-test-key',
     GEMINI_API_KEY: 'mock_test_gemini_key_12345',
     GEMINI_MODEL: 'gemini-1.5-flash',
     AI_PROVIDER: 'gemini',
@@ -217,10 +227,10 @@ async function runPriorityFix4Tests() {
       (1, 'site_tenant_a', 'user_owner_a', 'tenant-a-store', 'Tenant A Enterprises', '{"planTier":"business-website","category":"Electronics"}', 'published'),
       (2, 'site_tenant_b', 'user_owner_b', 'tenant-b-boutique', 'Tenant B Silks', '{"planTier":"ecommerce-website","category":"Fashion"}', 'published');
 
-    INSERT INTO tenant_subscriptions (website_id, plan_code, status)
+    INSERT INTO tenant_subscriptions (website_id, plan_code, status, current_period_end)
     VALUES
-      ('site_tenant_a', 'business-website', 'active'),
-      ('site_tenant_b', 'ecommerce-website', 'active');
+      ('site_tenant_a', 'business-website', 'active', datetime('now', '+30 days')),
+      ('site_tenant_b', 'ecommerce-website', 'active', datetime('now', '+30 days'));
 
     INSERT INTO tenant_memberships (website_id, user_id, role, status)
     VALUES
@@ -494,15 +504,60 @@ async function runPriorityFix4Tests() {
     assert.strictEqual(res.status, 401, 'Unauthenticated request must return 401');
   });
 
-  await it('GET /api/ai/diagnostic reports model availability safely without leaking keys', async () => {
-    const diagReq = new Request('http://localhost/api/ai/diagnostic', { method: 'GET' });
-    const res = await diagnosticGet({ request: diagReq, env: mockEnv } as any);
-    assert.strictEqual(res.status, 200);
-    const body: any = await res.json();
-    assert.strictEqual(body.hasGeminiKey, true);
-    assert.strictEqual(body.provider, 'gemini');
-    assert.strictEqual(body.configuredCandidateModel, 'gemini-1.5-flash');
-    assert(!JSON.stringify(body).includes('mock_test_gemini_key_12345'), 'Must NEVER leak key in diagnostic payload');
+  await it('GET /api/ai/diagnostic requires staff and reports safely without leaking keys', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      const headers = new Headers(init?.headers || {});
+      const jsonHeaders = { 'Content-Type': 'application/json' };
+      if (url.includes('/auth/v1/user')) {
+        const token = (headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+        if (token !== 'token-staff') return new Response('{}', { status: 401, headers: jsonHeaders });
+        return new Response(JSON.stringify({ id: 'auth-staff', email: 'staff@example.invalid' }), {
+          status: 200,
+          headers: jsonHeaders,
+        });
+      }
+      if (url.includes('/rest/v1/profiles')) {
+        return new Response(JSON.stringify([{ id: 'auth-staff', role: 'platform_staff', full_name: 'Staff' }]), {
+          status: 200,
+          headers: jsonHeaders,
+        });
+      }
+      if (url.includes('generativelanguage.googleapis.com')) {
+        return new Response(
+          JSON.stringify({
+            models: [{ name: 'models/gemini-1.5-flash', supportedGenerationMethods: ['generateContent'] }],
+            candidates: [{ content: { parts: [{ text: 'OK' }] } }],
+          }),
+          { status: 200, headers: jsonHeaders }
+        );
+      }
+      return new Response(JSON.stringify({ error: `Unexpected mocked URL: ${url}` }), {
+        status: 500,
+        headers: jsonHeaders,
+      });
+    }) as typeof fetch;
+
+    try {
+      const anonymous = new Request('http://localhost/api/ai/diagnostic', { method: 'GET' });
+      const anonymousRes = await diagnosticGet({ request: anonymous, env: mockEnv } as any);
+      assert.strictEqual(anonymousRes.status, 401, 'Unauthenticated diagnostic must be rejected');
+
+      const staffReq = new Request('http://localhost/api/ai/diagnostic', {
+        method: 'GET',
+        headers: { Authorization: 'Bearer token-staff' },
+      });
+      const res = await diagnosticGet({ request: staffReq, env: mockEnv } as any);
+      assert.strictEqual(res.status, 200);
+      const body: any = await res.json();
+      assert.strictEqual(body.hasGeminiKey, true);
+      assert.strictEqual(body.provider, 'gemini');
+      assert.strictEqual(body.configuredCandidateModel, 'gemini-1.5-flash');
+      assert(!JSON.stringify(body).includes('mock_test_gemini_key_12345'), 'Must NEVER leak key in diagnostic payload');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   console.log('\n====================================================================');

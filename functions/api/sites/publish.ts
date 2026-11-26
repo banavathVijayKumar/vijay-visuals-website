@@ -1,7 +1,8 @@
-import { CloudflareEnv, handleOptions, jsonResponse } from '../_shared';
+import { CloudflareEnv, handleOptions, jsonResponse, parseJsonBody } from '../_shared';
 import { requireUser } from '../_auth';
 import {
   checkTenantSubscriptionEntitlement,
+  customerApprovalBlockedResponse,
   provisionLifetimeEntitlement,
 } from '../_tenantAccess';
 import { FREE_START_PLAN_CODE, FREE_START_TIER } from '../_planTiers';
@@ -13,9 +14,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
   if (!auth.ok) return auth.response;
   const user = auth.user;
 
-  let body: any;
-  try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid JSON request.' }, 400); }
-  const slug = String(body?.slug || '').toLowerCase().trim();
+  const body = await parseJsonBody<Record<string, any>>(request);
+  if (!body) return jsonResponse({ error: 'Invalid or oversized JSON request.' }, 400);
+  const slug = String(body.slug || '').toLowerCase().trim();
   const businessName = String(body?.businessName || '').trim();
   const website = body?.website;
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length < 2 || slug.length > 70) {
@@ -37,11 +38,22 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
       website_json: string;
     }>();
     const now = new Date().toISOString();
-    if (existing && existing.owner_id !== user.id && !user.isSuperAdmin) {
+    if (
+      existing &&
+      existing.owner_id !== user.id &&
+      existing.owner_id !== user.authSubject &&
+      !user.isSuperAdmin
+    ) {
       return jsonResponse({ error: 'This website URL is already in use. Change the business name and try again.' }, 409);
     }
 
+    // Use the persisted owner consistently for entitlement, provisioning and
+    // mutation. Legacy rows may be keyed by authSubject rather than user.id.
+    const effectiveOwnerId = existing?.owner_id || user.id;
     const websiteId = existing?.website_id || crypto.randomUUID();
+
+    const approvalBlocked = await customerApprovalBlockedResponse(env, websiteId);
+    if (approvalBlocked) return approvalBlocked;
 
     // Authorization comes from the persisted plan identity, never a bare
     // client-supplied freeStart boolean.
@@ -51,9 +63,12 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
     const entitlement = await checkTenantSubscriptionEntitlement(
       env,
       websiteId,
-      user.id,
+      effectiveOwnerId,
       user.isSuperAdmin
     );
+    const effectiveMaxWebsites = entitlement.hasActiveSubscription
+      ? Math.max(1, Math.floor(Number(entitlement.maxWebsites) || 1))
+      : 1;
     const hasPaidEntitlement = entitlement.hasActiveSubscription && !entitlement.isFreeStart;
 
     // A paid/live site must never be silently downgraded to Free Start.
@@ -85,9 +100,9 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
       await env.DB!.prepare(
         `INSERT INTO customer_website_publications
           (website_id, owner_id, public_slug, business_name, website_json, status, published_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'draft', '', ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, 'unpublished', '', ?, ?, ?)`
       )
-        .bind(websiteId, user.id, slug, businessName, serialized, now, now, now)
+        .bind(websiteId, effectiveOwnerId, slug, businessName, serialized, now, now, now)
         .run();
       createdDraft = true;
     }
@@ -95,7 +110,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
     if (isFreeStartRequested && !entitlement.hasActiveSubscription) {
       const provision = await provisionLifetimeEntitlement(env, {
         websiteId,
-        ownerId: user.id,
+        ownerId: effectiveOwnerId,
         planCode: FREE_START_PLAN_CODE,
         entitlementType: 'free_start',
         source: 'free_start_publish',
@@ -104,24 +119,66 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: C
       if (!provision.ok && provision.error) return provision.error;
     }
 
+    let publishChanges = 0;
     if (existing || createdDraft) {
-      await env.DB!.prepare(`UPDATE customer_website_publications
+      const updateRes = await env.DB!.prepare(`UPDATE customer_website_publications
         SET business_name = ?, website_json = ?, status = 'published', published_at = ?, updated_at = ?
-        WHERE public_slug = ? AND owner_id = ?`)
-        .bind(businessName, serialized, now, now, slug, user.id).run();
+        WHERE public_slug = ? AND owner_id = ?
+          AND (status = 'published' OR (
+            SELECT COUNT(DISTINCT website_id) FROM customer_website_publications
+            WHERE owner_id = ? AND status = 'published' AND website_id <> ?
+          ) < ?)`)
+        .bind(
+          businessName,
+          serialized,
+          now,
+          now,
+          slug,
+          effectiveOwnerId,
+          effectiveOwnerId,
+          websiteId,
+          effectiveMaxWebsites
+        )
+        .run();
+      publishChanges = Number(updateRes?.meta?.changes || 0);
     } else {
-      await env.DB!.prepare(`INSERT INTO customer_website_publications
+      const insertRes = await env.DB!.prepare(`INSERT INTO customer_website_publications
         (website_id, owner_id, public_slug, business_name, website_json, status, published_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'published', ?, ?, ?)`)
-        .bind(websiteId, user.id, slug, businessName, serialized, now, now, now).run();
+        SELECT ?, ?, ?, ?, ?, 'published', ?, ?, ?
+        WHERE (
+          SELECT COUNT(DISTINCT website_id) FROM customer_website_publications
+          WHERE owner_id = ? AND status = 'published'
+        ) < ?`)
+        .bind(
+          websiteId,
+          effectiveOwnerId,
+          slug,
+          businessName,
+          serialized,
+          now,
+          now,
+          now,
+          effectiveOwnerId,
+          effectiveMaxWebsites
+        )
+        .run();
+      publishChanges = Number(insertRes?.meta?.changes || 0);
+    }
+    if (publishChanges < 1) {
+      return jsonResponse(
+        { error: 'Your current package has reached its live website limit.', code: 'WEBSITE_LIMIT_REACHED' },
+        409
+      );
     }
     return jsonResponse({
       success: true,
       slug,
       url: `/site/${slug}`,
-      deliverySubdomain: `${slug}.vijayvisuals.in`,
-      deliveryUrl: `https://${slug}.vijayvisuals.in`,
-      previewDeliveryUrl: `https://${slug}.vijay-visuals-site.pages.dev`,
+      // Wildcard DNS/TLS is not configured or verified in this repository.
+      // Only the platform-host path is a confirmed delivery URL.
+      deliverySubdomainStatus: 'requires_wildcard_dns_tls',
+      deliveryUrl: null,
+      previewDeliveryUrl: null,
       publishedAt: now,
     });
   } catch (error) {

@@ -187,61 +187,100 @@ export async function requireUser(request: Request, env: CloudflareEnv): Promise
   let staffPermissions: string[] = [];
 
   if (env.DB) {
-    try {
-      const existing = await env.DB.prepare(
-        'SELECT id, role, status, full_name FROM vv_users WHERE auth_subject = ? OR id = ? LIMIT 1'
-      )
-        .bind(supaUser.id, supaUser.id)
-        .first<{ id: string; role: string; status: string; full_name: string }>();
+    const normalizedEmail = (supaUser.email || '').trim().toLowerCase();
+    let existing: {
+      id: string;
+      auth_subject: string;
+      role: string;
+      status: string;
+      full_name: string;
+    } | null = null;
 
-      if (existing) {
-        userId = existing.id;
-        if (existing.status === 'suspended') {
-          status = 'suspended';
-        }
-        if (!fullName && existing.full_name) fullName = existing.full_name;
+    // The suspension read is security-critical: a transient ledger failure must
+    // never downgrade a suspended account to active.
+    try {
+      existing = await env.DB.prepare(
+        `SELECT id, auth_subject, role, status, full_name FROM vv_users
+         WHERE auth_subject = ? OR id = ? OR (? <> '' AND LOWER(email) = LOWER(?))
+         ORDER BY CASE WHEN auth_subject = ? THEN 0 WHEN id = ? THEN 1 ELSE 2 END
+         LIMIT 1`
+      )
+        .bind(supaUser.id, supaUser.id, normalizedEmail, normalizedEmail, supaUser.id, supaUser.id)
+        .first<{
+          id: string;
+          auth_subject: string;
+          role: string;
+          status: string;
+          full_name: string;
+        }>();
+    } catch (err) {
+      console.error('Failed to read vv_users during authentication:', err);
+      return {
+        ok: false,
+        response: errorJson('Account verification is temporarily unavailable.', 503),
+      };
+    }
+
+    if (existing) {
+      userId = existing.id;
+      if (existing.status === 'suspended') {
+        status = 'suspended';
+      }
+      if (!fullName && existing.full_name) fullName = existing.full_name;
+      // OTP registration creates the D1 row before Supabase issues a UID. Link
+      // that row to the real identity so roles and suspensions cannot diverge.
+      const linkedSubject =
+        existing.auth_subject && existing.auth_subject !== supaUser.id && existing.id !== supaUser.id
+          ? supaUser.id
+          : existing.auth_subject || supaUser.id;
+      try {
         await env.DB.prepare(
-          `UPDATE vv_users SET email = ?, full_name = ?, role = ?, updated_at = datetime('now') WHERE id = ?`
+          `UPDATE vv_users SET email = ?, full_name = ?, role = ?, auth_subject = ?, updated_at = datetime('now') WHERE id = ?`
         )
-          .bind(supaUser.email || '', fullName, vvRole, userId)
+          .bind(supaUser.email || '', fullName, vvRole, linkedSubject, userId)
           .run();
-      } else {
+      } catch (err) {
+        // Role sync is non-fatal; the verified Supabase role still applies.
+        console.error('Failed to sync vv_users role during authentication:', err);
+      }
+    } else {
+      try {
         await env.DB.prepare(
           `INSERT INTO vv_users (id, auth_provider, auth_subject, email, full_name, role, status, created_at, updated_at)
            VALUES (?, 'supabase', ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))`
         )
           .bind(supaUser.id, supaUser.id, supaUser.email || '', fullName, vvRole)
           .run();
+      } catch (err) {
+        console.error('Failed to create vv_users record during authentication:', err);
       }
+    }
 
-      // Check additive `platform_staff` table for Vijay Visuals Support/Operations Staff role
-      try {
-        const staffRow = await env.DB.prepare(
-          'SELECT staff_role, permissions_json, is_active FROM platform_staff WHERE user_id = ? AND is_active = 1 LIMIT 1'
-        )
-          .bind(userId)
-          .first<{ staff_role: string; permissions_json: string; is_active: number }>();
-        if (staffRow && staffRow.is_active === 1) {
-          isPlatformStaff = true;
-          try {
-            const parsed = JSON.parse(staffRow.permissions_json || '[]');
-            if (Array.isArray(parsed)) staffPermissions = parsed.map(String);
-          } catch {
-            staffPermissions = [];
-          }
+    // Check additive `platform_staff` table for Vijay Visuals Support/Operations Staff role
+    try {
+      const staffRow = await env.DB.prepare(
+        'SELECT staff_role, permissions_json, is_active FROM platform_staff WHERE user_id = ? AND is_active = 1 LIMIT 1'
+      )
+        .bind(userId)
+        .first<{ staff_role: string; permissions_json: string; is_active: number }>();
+      if (staffRow && staffRow.is_active === 1) {
+        isPlatformStaff = true;
+        try {
+          const parsed = JSON.parse(staffRow.permissions_json || '[]');
+          if (Array.isArray(parsed)) staffPermissions = parsed.map(String);
+        } catch {
+          staffPermissions = [];
         }
-      } catch {
-        // Additive migration 0003 may not be applied yet; continue cleanly
       }
     } catch {
-      // Preserve auth even if vv_users sync encounters transient issue
+      // Additive migration 0003 may not be applied yet; continue cleanly
     }
   }
 
   if (status === 'suspended') {
     return {
       ok: false,
-      response: errorJson('Your account has been suspended. Please contact Vijay Visuals support.', 403),
+      response: errorJson('Your account has been suspended. Please contact platform support.', 403),
     };
   }
 
@@ -359,7 +398,7 @@ export async function requireWebsiteAccess(
       `SELECT role, status FROM tenant_memberships
        WHERE website_id = ? AND (user_id = ? OR user_id = ?) AND status = 'active' LIMIT 1`
     )
-      .bind(websiteId, user.id, user.authSubject)
+      .bind(website.website_id, user.id, user.authSubject)
       .first<{ role: TenantRole; status: string }>();
 
     if (membership && allowedTenantRoles.includes(membership.role)) {

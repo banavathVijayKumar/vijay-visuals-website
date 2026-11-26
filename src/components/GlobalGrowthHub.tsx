@@ -237,8 +237,8 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
         {
           id: 'schema',
           label: 'JSON-LD Schema (Organization / LocalBusiness / Product)',
-          status: 'pass',
-          detail: 'Structured JSON-LD schema is enabled automatically on Vijay Visuals storefronts.',
+          status: 'warn',
+          detail: 'Confirm schema manually in your page source or Google Search Console; this checker does not crawl live URLs.',
         },
         {
           id: 'multilingual',
@@ -345,7 +345,7 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
             {(
               [
                 { id: 'templates', label: 'Public Template Gallery', icon: Layers },
-                { id: 'seo_audit', label: 'Free Technical SEO Audit', icon: SearchCheck },
+                { id: 'seo_audit', label: 'Manual SEO Metadata Checker', icon: SearchCheck },
                 { id: 'blog', label: 'Guides & SEO Blog', icon: BookOpen },
                 { id: 'referral', label: 'Referral & Affiliate Program', icon: Share2 },
               ] as const
@@ -441,7 +441,7 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
             </div>
           )}
 
-          {/* TAB 2: FREE TECHNICAL SEO AUDIT TOOL */}
+          {/* TAB 2: MANUAL SEO METADATA CHECKER */}
           {activeTab === 'seo_audit' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <form
@@ -450,11 +450,10 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
               >
                 <div>
                   <h3 className="font-luxury text-lg font-semibold text-white">
-                    Free Website Technical SEO &amp; Crawlability Checker
+                    Manual Website SEO &amp; Crawlability Checker
                   </h3>
                   <p className="text-[#9E9EB2] mt-1">
-                    Inspect title length, meta description, HTTPS canonical hygiene, image alt accessibility, JSON-LD
-                    schema, and multilingual hreflang coverage.
+                    Enter values from your own page source to review title length, meta description, HTTPS canonical hygiene, image alt coverage and language readiness. This is a manual checker, not a live site crawl.
                   </p>
                 </div>
 
@@ -536,7 +535,7 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
                   disabled={auditBusy}
                   className="w-full py-2.5 rounded-md bg-gold-gradient text-[#08080A] font-semibold"
                 >
-                  {auditBusy ? 'Running Technical SEO Audit...' : 'Run Free Technical SEO Audit'}
+                  {auditBusy ? 'Running Manual Metadata Check...' : 'Run Manual Metadata Check'}
                 </button>
               </form>
 
@@ -545,7 +544,7 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
                   <>
                     <div className="flex items-center justify-between border-b border-[#1E1E2B] pb-4">
                       <div>
-                        <p className="text-[#9E9EB2]">Technical SEO Readiness Score</p>
+                        <p className="text-[#9E9EB2]">Manual Metadata Readiness Score</p>
                         <p className="font-mono-tabular text-3xl font-bold text-[#ECC86A] mt-0.5">
                           {auditResult.technicalReadinessScore} / 100
                         </p>
@@ -591,10 +590,9 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
                 ) : (
                   <div className="py-10 text-center space-y-3">
                     <Globe className="w-8 h-8 text-[#D4AF37] mx-auto" />
-                    <p className="text-sm font-semibold text-white">Ready to Inspect Your Storefront SEO Hygiene</p>
+                    <p className="text-sm font-semibold text-white">Ready to Review Your Metadata Hygiene</p>
                     <p className="text-[#9E9EB2] max-w-md mx-auto leading-relaxed">
-                      Submit your title, description, and HTTPS URL to verify Google Search crawlability, JSON-LD
-                      structured data, and 12-language hreflang compliance.
+                      Enter your title, description, HTTPS URL and image/language counts to review common metadata signals. Confirm live crawlability and structured data separately in Google Search Console.
                     </p>
                   </div>
                 )}

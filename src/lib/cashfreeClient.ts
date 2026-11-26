@@ -150,8 +150,16 @@ export async function initiateCashfreePlatformCheckout(
   });
 
   if (checkoutResult?.error) {
-    const err = new Error(checkoutResult.error.message || 'Payment cancelled or dismissed.');
-    options.onDismiss?.();
+    const isDismiss =
+      checkoutResult.error.code === 'USER_DROPPED' ||
+      checkoutResult.error.message?.toLowerCase().includes('dismiss') ||
+      checkoutResult.error.message?.toLowerCase().includes('close');
+    if (isDismiss) {
+      options.onDismiss?.();
+    } else {
+      const err = new Error(checkoutResult.error.message || 'Payment was cancelled or unsuccessful.');
+      options.onError?.(err);
+    }
     return;
   }
 

@@ -10,7 +10,11 @@ import {
   parseJsonBody,
   writeAuditLog,
 } from '../../../_shared';
-import { checkTenantSubscriptionEntitlement, requireTenantOwnerAccess } from '../../../_tenantAccess';
+import {
+  checkTenantSubscriptionEntitlement,
+  customerApprovalBlockedResponse,
+  requireTenantOwnerAccess,
+} from '../../../_tenantAccess';
 import { mapPublicationToTenant } from '../../../_tenantMapper';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -33,13 +37,18 @@ export async function onRequestPatch(
   }
 
   // Server-side entitlement verification before allowing website to be published live
+  let maxWebsites = 1;
   if (body.published) {
+    const approvalBlocked = await customerApprovalBlockedResponse(env, access.row.website_id);
+    if (approvalBlocked) return approvalBlocked;
+
     const entitlement = await checkTenantSubscriptionEntitlement(
       env,
       access.row.website_id,
       auth.user.id,
       auth.user.isSuperAdmin
     );
+    maxWebsites = Math.max(1, Math.floor(Number(entitlement.maxWebsites) || 1));
 
     if (!entitlement.canPublish) {
       return jsonResponse(
@@ -56,13 +65,32 @@ export async function onRequestPatch(
   const nextStatus = body.published ? 'published' : 'unpublished';
   const nowIso = new Date().toISOString();
 
-  await env.DB!.prepare(
+  const publishRes = await env.DB!.prepare(
     `UPDATE customer_website_publications
      SET status = ?, published_at = CASE WHEN ? = 'published' THEN ? ELSE published_at END, updated_at = ?
-     WHERE website_id = ?`
+     WHERE website_id = ?
+       AND (status <> 'published' OR (
+         SELECT COUNT(DISTINCT website_id) FROM customer_website_publications
+         WHERE owner_id = ? AND status = 'published' AND website_id <> ?
+       ) < ?)`
   )
-    .bind(nextStatus, nextStatus, nowIso, nowIso, access.row.website_id)
+    .bind(
+      nextStatus,
+      nextStatus,
+      nowIso,
+      nowIso,
+      access.row.website_id,
+      access.row.owner_id,
+      access.row.website_id,
+      body.published ? maxWebsites : 0
+    )
     .run();
+  if (body.published && Number(publishRes?.meta?.changes || 0) < 1) {
+    return jsonResponse(
+      { error: 'Your current package has reached its live website limit.', code: 'WEBSITE_LIMIT_REACHED' },
+      409
+    );
+  }
 
   await writeAuditLog(env, {
     actorId: auth.user.id,

@@ -1,8 +1,12 @@
 // ============================================================================
 // Storefront metadata helper — removes platform OG/Twitter attribution from
 // /site/{slug} storefronts and applies tenant-owned metadata instead.
-// Pure DOM mutations so the behavior can be tested without a React renderer.
+// Canonical/robots/JSON-LD rules are imported from the shared SEO module used
+// by the edge, so hydrated DOM cannot disagree with server-rendered HTML.
+// Pure DOM mutations keep this testable without a React renderer.
 // ============================================================================
+
+import { buildTenantStructuredData, normalizeTenantRobots } from '../../shared/seo';
 
 export interface StorefrontMetadataProduct {
   name: string;
@@ -41,6 +45,11 @@ interface MetaChange {
   previousParent: Node | null;
 }
 
+interface LinkChange {
+  element: HTMLLinkElement;
+  previousParent: Node | null;
+}
+
 export function applyStorefrontMetadata(
   doc: Document,
   input: StorefrontMetadataInput
@@ -48,12 +57,14 @@ export function applyStorefrontMetadata(
   const metaChanges = new Map<string, MetaChange>();
   const createdNodes: Element[] = [];
   const removedScripts: HTMLScriptElement[] = [];
+  const removedAlternates: LinkChange[] = [];
 
   const computeTitle =
     input.seoTitle || `${input.name}${input.tagline || input.category ? ` — ${input.tagline || input.category}` : ''}`;
   const computeDescription = input.seoDescription || input.description || input.tagline || '';
   const canonical = input.canonicalUrl;
   const tenantImage = input.bannerImage || '';
+  const robots = normalizeTenantRobots(input.robotsDirectives);
 
   const setMeta = (attribute: 'name' | 'property', key: string, value?: string | null): void => {
     const changeKey = `${attribute}:${key}`;
@@ -94,11 +105,13 @@ export function applyStorefrontMetadata(
   const previousTitle = doc.title;
   doc.title = computeTitle;
 
+  setMeta('name', 'vv-tenant-metadata', 'client-hydrated');
   setMeta('name', 'description', computeDescription);
-  setMeta('name', 'robots', input.robotsDirectives || 'index, follow');
+  setMeta('name', 'robots', robots);
   setMeta('name', 'application-name', input.name);
   setMeta('name', 'apple-mobile-web-app-title', input.name);
   setMeta('name', 'theme-color', input.primaryColor);
+  // An empty tenant token must remove the platform token, not fall back to it.
   setMeta('name', 'google-site-verification', input.googleSiteVerification);
 
   // Overwrite every platform-owned social tag; remove values the tenant does not own.
@@ -118,6 +131,12 @@ export function applyStorefrontMetadata(
   setMeta('name', 'twitter:image:alt', tenantImage ? input.name : '');
   setMeta('name', 'twitter:site', '');
 
+  for (const link of Array.from(doc.querySelectorAll<HTMLLinkElement>('link[rel="alternate"][hreflang]'))) {
+    const previousParent = link.parentNode;
+    link.remove();
+    removedAlternates.push({ element: link, previousParent });
+  }
+
   let canonicalElement = doc.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   const previousCanonical = canonicalElement?.getAttribute('href') || '';
   if (!canonicalElement) {
@@ -134,54 +153,26 @@ export function applyStorefrontMetadata(
     removedScripts.push(script);
   }
 
-  // Tenant SEO settings are plain strings. A relative/malformed canonical must
-  // never throw inside the effect and blank the storefront.
-  let canonicalOrigin = '';
-  try {
-    canonicalOrigin = new URL(canonical).origin;
-  } catch {
-    canonicalOrigin = '';
-  }
-
-  const jsonLdGraph: Array<Record<string, unknown>> = [
-    {
-      '@type': input.localBusinessType || 'LocalBusiness',
-      name: input.name,
-      description: computeDescription,
-      url: canonical,
-      telephone: input.phone,
-      address: {
-        '@type': 'PostalAddress',
-        streetAddress: input.address,
-        addressCountry: 'IN',
-      },
-      ...(input.googleMapsUrl ? { hasMap: input.googleMapsUrl } : {}),
-    },
-    {
-      '@type': 'BreadcrumbList',
-      itemListElement: [
-        { '@type': 'ListItem', position: 1, name: input.name, item: canonicalOrigin || canonical },
-        { '@type': 'ListItem', position: 2, name: input.name, item: canonical },
-      ],
-    },
-    ...input.products.slice(0, 12).map((product) => ({
-      '@type': 'Product',
-      name: product.name,
-      description: product.description,
-      image: product.imageUrl || tenantImage,
-      offers: {
-        '@type': 'Offer',
-        priceCurrency: input.currency || 'INR',
-        price: product.price,
-        availability: Number(product.stock) > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-      },
+  const structuredData = buildTenantStructuredData({
+    name: input.name,
+    description: computeDescription,
+    phone: input.phone,
+    address: input.address,
+    addressCountry: 'IN',
+    canonicalUrl: canonical,
+    localBusinessType: input.localBusinessType,
+    googleMapsUrl: input.googleMapsUrl,
+    currency: input.currency,
+    products: input.products.map((product) => ({
+      ...product,
+      imageUrl: product.imageUrl || tenantImage,
     })),
-  ];
+  });
 
   const tenantScript = doc.createElement('script');
   tenantScript.id = 'vv-storefront-jsonld';
   tenantScript.type = 'application/ld+json';
-  tenantScript.textContent = JSON.stringify({ '@context': 'https://schema.org', '@graph': jsonLdGraph });
+  tenantScript.textContent = structuredData;
   doc.head.appendChild(tenantScript);
   createdNodes.push(tenantScript);
 
@@ -199,6 +190,9 @@ export function applyStorefrontMetadata(
       } else {
         change.element.removeAttribute('content');
       }
+    }
+    for (const link of removedAlternates) {
+      link.previousParent?.appendChild(link.element);
     }
     if (canonicalElement) {
       if (previousCanonical) canonicalElement.setAttribute('href', previousCanonical);

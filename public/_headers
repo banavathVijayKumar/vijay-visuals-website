@@ -1,4 +1,5 @@
 /*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://sdk.cashfree.com https://maps.googleapis.com https://maps.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://sdk.cashfree.com https://api.cashfree.com https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com; worker-src 'self' blob:; frame-src 'self' https://sdk.cashfree.com https://maps.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; upgrade-insecure-requests
   X-Frame-Options: SAMEORIGIN
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
@@ -7,3 +8,36 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+# Root images are not content-hashed, so keep a bounded cache with revalidation.
+/founder_hero_portrait.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/founder_hero_portrait.jpg
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/official_logo_circle.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/official_logo.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/logo.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/logo.jpg
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/logo.svg
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/logo-icon.svg
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/icon.svg
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/favicon.svg
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/cinematic_operator.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/cinematic_camera_gear.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/pwa-192x192.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/pwa-512x512.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/pwa-maskable-512x512.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/apple-touch-icon.png
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800

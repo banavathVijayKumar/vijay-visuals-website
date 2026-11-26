@@ -5,7 +5,7 @@
 
 import {
   PagesContext,
-  checkRateLimit,
+  checkRateLimit,  rateLimitResponse,
   getClientIp,
   handleOptions,
   jsonResponse,
@@ -27,9 +27,7 @@ export async function onRequestPost(
   }
 
   const rl = await checkRateLimit(env, `appt:${getClientIp(request)}:${params.slug}`, 10, 600);
-  if (!rl.allowed) {
-    return jsonResponse({ error: 'Too many booking requests. Please wait a few minutes.' }, 429);
-  }
+  if (!rl.allowed) return rateLimitResponse(rl, 'Too many booking requests. Please wait a few minutes.')
 
   const pub = await findPublicationByIdentifier(env, params.slug);
   if (!pub || pub.status !== 'published') {

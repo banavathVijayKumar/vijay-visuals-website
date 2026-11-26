@@ -283,7 +283,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             email: cleanEmail,
             fullName: fullName.trim(),
             phone: phone.trim(),
-            requestedRole: defaultRole === 'shop_owner' ? 'shop_owner' : 'customer',
             purpose: 'registration',
           }),
         });
@@ -296,7 +295,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         };
 
         if (!otpRes.ok || !otpData.ok) {
-          throw new Error(otpData.error || 'Failed to dispatch verification code. Please try again.');
+          setError(otpData.error || 'Failed to dispatch verification code. Please try again.');
+          return;
         }
 
         setMode('verify_otp');
@@ -321,6 +321,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             email: email.trim().toLowerCase(),
             otp: enteredOtp,
             purpose: 'registration',
+            password,
           }),
         });
 
@@ -331,47 +332,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         };
 
         if (!verifyRes.ok || !verifyData.ok) {
-          throw new Error(verifyData.error || 'Invalid verification code. Please check and try again.');
+          setError(verifyData.error || 'Invalid verification code. Please check and try again.');
+          return;
         }
 
-        // OTP verified! Attempt Supabase account creation/session establishment
+        // OTP verified and the Supabase identity was provisioned server-side
+        // with a confirmed email. Only a password sign-in is needed here; a
+        // browser signUp would send another confirmation/rate-limited email.
         const client = await initSupabaseClient();
-        let supabaseUserId = '';
-
-        if (client) {
-          try {
-            const { data: signUpData, error: signUpError } = await client.auth.signUp({
-              email: email.trim().toLowerCase(),
-              password,
-              options: {
-                data: {
-                  full_name: fullName.trim(),
-                  phone: phone.trim(),
-                  requested_role: defaultRole === 'shop_owner' ? 'shop_owner' : 'customer',
-                },
-              },
-            });
-
-            if (!signUpError && signUpData?.user?.id) {
-              supabaseUserId = signUpData.user.id;
-            } else {
-              // If already created, sign in
-              const { data: signInData } = await client.auth.signInWithPassword({
-                email: email.trim().toLowerCase(),
-                password,
-              });
-              if (signInData?.user?.id) {
-                supabaseUserId = signInData.user.id;
-              }
-            }
-          } catch {
-            // Non-fatal if Supabase client lacks direct access
-          }
+        if (!client) {
+          throw new Error('Account service is unavailable. Please try again later.');
         }
 
-        const role: UserRole = defaultRole === 'shop_owner' ? 'shop_owner' : 'customer';
+        const { error: signInError } = await client.auth.signInWithPassword({
+          email: email.trim().toLowerCase(),
+          password,
+        });
+        if (signInError) {
+          throw new Error('Your secure session could not be created. Please sign in again.');
+        }
+
+        const { data: sessionData } = await client.auth.getSession();
+        const activeSession = sessionData.session;
+        if (!activeSession?.user?.id) {
+          throw new Error('Your secure session could not be created. Please sign in again.');
+        }
+        const supabaseUserId = activeSession.user.id;
+
+        // Server-verified role only. A client-selected default is a preference,
+        // never a grant; privileged roles are assigned server-side after review.
+        const role: UserRole = verifyData.profile?.role === 'shop_owner' ? 'shop_owner' : 'customer';
         const profile: UserProfile = {
-          id: supabaseUserId || `usr_${Date.now()}`,
+          id: supabaseUserId,
           email: email.trim().toLowerCase(),
           full_name: fullName.trim() || 'Customer',
           phone: phone.trim(),
@@ -390,16 +382,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       // 5. Sign In
       const client = await initSupabaseClient();
       if (!client) {
-        // Fallback local signin if Supabase is offline
-        const localAuth = authService.login(email.trim().toLowerCase(), password, defaultRole);
-        if (localAuth.error) throw new Error(localAuth.error);
-        if (localAuth.user) {
-          onSuccess(localAuth.user);
-          onClose();
-          return;
-        }
-        setError('Sign in service unavailable. Please check credentials or contact support.');
-        return;
+        // Never accept an offline local identity: every authenticated customer
+        // endpoint requires a verified Supabase session.
+        throw new Error('Sign in service is unavailable. Please try again later.');
       }
 
       const { error: signInError } = await client.auth.signInWithPassword({

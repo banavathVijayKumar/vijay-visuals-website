@@ -1,16 +1,33 @@
 // ============================================================================
 // VIJAY VISUALS — CLOUDFLARE PAGES EDGE MULTI-TENANT HOSTNAME MIDDLEWARE
 // Handles custom customer domains, 301 canonical redirects, takeover defense,
-// and per-tenant SEO / OpenGraph / JSON-LD metadata injection at the edge.
+// unknown-route 404s, and per-tenant SEO / OpenGraph / JSON-LD injection.
+// All public SEO rules come from shared/seo.ts.
 // ============================================================================
 
-import {
-  CloudflareEnv,
-  PagesContext,
-  escapeHtml,
-  isPlatformHostname,
-} from './api/_shared';
+import { PagesContext, SECURITY_HEADERS, applyCorsHeaders, isPlatformHostname } from './api/_shared';
 import { parseTenantDeliveryHostname } from '../shared/tenantHost';
+import {
+  OFFICIAL_SITE_URL,
+  STOREFRONT_ROUTE_PREFIX,
+  buildNotFoundHtml,
+  buildTenantStructuredData,
+  escapeHtml,
+  getPlatformSeoMeta,
+  getStorefrontSlug,
+  getTenantRobotsDirective,
+  isIndexableRobotsDirective,
+  isKnownPlatformHtmlRoute,
+  isLegacyStorefrontRoute,
+  isStaticAssetPath,
+  normalizePathname,
+  parseTenantSeoSettings,
+  renderPlatformHeadInjection,
+  renderTenantHeadInjection,
+  replaceHeadMetadata,
+  resolveTenantCanonicalUrl,
+  setHtmlLangDir,
+} from '../shared/seo';
 
 interface ResolvedTenantRow {
   id: number;
@@ -26,17 +43,40 @@ interface ResolvedTenantRow {
   website_json: string;
 }
 
+interface TenantHeadMetadata {
+  title: string;
+  injection: string;
+}
+
 const BYPASS_PREFIXES = ['/api/', '/assets/', '/favicon', '/manifest', '/sw.js', '/workbox-'];
 const BYPASS_EXACT = new Set(['/robots.txt', '/sitemap.xml']);
+
+function parseJsonObject(raw: unknown): Record<string, unknown> {
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+    return {};
+  }
+  if (raw && typeof raw === 'object') return raw as Record<string, unknown>;
+  return {};
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
 
 function blockedDomainHtml(title: string, message: string, hostname: string): Response {
   const safeHost = escapeHtml(hostname);
   const html = `<!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="robots" content="noindex,nofollow" />
+  <meta name="robots" content="noindex, nofollow" />
   <title>${escapeHtml(title)}</title>
   <style>
     body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#08080A;color:#E8E8ED;font-family:system-ui,-apple-system,sans-serif;padding:24px;}
@@ -57,6 +97,7 @@ function blockedDomainHtml(title: string, message: string, hostname: string): Re
   return new Response(html, {
     status: 403,
     headers: {
+      ...SECURITY_HEADERS,
       'Content-Type': 'text/html; charset=utf-8',
       'X-Robots-Tag': 'noindex, nofollow',
       'Cache-Control': 'no-store',
@@ -64,91 +105,99 @@ function blockedDomainHtml(title: string, message: string, hostname: string): Re
   });
 }
 
-interface TenantHeadMetadata {
-  title: string;
-  injection: string;
+function notFoundHtmlResponse(message = 'The requested page does not exist.'): Response {
+  return new Response(buildNotFoundHtml('Page Not Found', message), {
+    status: 404,
+    headers: {
+      ...SECURITY_HEADERS,
+      'Content-Type': 'text/html; charset=utf-8',
+      'X-Robots-Tag': 'noindex, nofollow',
+      'Cache-Control': 'no-store',
+    },
+  });
 }
 
-function safeMediaUrl(value: unknown): string {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  if (/^https?:\/\//i.test(raw)) return raw;
-  if (raw.startsWith('/') && !raw.startsWith('//')) return raw;
-  return '';
-}
-
-function safeCssColor(value: unknown): string {
-  const raw = String(value || '').trim();
-  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : '';
+function tenantCopy(
+  row: ResolvedTenantRow,
+  settings: ReturnType<typeof parseTenantSeoSettings>,
+  parsed: Record<string, unknown>
+): { seoTitle: string; seoDescription: string } {
+  const tagline = text(parsed.tagline);
+  const description = text(parsed.description);
+  return {
+    seoTitle:
+      settings.seoTitle ||
+      (tagline ? `${row.business_name} — ${tagline}` : `${row.business_name} | Official Website`),
+    seoDescription:
+      settings.seoDescription ||
+      description.slice(0, 160) ||
+      `Browse products, services and contact details for ${row.business_name}.`,
+  };
 }
 
 /** Builds tenant-owned head tags. No platform credit appears in customer HTML. */
 export function buildTenantHeadInjection(
   row: ResolvedTenantRow,
-  canonicalUrl: string
+  canonicalUrl: string,
+  robotsDirective?: string
 ): TenantHeadMetadata {
-  let seoTitle = `${row.business_name} | Official Website`;
-  let seoDescription = `Browse products, services and contact details for ${row.business_name}.`;
-  let phone = '';
-  let address = '';
-  let logoUrl = '';
-  let themeColor = '';
+  const parsed = parseJsonObject(row.website_json);
+  const settings = parseTenantSeoSettings(row.website_json);
+  const copy = tenantCopy(row, settings, parsed);
+  const robots =
+    robotsDirective ||
+    getTenantRobotsDirective({
+      publicationStatus: row.website_status || row.status,
+      rawJson: row.website_json,
+      configuredRobots: settings.robotsDirectives,
+    });
 
-  try {
-    const parsed = JSON.parse(row.website_json || '{}') as Record<string, unknown>;
-    if (typeof parsed.seoTitle === 'string' && parsed.seoTitle.trim()) {
-      seoTitle = parsed.seoTitle.trim();
-    } else if (typeof parsed.tagline === 'string' && parsed.tagline.trim()) {
-      seoTitle = `${row.business_name} — ${parsed.tagline.trim()}`;
-    }
-    if (typeof parsed.seoDescription === 'string' && parsed.seoDescription.trim()) {
-      seoDescription = parsed.seoDescription.trim();
-    } else if (typeof parsed.description === 'string' && parsed.description.trim()) {
-      seoDescription = parsed.description.trim().slice(0, 160);
-    }
-    if (typeof parsed.phone === 'string') phone = parsed.phone.trim();
-    if (typeof parsed.address === 'string') address = parsed.address.trim();
-    logoUrl = safeMediaUrl(parsed.logoImage || parsed.logoUrl);
-    themeColor = safeCssColor(parsed.primaryColor || parsed.themeColor || parsed.brandColor);
-  } catch {
-    // Use safe defaults
-  }
+  const rawProducts = Array.isArray(parsed.products) ? parsed.products : [];
+  const products = rawProducts
+    .slice(0, 12)
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const product = item as Record<string, unknown>;
+      const name = text(product.name);
+      if (!name) return null;
+      return {
+        name,
+        description: text(product.description) || undefined,
+        imageUrl: text(product.imageUrl) || undefined,
+        price: Number(product.price) || 0,
+        stock: Number(product.stock) || 0,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-  const ldJson = JSON.stringify({
-    '@context': 'https://schema.org',
-    '@type': 'LocalBusiness',
+  const structuredData = buildTenantStructuredData({
     name: row.business_name,
-    url: canonicalUrl,
-    ...(phone ? { telephone: phone } : {}),
-    ...(address ? { address } : {}),
-  }).replace(/</g, '\\u003c');
+    description: copy.seoDescription,
+    phone: settings.phone || text(parsed.phone),
+    address: settings.address || text(parsed.address),
+    addressCountry: 'IN',
+    canonicalUrl,
+    localBusinessType: settings.localBusinessType,
+    googleMapsUrl: settings.googleMapsUrl,
+    currency: settings.currency,
+    products,
+  });
 
-  const tags = [
-    `<meta name="vv-tenant-slug" content="${escapeHtml(row.public_slug)}" />`,
-    `<meta name="application-name" content="${escapeHtml(row.business_name)}" />`,
-    `<meta name="apple-mobile-web-app-title" content="${escapeHtml(row.business_name)}" />`,
-    themeColor ? `<meta name="theme-color" content="${themeColor}" />` : '',
-    `<meta name="description" content="${escapeHtml(seoDescription)}" />`,
-    `<link rel="canonical" href="${escapeHtml(canonicalUrl)}" />`,
-    `<meta property="og:type" content="website" />`,
-    `<meta property="og:site_name" content="${escapeHtml(row.business_name)}" />`,
-    `<meta property="og:title" content="${escapeHtml(seoTitle)}" />`,
-    `<meta property="og:description" content="${escapeHtml(seoDescription)}" />`,
-    `<meta property="og:url" content="${escapeHtml(canonicalUrl)}" />`,
-    `<meta name="twitter:card" content="summary" />`,
-    `<meta name="twitter:title" content="${escapeHtml(seoTitle)}" />`,
-    `<meta name="twitter:description" content="${escapeHtml(seoDescription)}" />`,
-    logoUrl ? `<meta property="og:image" content="${escapeHtml(logoUrl)}" />` : '',
-    logoUrl ? `<link rel="icon" href="${escapeHtml(logoUrl)}" />` : '',
-    logoUrl ? `<link rel="apple-touch-icon" href="${escapeHtml(logoUrl)}" />` : '',
-    `<script type="application/ld+json">${ldJson}</script>`,
-  ];
-
-  return { title: seoTitle, injection: tags.filter(Boolean).join('\n') };
+  return renderTenantHeadInjection({
+    name: row.business_name,
+    seoTitle: copy.seoTitle,
+    seoDescription: copy.seoDescription,
+    canonicalUrl,
+    robots,
+    tenantSlug: row.public_slug,
+    logoUrl: settings.logoUrl,
+    googleSiteVerification: settings.googleSiteVerification,
+    structuredData,
+  });
 }
 
 /**
- * Removes the global platform SPA metadata before tenant tags are injected.
+ * Removes platform-owned SEO metadata before tenant tags are injected.
  * Appending tenant tags alone left duplicate titles and platform JSON-LD on
  * delivered customer domains.
  */
@@ -157,35 +206,61 @@ export function replacePlatformHeadMetadata(
   tenantTitle: string,
   tenantHeadInjection: string
 ): string {
-  const safeTitle = escapeHtml(tenantTitle);
-  let result = String(html || '').replace(/<title\b[^>]*>[\s\S]*?<\/title>/gi, `<title>${safeTitle}</title>`);
+  return replaceHeadMetadata(html, tenantTitle, tenantHeadInjection, true);
+}
 
-  result = result
-    .replace(
-      /<meta\b[^>]*\b(?:property|name)\s*=\s*["'](?:og:|twitter:|google-site-verification|description|robots|theme-color|mobile-web-app-capable|apple-mobile-web-app-capable|apple-mobile-web-app-status-bar-style|apple-mobile-web-app-title)[^"']*["'][^>]*>/gi,
-      ''
-    )
-    .replace(
-      /<link\b[^>]*\brel\s*=\s*["'](?:canonical|alternate|icon|shortcut icon|apple-touch-icon)["'][^>]*>/gi,
-      ''
-    )
-    .replace(
-      /<script\b[^>]*\btype\s*=\s*["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi,
-      ''
-    );
+async function platformHtmlResponse(
+  context: PagesContext,
+  url: URL,
+  pathname: string
+): Promise<Response | null> {
+  const response = await context.next();
+  if (!(response.headers.get('Content-Type') || '').toLowerCase().includes('text/html')) {
+    return response;
+  }
 
-  return result.replace(/<\/head>/i, `${tenantHeadInjection}\n</head>`);
+  const meta = getPlatformSeoMeta(
+    OFFICIAL_SITE_URL,
+    pathname,
+    url.searchParams.get('lang'),
+    url.searchParams.has('lang')
+  );
+  let html = replaceHeadMetadata(
+    await response.text(),
+    meta.title,
+    renderPlatformHeadInjection(meta),
+    false
+  );
+  html = setHtmlLangDir(html, meta.lang, meta.dir);
+
+  const headers = new Headers(response.headers);
+  for (const name of [
+    'Content-Security-Policy',
+    'X-Content-Type-Options',
+    'X-Frame-Options',
+    'Referrer-Policy',
+    'Permissions-Policy',
+  ]) {
+    headers.set(name, SECURITY_HEADERS[name]);
+  }
+  headers.set('Content-Type', 'text/html; charset=utf-8');
+  headers.set('X-Robots-Tag', meta.robots);
+  headers.delete('Content-Length');
+  return new Response(html, { status: response.status, headers });
 }
 
 /**
- * /site/{slug} on a platform host is an honest fallback route. The shell stays
- * on the official host, but platform OG/Twitter branding must not be presented
- * as the tenant's storefront metadata.
+ * /site/{slug} on a platform host is the single canonical platform-host route.
+ * Only public, indexable publications are rewritten with tenant metadata.
+ * Malformed or unpublished slugs fall through to the unchanged platform shell,
+ * preserving existing platform-host compatibility while still keeping unknown
+ * non-storefront routes as real 404s.
  */
 async function rewritePlatformSiteRouteMetadata(
   context: PagesContext,
   rawSlug: string,
-  hostname: string
+  hostname: string,
+  url: URL
 ): Promise<Response | null> {
   let decodedSlug: string;
   try {
@@ -193,13 +268,13 @@ async function rewritePlatformSiteRouteMetadata(
   } catch {
     return null;
   }
-  const slug = decodedSlug.trim().toLowerCase();
-  if (!/^[a-z0-9][a-z0-9-]{1,79}$/.test(slug) || !context.env.DB) return null;
+  const slug = getStorefrontSlug(`${STOREFRONT_ROUTE_PREFIX}${decodedSlug}`);
+  if (!slug || !context.env.DB) return null;
 
   const published = await context.env.DB.prepare(
     `SELECT website_id, public_slug, business_name, status, website_json
      FROM customer_website_publications
-     WHERE public_slug = ? AND status = 'published'
+     WHERE public_slug = ?
      LIMIT 1`
   )
     .bind(slug)
@@ -212,18 +287,30 @@ async function rewritePlatformSiteRouteMetadata(
     }>();
   if (!published) return null;
 
+  const settings = parseTenantSeoSettings(published.website_json);
+  const robots = getTenantRobotsDirective({
+    publicationStatus: published.status,
+    rawJson: published.website_json,
+    configuredRobots: settings.robotsDirectives,
+  });
+  if (!isIndexableRobotsDirective(robots)) return null;
+
   const response = await context.next();
   if (!(response.headers.get('Content-Type') || '').toLowerCase().includes('text/html')) {
     return response;
   }
 
-  const url = new URL(context.request.url);
-  const canonicalUrl = `${url.origin}/site/${encodeURIComponent(published.public_slug)}`;
+  const canonicalUrl = resolveTenantCanonicalUrl({
+    origin: OFFICIAL_SITE_URL,
+    pathname: url.pathname,
+    platformSiteSlug: published.public_slug,
+    configuredUrl: settings.canonicalUrl,
+  });
   const row: ResolvedTenantRow = {
     id: 0,
     website_id: published.website_id,
     domain_name: hostname,
-    status: 'platform_site_route',
+    status: 'published',
     www_mode: 'both',
     dns_verification_status: 'not_applicable',
     ssl_status: 'not_applicable',
@@ -232,72 +319,101 @@ async function rewritePlatformSiteRouteMetadata(
     website_status: published.status,
     website_json: published.website_json,
   };
-  const head = buildTenantHeadInjection(row, canonicalUrl);
-  const updatedHtml = replacePlatformHeadMetadata(await response.text(), head.title, head.injection);
+  const head = buildTenantHeadInjection(row, canonicalUrl, robots);
+  let html = replacePlatformHeadMetadata(await response.text(), head.title, head.injection);
+  html = setHtmlLangDir(html, 'en', 'ltr');
+
   const headers = new Headers(response.headers);
+  for (const name of [
+    'Content-Security-Policy',
+    'X-Content-Type-Options',
+    'X-Frame-Options',
+    'Referrer-Policy',
+    'Permissions-Policy',
+  ]) {
+    headers.set(name, SECURITY_HEADERS[name]);
+  }
   headers.set('Content-Type', 'text/html; charset=utf-8');
   headers.set('X-VV-Tenant-Slug', row.public_slug);
-  headers.set('X-VV-Domain-Status', row.status);
+  headers.set('X-VV-Domain-Status', published.status);
+  headers.set('X-Robots-Tag', robots);
   headers.delete('Content-Length');
 
-  return new Response(updatedHtml, { status: response.status, headers });
+  return new Response(html, { status: response.status, headers });
 }
 
 export async function onRequest(context: PagesContext): Promise<Response> {
   const { request, env, next } = context;
   const url = new URL(request.url);
+  const pathname = normalizePathname(url.pathname);
 
   // SECURITY & SPA SAFEGUARD: Never allow an API route to fall through to the HTML SPA shell.
   // When a Cloudflare Pages Function route is missing or fails to match, Pages serves index.html (200 text/html).
   // This interceptor guarantees any unmatched /api/* call returns 404 JSON with proper Content-Type.
-  if (url.pathname.startsWith('/api/')) {
+  if (pathname.startsWith('/api/')) {
     const response = await next();
     const contentType = (response.headers.get('Content-Type') || '').toLowerCase();
     if (contentType.includes('text/html')) {
-      return new Response(
-        JSON.stringify({
-          error: `API route not found: ${url.pathname}`,
-          status: 404,
-        }),
-        {
-          status: 404,
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Cache-Control': 'no-store',
-          },
-        }
+      return applyCorsHeaders(
+        request,
+        new Response(
+          JSON.stringify({
+            error: `API route not found: ${pathname}`,
+            status: 404,
+          }),
+          {
+            status: 404,
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'Cache-Control': 'no-store',
+            },
+          }
+        ),
+        env
       );
     }
-    return response;
+    return applyCorsHeaders(request, response, env);
   }
 
   // SECURITY: Always use the TLS-verified request URL hostname — never trust arbitrary Host/X-Forwarded-Host headers.
   const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
+  const storefrontSlug = getStorefrontSlug(pathname);
+  const isPlatformHost = isPlatformHostname(hostname, env);
 
-  // API endpoints, static assets and SEO files always bypass tenant HTML rewriting.
+  // API endpoints, static assets and SEO files always bypass HTML rewriting.
   if (
-    BYPASS_EXACT.has(url.pathname) ||
-    BYPASS_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
+    BYPASS_EXACT.has(pathname) ||
+    BYPASS_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ||
+    isStaticAssetPath(pathname)
   ) {
     return next();
   }
 
-  const platformSiteRoute = url.pathname.match(/^\/site\/([^/]+)\/?$/);
-  if (platformSiteRoute && isPlatformHostname(hostname, context.env)) {
-    const rewritten = await rewritePlatformSiteRouteMetadata(
-      context,
-      platformSiteRoute[1],
-      hostname
-    );
-    if (rewritten) return rewritten;
+  // Legacy /sites/{slug} is never canonical: 301 to /site/{slug}.
+  if (isPlatformHost && isLegacyStorefrontRoute(pathname)) {
+    if (!storefrontSlug) return notFoundHtmlResponse('Invalid storefront URL.');
+    const target = new URL(`${STOREFRONT_ROUTE_PREFIX}${storefrontSlug}`, OFFICIAL_SITE_URL);
+    target.search = url.search;
+    return Response.redirect(target.toString(), 301);
   }
 
-  // Platform-owned default delivery subdomains are tenant hosts only when a
-  // published tenant actually exists for the subdomain. Unknown hosts (including
-  // Pages deploy previews) continue to render the platform shell.
   const deliveryHost = parseTenantDeliveryHostname(hostname);
   const canResolveDeliveryHost = Boolean(deliveryHost && env.DB);
-  if (isPlatformHostname(hostname, env) && !canResolveDeliveryHost) {
+
+  if (isPlatformHost && !canResolveDeliveryHost) {
+    if (storefrontSlug || pathname.startsWith(STOREFRONT_ROUTE_PREFIX)) {
+      const rewritten = await rewritePlatformSiteRouteMetadata(
+        context,
+        pathname.split('/').filter(Boolean).slice(1).join('/'),
+        hostname,
+        url
+      );
+      // Malformed/unpublished slugs stay on the unchanged platform shell.
+      return rewritten || next();
+    }
+    if (!isKnownPlatformHtmlRoute(pathname)) return notFoundHtmlResponse();
+    // Official hosts and deploy previews own their platform head metadata; do
+    // not rewrite it at the edge when no tenant has been resolved.
     return next();
   }
 
@@ -337,8 +453,6 @@ export async function onRequest(context: PagesContext): Promise<Response> {
         domain_name: hostname,
         status: 'requires_wildcard_dns_tls',
         www_mode: 'both',
-        // Do not fabricate DNS/TLS verification. Real wildcard provisioning
-        // must be completed externally before these hosts can be advertised as live.
         dns_verification_status: 'pending',
         ssl_status: 'pending',
         public_slug: published.public_slug,
@@ -374,7 +488,11 @@ export async function onRequest(context: PagesContext): Promise<Response> {
   // Unknown delivery hosts are deploy previews or unprovisioned hostnames; they
   // stay on the platform shell. Unknown custom domains remain blocked.
   if (!row) {
-    if (deliveryHost) return next();
+    if (deliveryHost) {
+      // Unknown delivery subdomains are unprovisioned platform hosts. Keep the
+      // platform shell byte-for-byte unchanged and never emit tenant headers.
+      return next();
+    }
     return blockedDomainHtml(
       'Domain Not Connected',
       'This custom domain is not connected to any verified business website.',
@@ -408,6 +526,14 @@ export async function onRequest(context: PagesContext): Promise<Response> {
     }
   }
 
+  // A tenant domain owns only its root storefront. /site/* and /sites/* on a
+  // tenant host are duplicates and must not be indexed.
+  if (storefrontSlug || pathname !== '/') {
+    const target = new URL('/', request.url);
+    target.protocol = 'https:';
+    return Response.redirect(target.toString(), 301);
+  }
+
   // Canonical 301 Redirect Enforcement (www <-> root)
   const rootDomain = row.domain_name.replace(/^www\./, '');
   if (row.www_mode === 'redirect_to_root' && isWwwRequest) {
@@ -423,7 +549,7 @@ export async function onRequest(context: PagesContext): Promise<Response> {
     return Response.redirect(target.toString(), 301);
   }
 
-  // Load SPA shell and inject per-tenant SEO metadata + tenant headers
+  // Load SPA shell and inject per-tenant SEO metadata + tenant headers.
   const response = await next();
   const contentType = response.headers.get('Content-Type') || '';
   if (!contentType.toLowerCase().includes('text/html')) {
@@ -435,19 +561,44 @@ export async function onRequest(context: PagesContext): Promise<Response> {
     : row.www_mode === 'redirect_to_www'
       ? `www.${rootDomain}`
       : rootDomain;
-  const canonicalUrl = `https://${canonicalHost}${url.pathname === '/' ? '' : url.pathname}`;
-  const head = buildTenantHeadInjection(row, canonicalUrl);
+  const settings = parseTenantSeoSettings(row.website_json);
+  const resolvedCanonicalUrl = resolveTenantCanonicalUrl({
+    origin: `https://${canonicalHost}`,
+    pathname: '/',
+    platformSiteSlug: null,
+    configuredUrl: settings.canonicalUrl,
+  });
+  // Delivery hosts canonicalize to the bare HTTPS origin; platform-host routes
+  // keep the explicit trailing slash used by the shared SEO rules.
+  const canonicalUrl = isDeliveryHost ? resolvedCanonicalUrl.replace(/\/$/, '') : resolvedCanonicalUrl;
+  const robots = getTenantRobotsDirective({
+    publicationStatus: row.website_status || row.status,
+    domainStatus: isDeliveryHost ? undefined : row.status,
+    rawJson: row.website_json,
+    configuredRobots: settings.robotsDirectives,
+  });
+  const head = buildTenantHeadInjection(row, canonicalUrl, robots);
 
-  const html = await response.text();
-  const updatedHtml = replacePlatformHeadMetadata(html, head.title, head.injection);
+  let html = replacePlatformHeadMetadata(await response.text(), head.title, head.injection);
+  html = setHtmlLangDir(html, 'en', 'ltr');
 
   const headers = new Headers(response.headers);
+  for (const name of [
+    'Content-Security-Policy',
+    'X-Content-Type-Options',
+    'X-Frame-Options',
+    'Referrer-Policy',
+    'Permissions-Policy',
+  ]) {
+    headers.set(name, SECURITY_HEADERS[name]);
+  }
   headers.set('Content-Type', 'text/html; charset=utf-8');
   headers.set('X-VV-Tenant-Slug', row.public_slug);
   headers.set('X-VV-Domain-Status', row.status);
+  headers.set('X-Robots-Tag', robots);
   headers.delete('Content-Length');
 
-  return new Response(updatedHtml, {
+  return new Response(html, {
     status: response.status,
     headers,
   });

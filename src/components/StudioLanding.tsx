@@ -24,6 +24,7 @@ import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
 import {
   BUSINESS_CATEGORIES,
   CONTACT_INFO,
+  CORE_BUSINESS_CATEGORY_COUNT,
   CurrencyCode,
   FAQS,
   formatMoneyFromInr,
@@ -32,9 +33,12 @@ import {
   PORTFOLIO_DATA,
   SERVICES_DATA,
   SUPPORTED_LANGUAGES,
+  TEMPLATE_CATEGORY_COUNT,
+  TEMPLATE_COUNT,
   TESTIMONIALS_DATA,
 } from '../data/content';
 import { apiFetch } from '../lib/api';
+import { validateIndiaWhatsAppNumber } from '../../shared/indiaWhatsapp';
 import { AppView, PlatformPlanRecord, TenantRecord } from '../types/platform';
 import { VijayVisualsLogo } from './VijayVisualsLogo';
 import { PWAInstallButton } from './PWAControls';
@@ -156,6 +160,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
   const [contactPhone, setContactPhone] = useState('');
   const [contactSubject, setContactSubject] = useState('New Business Website & Platform Inquiry');
   const [contactMsg, setContactMsg] = useState('');
+  const [contactWhatsappOptIn, setContactWhatsappOptIn] = useState(false);
   const [submittingContact, setSubmittingContact] = useState(false);
 
   const matchesCategory = useCallback((itemCategory: string, selectedCatId: string): boolean => {
@@ -250,24 +255,45 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       onNotify('Please complete your name, email, and project message.');
       return;
     }
+    const phoneCheck = contactPhone.trim()
+      ? validateIndiaWhatsAppNumber(contactPhone.trim())
+      : null;
+    if (phoneCheck && !phoneCheck.ok) {
+      onNotify(phoneCheck.error || 'Enter a valid Indian WhatsApp number.');
+      return;
+    }
+    if (contactWhatsappOptIn && !phoneCheck?.ok) {
+      onNotify('Add a valid Indian WhatsApp number before opting in for a WhatsApp reply.');
+      return;
+    }
     setSubmittingContact(true);
     try {
-      await apiFetch('/api/tickets', {
+      const result = await apiFetch<{
+        success?: boolean;
+        whatsapp?: { status?: string; notice?: string };
+      }>('/api/public/platform/project-inquiry', {
         method: 'POST',
         body: JSON.stringify({
           customerName: contactName.trim(),
           customerEmail: contactEmail.trim(),
-          customerPhone: contactPhone.trim(),
+          customerPhone: phoneCheck?.ok ? phoneCheck.value!.e164 : '',
           subject: contactSubject.trim() || 'Project Inquiry',
           message: contactMsg.trim(),
           category: 'project_inquiry',
+          whatsappOptIn: contactWhatsappOptIn,
         }),
       });
       setContactName('');
       setContactEmail('');
       setContactPhone('');
       setContactMsg('');
-      onNotify('Inquiry saved to Vijay Visuals desk. Our team will respond shortly.');
+      setContactWhatsappOptIn(false);
+      const waStatus = result?.whatsapp?.status;
+      onNotify(
+        waStatus && waStatus !== 'sent'
+          ? `Inquiry saved. WhatsApp: ${waStatus.replace(/_/g, ' ')}.`
+          : 'Inquiry saved to Vijay Visuals desk. Our team will respond shortly.'
+      );
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Unable to send inquiry.');
     } finally {
@@ -366,6 +392,10 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     <img
                       src={store.bannerImage}
                       alt={store.name}
+                      width={1200}
+                      height={896}
+                      loading="lazy"
+                      decoding="async"
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover"
                     />
@@ -396,14 +426,17 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <p className="text-xs text-[#9E9EB2] leading-relaxed mb-5 flex-1">
                     {store.tagline || store.description}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => onOpenStorefront(store.slug)}
+                  <a
+                    href={`/site/${encodeURIComponent(store.slug)}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onOpenStorefront(store.slug);
+                    }}
                     className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-md border border-[#D4AF37]/45 text-[#ECC86A] hover:bg-[#D4AF37] hover:text-[#08080A] text-xs font-semibold transition-colors"
                   >
                     <span>{t.openStore}</span>
                     <ExternalLink className="w-3.5 h-3.5" />
-                  </button>
+                  </a>
                 </div>
               </article>
             ))}
@@ -476,6 +509,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
 
       {/* Cinematic 3D Studio Hero Section */}
       <CinematicHero
+        lang={lang}
         onNavigate={onNavigate}
         onOpenQuote={() => {
           const el = document.getElementById('pricing');
@@ -488,8 +522,10 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             <div>
-              <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">36 Templates</p>
-              <p className="text-xs text-[#8E8EA2] mt-1">16 core industries · 36 templates ready to customize</p>
+              <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">{TEMPLATE_COUNT} Templates</p>
+              <p className="text-xs text-[#8E8EA2] mt-1">
+                {CORE_BUSINESS_CATEGORY_COUNT} broad industry groups · {TEMPLATE_CATEGORY_COUNT} ready-to-customize templates
+              </p>
             </div>
             <div>
               <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">Custom Web Design</p>
@@ -615,10 +651,14 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       <section id="portfolio" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-16">
         <div className="max-w-7xl mx-auto px-6">
           <div className="mb-12">
-            <p className="text-xs font-medium text-[#D4AF37] mb-2">Case Studies & Client Evidence</p>
+            <p className="text-xs font-medium text-[#D4AF37] mb-2">Illustrative Studio Examples</p>
             <h2 className="font-luxury text-2xl md:text-4xl font-bold text-white">
-              Proven Storefronts & Studio Commissions
+              Sample Storefronts & Studio Commissions
             </h2>
+            <p className="mt-3 max-w-3xl text-xs leading-relaxed text-[#8E8EA2]">
+              Demonstration content only: names, quotes and workflow descriptions below are sample copy, not verified client
+              testimonials or measured performance results.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-14">
@@ -631,6 +671,10 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <img
                     src={PORTFOLIO_IMAGE_MAP[item.id] || heroStudioImg}
                     alt={item.title}
+                    width={1200}
+                    height={896}
+                    loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
                   />
@@ -642,14 +686,17 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <h3 className="font-luxury text-lg font-semibold text-white mb-2">{item.title}</h3>
                   <p className="text-xs font-mono-tabular text-[#ECC86A] mb-3">{item.metric}</p>
                   <p className="text-xs text-[#A3A3B5] leading-relaxed flex-1 mb-4">{item.summary}</p>
-                  <button
-                    type="button"
-                    onClick={() => onOpenStorefront(item.slug)}
+                  <a
+                    href={`/site/${encodeURIComponent(item.slug)}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onOpenStorefront(item.slug);
+                    }}
                     className="text-xs font-semibold text-[#ECC86A] hover:underline inline-flex items-center gap-1.5"
                   >
                     <span>Inspect Live Storefront</span>
                     <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                  </a>
                 </div>
               </div>
             ))}
@@ -1018,11 +1065,12 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-[#A7A7B8] mb-1">Phone / WhatsApp</label>
+                    <label className="block text-xs text-[#A7A7B8] mb-1">Phone / WhatsApp (+91)</label>
                     <input
                       type="tel"
                       value={contactPhone}
                       onChange={(e) => setContactPhone(e.target.value)}
+                      placeholder="+91 98765 43210"
                       className="w-full rounded-md border border-[#292938] bg-[#09090D] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
                     />
                   </div>
@@ -1047,6 +1095,15 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     className="w-full rounded-md border border-[#292938] bg-[#09090D] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
                   />
                 </div>
+                <label className="flex items-start gap-2 text-[11px] text-[#9A9AAE] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={contactWhatsappOptIn}
+                    onChange={(e) => setContactWhatsappOptIn(e.target.checked)}
+                    className="accent-[#D4AF37] mt-0.5"
+                  />
+                  <span>I explicitly agree to receive a WhatsApp reply about this project inquiry.</span>
+                </label>
                 <button
                   type="submit"
                   disabled={submittingContact}

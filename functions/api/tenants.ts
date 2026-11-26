@@ -7,7 +7,7 @@
 import { requireUser } from './_auth';
 import {
   PagesContext,
-  checkRateLimit,
+  checkRateLimit,  rateLimitResponse,
   errorJson,
   getClientIp,
   handleOptions,
@@ -104,12 +104,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     10,
     3600
   );
-  if (!rl.allowed) {
-    return jsonResponse(
-      { error: 'Too many websites created recently. Please wait and try again.' },
-      429
-    );
-  }
+  if (!rl.allowed) return rateLimitResponse(rl, 'Too many websites created recently. Please wait and try again.')
 
   const body = await parseJsonBody<Record<string, any>>(request);
   if (!body) {
@@ -222,6 +217,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       features: templateFeatures,
     },
     tagline: sanitizeText(body.tagline, 240),
+    heroHeadline: sanitizeText(body.heroHeadline, 240),
+    heroSubheadline: sanitizeText(body.heroSubheadline, 600),
+    ctaText: sanitizeText(body.ctaText, 80),
     description: sanitizeText(body.description, 1200),
     logoText: sanitizeText(body.logoText, 8).toUpperCase(),
     logoImage: validateSafeImageSource(body.logoImage),

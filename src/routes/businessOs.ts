@@ -222,7 +222,7 @@ export function createBusinessOsRouter(): Router {
           step: 10,
           key: 'payment_delivery',
           title: 'Configure Payment & Delivery',
-          simpleGuide: 'Enable Cash on Delivery, add your UPI ID, set delivery charges, or submit Razorpay Route KYC.',
+          simpleGuide: 'Enable Cash on Delivery, add your UPI ID, set delivery charges, or complete Cashfree seller verification.',
           autoCompleted: Boolean(t.codEnabled || t.upiId || payout),
           targetAction: 'payments',
         },
@@ -508,8 +508,8 @@ export function createBusinessOsRouter(): Router {
       if (!payoutAcc || payoutAcc.kycStatus !== 'verified') {
         alerts.push({
           severity: 'info',
-          title: 'Online Razorpay Route KYC pending',
-          detail: 'Cash on Delivery & Direct UPI work now. Complete Seller KYC for automated online payouts.',
+          title: 'Online Cashfree verification pending',
+          detail: 'Cash on Delivery & Direct UPI work now. Complete Cashfree seller verification for automated collections.',
           actionTab: 'payments',
         });
       }

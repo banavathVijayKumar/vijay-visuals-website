@@ -43,6 +43,16 @@ export interface ProposalRecord {
   expires_at?: string;
 }
 
+/** Escape every untrusted value before it enters the print HTML document. */
+function escHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function generateProposalHtml(p: ProposalRecord): string {
   let features = [];
   try {
@@ -74,15 +84,28 @@ export function generateProposalHtml(p: ProposalRecord): string {
     year: 'numeric',
   });
 
-  const categoryName = (p.business_category || 'Business')
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const categoryName = escHtml(
+    String(p.business_category || 'Business')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+  const proposalNumber = escHtml(p.proposal_number);
+  const businessName = escHtml(p.business_name);
+  const customerName = escHtml(p.customer_name);
+  const customerPhone = escHtml(p.customer_phone || '+91 9876543210');
+  const city = escHtml(p.city || 'Hyderabad');
+  const state = escHtml(p.state || 'Telangana');
+  const pincode = escHtml(p.pincode || '500081');
+  const area = escHtml(p.area || p.city || 'your area');
+  const safeTier = escHtml(tier);
+  const gstPercent = escHtml(p.gst_percent);
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>VIJAY VISUALS — Proposal ${p.proposal_number} for ${p.business_name}</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+  <title>VIJAY VISUALS — Proposal ${proposalNumber} for ${businessName}</title>
   <style>
     @page {
       size: A4 portrait;
@@ -285,7 +308,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
         </div>
       </div>
       <div style="text-align: right; font-size: 9px; color: #D4AF37; border: 1px solid rgba(212, 175, 55, 0.4); padding: 5px 12px; border-radius: 6px;">
-        PROPOSAL #${p.proposal_number}
+        PROPOSAL #${proposalNumber}
       </div>
     </div>
 
@@ -297,7 +320,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
         Executive Digital Architecture Proposal
       </div>
       <h1 style="font-size: 32px; font-weight: 800; margin: 0 0 8px 0; color: #FFFFFF; letter-spacing: 1px;">
-        ${p.business_name}
+        ${businessName}
       </h1>
       <div style="font-size: 14px; color: #ECC86A; font-weight: 500; letter-spacing: 0.5px;">
         ${categoryName} Digital Storefront & Online Ecosystem
@@ -306,10 +329,10 @@ export function generateProposalHtml(p: ProposalRecord): string {
       <div style="max-width: 440px; margin: 24px auto 0 auto; padding: 16px 24px; background: rgba(18, 18, 26, 0.8); border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 12px;">
         <div style="font-size: 10px; color: #8E8EA2; text-transform: uppercase; letter-spacing: 1.5px;">Selected Package Tier</div>
         <div style="font-size: 24px; font-weight: 800; color: #FFFFFF; margin: 4px 0 6px 0;">
-          ${tier} <span style="font-size: 15px; font-weight: 400; color: #A5A5B8;">PACKAGE</span>
+          ${safeTier} <span style="font-size: 15px; font-weight: 400; color: #A5A5B8;">PACKAGE</span>
         </div>
         <div style="font-size: 20px; font-weight: 800; color: #ECC86A;">
-          ₹${totalAmount.toLocaleString('en-IN')} <span style="font-size: 10px; font-weight: 400; color: #8E8EA2;">${hasConfirmedGst ? `(One-Time · ${p.gst_percent}% GST Included)` : '(One-Time Base Price · Exclusive of GST / As Applicable)'}</span>
+          ₹${totalAmount.toLocaleString('en-IN')} <span style="font-size: 10px; font-weight: 400; color: #8E8EA2;">${hasConfirmedGst ? `(One-Time · ${gstPercent}% GST Included)` : '(One-Time Base Price · Exclusive of GST / As Applicable)'}</span>
         </div>
       </div>
     </div>
@@ -317,13 +340,13 @@ export function generateProposalHtml(p: ProposalRecord): string {
     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 16px; background: #111119; border: 1px solid #222232; border-radius: 10px;">
       <div>
         <div style="font-size: 8.5px; color: #7C7C92; text-transform: uppercase;">Client / Owner</div>
-        <div style="font-size: 11px; font-weight: 600; color: #FFFFFF; margin-top: 2px;">${p.customer_name}</div>
-        <div style="font-size: 9.5px; color: #9A9AB0;">${p.customer_phone || '+91 9876543210'}</div>
+        <div style="font-size: 11px; font-weight: 600; color: #FFFFFF; margin-top: 2px;">${customerName}</div>
+        <div style="font-size: 9.5px; color: #9A9AB0;">${customerPhone}</div>
       </div>
       <div>
         <div style="font-size: 8.5px; color: #7C7C92; text-transform: uppercase;">Location / Region</div>
-        <div style="font-size: 11px; font-weight: 600; color: #FFFFFF; margin-top: 2px;">${p.city || 'Hyderabad'}, ${p.state || 'Telangana'}</div>
-        <div style="font-size: 9.5px; color: #9A9AB0;">PIN: ${p.pincode || '500081'}</div>
+        <div style="font-size: 11px; font-weight: 600; color: #FFFFFF; margin-top: 2px;">${city}, ${state}</div>
+        <div style="font-size: 9.5px; color: #9A9AB0;">PIN: ${pincode}</div>
       </div>
       <div>
         <div style="font-size: 8.5px; color: #7C7C92; text-transform: uppercase;">Proposal Date & Status</div>
@@ -350,12 +373,12 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 01 · Online Business Architecture</div>
         </div>
-        <div class="header-meta">Proposal #${p.proposal_number}</div>
+        <div class="header-meta">Proposal #${proposalNumber}</div>
       </div>
 
       <div style="margin-bottom: 16px;">
         <div style="font-size: 9px; text-transform: uppercase; color: #D4AF37; font-weight: 600; letter-spacing: 1.5px;">Strategic Transformation</div>
-        <h2 style="font-size: 20px; font-weight: 700; color: #FFFFFF; margin: 2px 0 6px 0;">How ${p.business_name} Will Look Online</h2>
+        <h2 style="font-size: 20px; font-weight: 700; color: #FFFFFF; margin: 2px 0 6px 0;">How ${businessName} Will Look Online</h2>
         <p style="font-size: 10.5px; color: #B0B0C4; margin: 0; line-height: 1.6;">
           In today’s digital market, your customer’s first impression happens online before they ever walk into your shop or place an order. We design a bespoke, high-converting digital presence engineered specifically for the <strong>${categoryName}</strong> industry.
         </p>
@@ -399,7 +422,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
         <div class="feature-card">
           <div style="font-size: 11px; font-weight: 600; color: #FFFFFF; margin-bottom: 4px;">Direct Walk-In & Directions CTA</div>
           <p style="font-size: 9.5px; color: #9A9AB4; margin: 0; line-height: 1.5;">
-            Interactive map integration for ${p.area || p.city || 'your area'}, instant one-tap calling, and accurate business opening hours so nearby customers find you easily.
+            Interactive map integration for ${area}, instant one-tap calling, and accurate business opening hours so nearby customers find you easily.
           </p>
         </div>
         <div class="feature-card">
@@ -433,14 +456,14 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 02 · Feature Specifications & Real Business Value</div>
         </div>
-        <div class="header-meta">Proposal #${p.proposal_number}</div>
+        <div class="header-meta">Proposal #${proposalNumber}</div>
       </div>
 
       <div style="margin-bottom: 12px;">
         <div style="font-size: 9px; text-transform: uppercase; color: #D4AF37; font-weight: 600; letter-spacing: 1.5px;">Core Specifications</div>
         <h2 style="font-size: 19px; font-weight: 700; color: #FFFFFF; margin: 2px 0 4px 0;">Every Feature Explained in Plain Language</h2>
         <p style="font-size: 10px; color: #A0A0B8; margin: 0;">
-          We don't use confusing technical jargon. Here is exactly what each core feature does, why it is essential, and how it directly benefits ${p.business_name}:
+          We don't use confusing technical jargon. Here is exactly what each core feature does, why it is essential, and how it directly benefits ${businessName}:
         </p>
       </div>
 
@@ -460,19 +483,19 @@ export function generateProposalHtml(p: ProposalRecord): string {
             <div style="flex: 1;">
               <div style="display: flex; align-items: center; gap: 6px;">
                 <span style="color: #D4AF37; font-weight: 700; font-size: 9.5px;">0${i + 1}.</span>
-                <span style="font-size: 10px; font-weight: 600; color: #FFFFFF;">${f.name.replace(/^[0-9]+\.\s*/, '')}</span>
+                <span style="font-size: 10px; font-weight: 600; color: #FFFFFF;">${escHtml(String(f.name || '').replace(/^[0-9]+\.\s*/, ''))}</span>
                 <span class="badge badge-included" style="font-size: 7px; padding: 1px 4px;">Included</span>
               </div>
               <div style="font-size: 8px; color: #8E8EA2; margin-top: 1px;">
-                <strong>What it does:</strong> ${f.whatItDoes}
+                <strong>What it does:</strong> ${escHtml(f.whatItDoes)}
               </div>
               <div style="font-size: 8px; color: #10B981; margin-top: 1px;">
-                <strong>Benefit:</strong> ${f.customerBenefit}
+                <strong>Benefit:</strong> ${escHtml(f.customerBenefit)}
               </div>
             </div>
             <div style="text-align: right; min-width: 60px;">
               <div style="font-size: 7.5px; color: #7C7C92; text-transform: uppercase;">Valued at</div>
-              <div style="font-size: 10.5px; font-weight: 700; color: #ECC86A;">₹${(f.individualValueInr || 0).toLocaleString('en-IN')}</div>
+              <div style="font-size: 10.5px; font-weight: 700; color: #ECC86A;">₹${Number(f.individualValueInr || 0).toLocaleString('en-IN')}</div>
             </div>
           </div>
         `).join('')}
@@ -497,7 +520,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 03 · Transparent Feature-wise Pricing</div>
         </div>
-        <div class="header-meta">Proposal #${p.proposal_number}</div>
+        <div class="header-meta">Proposal #${proposalNumber}</div>
       </div>
 
       <div style="margin-bottom: 8px;">
@@ -593,7 +616,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
         <div>
           <div style="font-size: 9px; color: #8E8EA2; text-transform: uppercase;">Tax Status</div>
           <div style="font-size: 13px; font-weight: 700; color: #FFFFFF;">
-            ${hasConfirmedGst ? `+₹${gstAmount.toLocaleString('en-IN')} (${p.gst_percent}% GST)` : 'GST: Excluded / As Applicable'}
+            ${hasConfirmedGst ? `+₹${gstAmount.toLocaleString('en-IN')} (${gstPercent}% GST)` : 'GST: Excluded / As Applicable'}
           </div>
         </div>
         <div style="text-align: right;">
@@ -621,12 +644,12 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 04 · Storefront & Cashfree Payment Architecture</div>
         </div>
-        <div class="header-meta">Proposal #${p.proposal_number}</div>
+        <div class="header-meta">Proposal #${proposalNumber}</div>
       </div>
 
       <div style="margin-bottom: 12px;">
         <div style="font-size: 9px; text-transform: uppercase; color: #D4AF37; font-weight: 600; letter-spacing: 1.5px;">Checkout & Conversion</div>
-        <h2 style="font-size: 19px; font-weight: 700; color: #FFFFFF; margin: 2px 0 4px 0;">Seamless Cashfree Payments for ${p.business_name}</h2>
+        <h2 style="font-size: 19px; font-weight: 700; color: #FFFFFF; margin: 2px 0 4px 0;">Seamless Cashfree Payments for ${businessName}</h2>
         <p style="font-size: 9.5px; color: #A0A0B8; margin: 0;">
           Give your customers the most trusted and convenient payment methods in India. All transactions settle directly into your merchant bank account with real-time server-side verification:
         </p>
@@ -668,9 +691,9 @@ export function generateProposalHtml(p: ProposalRecord): string {
             { name: 'Executive Bundle 3', price: 2999, category: 'Combo' },
           ]).slice(0, 3).map((pr: any) => `
             <div style="background: #171724; border: 1px solid #2B2B3E; border-radius: 6px; padding: 8px;">
-              <div style="font-weight: 700; color: #FFFFFF; font-size: 10px; margin-bottom: 2px;">${pr.name}</div>
-              <div style="color: #8E8EA2; font-size: 8px; text-transform: uppercase;">${pr.category || 'General'}</div>
-              <div style="color: #ECC86A; font-weight: 700; font-size: 12px; margin-top: 4px;">₹${(pr.price || 0).toLocaleString('en-IN')}</div>
+              <div style="font-weight: 700; color: #FFFFFF; font-size: 10px; margin-bottom: 2px;">${escHtml(pr.name)}</div>
+              <div style="color: #8E8EA2; font-size: 8px; text-transform: uppercase;">${escHtml(pr.category || 'General')}</div>
+              <div style="color: #ECC86A; font-weight: 700; font-size: 12px; margin-top: 4px;">₹${Number(pr.price || 0).toLocaleString('en-IN')}</div>
             </div>
           `).join('')}
         </div>
@@ -699,12 +722,12 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 05 · Online Discovery & Local SEO</div>
         </div>
-        <div class="header-meta">Proposal #${p.proposal_number}</div>
+        <div class="header-meta">Proposal #${proposalNumber}</div>
       </div>
 
       <div style="margin-bottom: 14px;">
         <div style="font-size: 9px; text-transform: uppercase; color: #D4AF37; font-weight: 600; letter-spacing: 1.5px;">Local Search Foundation</div>
-        <h2 style="font-size: 19px; font-weight: 700; color: #FFFFFF; margin: 2px 0 4px 0;">Growing ${p.business_name} Online</h2>
+        <h2 style="font-size: 19px; font-weight: 700; color: #FFFFFF; margin: 2px 0 4px 0;">Growing ${businessName} Online</h2>
         <p style="font-size: 9.5px; color: #A0A0B8; margin: 0;">
           A website only succeeds when potential customers can discover it easily. We configure technical search foundations and local area targeting to maximize your reach:
         </p>
@@ -714,7 +737,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
         <div class="feature-card">
           <div style="font-size: 11px; font-weight: 600; color: #FFFFFF; margin-bottom: 3px;">📍 Local Area & City Targeting</div>
           <p style="font-size: 9px; color: #9A9AB4; margin: 0; line-height: 1.4;">
-            Metadata and schema tailored for <strong>${p.city || 'Hyderabad'}</strong>, <strong>${p.area || 'your area'}</strong>, and surrounding districts so customers nearby find your storefront.
+            Metadata and schema tailored for <strong>${city}</strong>, <strong>${area}</strong>, and surrounding districts so customers nearby find your storefront.
           </p>
         </div>
         <div class="feature-card">
@@ -760,7 +783,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 06 · ${showGoldAndPremium ? 'Package Comparison Matrix' : 'Authoritative Package Deliverables'}</div>
         </div>
-        <div class="header-meta">Proposal #${p.proposal_number}</div>
+        <div class="header-meta">Proposal #${proposalNumber}</div>
       </div>
 
       <div style="margin-bottom: 12px;">
@@ -780,7 +803,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div>
             <div style="font-size: 9px; color: #D4AF37; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">STARTER TIER</div>
             <div style="font-size: 20px; font-weight: 800; color: #FFFFFF; margin: 4px 0;">₹${devFee.toLocaleString('en-IN')}</div>
-            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">${hasConfirmedGst ? `+${p.gst_percent}% GST (₹${totalAmount.toLocaleString('en-IN')} Total)` : 'Base Fee · Taxes As Applicable'}</div>
+            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">${hasConfirmedGst ? `+${gstPercent}% GST (₹${totalAmount.toLocaleString('en-IN')} Total)` : 'Base Fee · Taxes As Applicable'}</div>
             <div style="font-size: 8.5px; color: #A0A0B8; text-align: left; line-height: 1.5; border-top: 1px solid #242436; padding-top: 8px;">
               ✓ Premium Responsive Design<br>
               ✓ 9 Core Website Features<br>
@@ -850,7 +873,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           </div>
           <div style="text-align: right;">
             <div style="font-size: 18px; font-weight: 800; color: #ECC86A;">₹${devFee.toLocaleString('en-IN')}</div>
-            <div style="font-size: 8px; color: #8E8EA2;">${hasConfirmedGst ? `+₹${gstAmount.toLocaleString('en-IN')} (${p.gst_percent}% GST)` : 'Base Investment · Taxes As Applicable'}</div>
+            <div style="font-size: 8px; color: #8E8EA2;">${hasConfirmedGst ? `+₹${gstAmount.toLocaleString('en-IN')} (${gstPercent}% GST)` : 'Base Investment · Taxes As Applicable'}</div>
           </div>
         </div>
 
@@ -910,7 +933,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 07 · Total Cost of Ownership & Terms</div>
         </div>
-        <div class="header-meta">Proposal #${p.proposal_number}</div>
+        <div class="header-meta">Proposal #${proposalNumber}</div>
       </div>
 
       <div style="margin-bottom: 12px;">
@@ -982,7 +1005,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div style="color: #4A4A60;">·</div>
           <div class="header-meta">Section 08 · Project Authorization & Next Steps</div>
         </div>
-        <div class="header-meta">Proposal #${p.proposal_number}</div>
+        <div class="header-meta">Proposal #${proposalNumber}</div>
       </div>
 
       <div style="text-align: center; margin-bottom: 24px;">
@@ -997,12 +1020,12 @@ export function generateProposalHtml(p: ProposalRecord): string {
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #252538; padding-bottom: 12px; margin-bottom: 12px;">
           <div>
             <div style="font-size: 10px; color: #8E8EA2; text-transform: uppercase;">Selected Package</div>
-            <div style="font-size: 16px; font-weight: 800; color: #FFFFFF;">${tier} Business Package</div>
+            <div style="font-size: 16px; font-weight: 800; color: #FFFFFF;">${safeTier} Business Package</div>
           </div>
           <div style="text-align: right;">
             <div style="font-size: 10px; color: #8E8EA2; text-transform: uppercase;">Total Payable</div>
             <div style="font-size: 22px; font-weight: 800; color: #ECC86A;">₹${totalAmount.toLocaleString('en-IN')}</div>
-            <div style="font-size: 8px; color: #8E8EA2;">${hasConfirmedGst ? `(${p.gst_percent}% GST Included)` : '(Taxes As Applicable)'}</div>
+            <div style="font-size: 8px; color: #8E8EA2;">${hasConfirmedGst ? `(${gstPercent}% GST Included)` : '(Taxes As Applicable)'}</div>
           </div>
         </div>
 

@@ -9,7 +9,7 @@ dotenv.config();
 
 import http from 'http';
 import express, { Request, Response, NextFunction } from 'express';
-import { and, desc, eq, ilike, ne, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from './src/db/index.ts';
 import {
@@ -37,6 +37,14 @@ import { buildPublicTrackingResponse } from './src/lib/publicTracking.ts';
 import { generateAiText } from './src/lib/gemini.ts';
 import { getRazorpayStatus } from './src/lib/razorpay.ts';
 import { generateSlugFromName, SLUG_REGEX, validateSlug } from './src/lib/slug.ts';
+import {
+  STOREFRONT_ROUTE_PREFIX,
+  buildNotFoundHtml,
+  getStorefrontSlug,
+  isKnownPlatformHtmlRoute,
+  isLegacyStorefrontRoute,
+  isStaticAssetPath,
+} from './shared/seo.ts';
 import { createEcosystemRouter, handleRazorpayRawWebhook } from './src/routes/ecosystem.ts';
 import { createGrowthRouter } from './src/routes/growth.ts';
 import { createBusinessOsRouter } from './src/routes/businessOs.ts';
@@ -44,7 +52,31 @@ import { createLocationsRouter, resolveGoogleMapsApiKey } from './src/routes/loc
 import { createDomainsRouter, getCloudflareSaasStatus } from './src/routes/domains.ts';
 import { createApiRateLimiter } from './src/middleware/rateLimit.ts';
 
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' https://sdk.cashfree.com https://maps.googleapis.com https://maps.gstatic.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data: blob: https:",
+  "connect-src 'self' https://sdk.cashfree.com https://api.cashfree.com https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com",
+  "worker-src 'self' blob:",
+  "frame-src 'self' https://sdk.cashfree.com https://maps.google.com",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+  'upgrade-insecure-requests',
+].join('; ');
+
 const app = express();
+app.use((_req, res, next) => {
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
+  next();
+});
 // Module 3D: Raw request body MUST be preserved for Razorpay HMAC-SHA256 webhook verification
 app.post('/api/webhooks/razorpay', express.raw({ type: 'application/json' }), handleRazorpayRawWebhook);
 app.use(express.json({ limit: '2mb' }));
@@ -424,7 +456,7 @@ app.get('/api/tenants/:slug/manifest.webmanifest', async (req, res) => {
       id: `/site/${tenant.slug}`,
       name: tenant.pwaAppName || tenant.name,
       short_name: (tenant.pwaShortName || tenant.name).slice(0, 12),
-      description: tenant.tagline || tenant.description || `${tenant.name} powered by Vijay Visuals`,
+      description: tenant.tagline || tenant.description || tenant.name,
       start_url: `/site/${tenant.slug}`,
       scope: '/',
       display: 'standalone',
@@ -1219,6 +1251,9 @@ app.post('/api/tenants/:tenantId/staff', requireAuth, async (req: AuthRequest, r
 app.post('/api/tenants/:tenantId/delivery-partners', requireAuth, async (req: AuthRequest, res) => {
   try {
     const tenantId = Number(req.params.tenantId);
+    if (!Number.isInteger(tenantId) || tenantId <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant identifier.' });
+    }
     const schema = z.object({
       name: z.string().min(2).max(100),
       phone: z.string().min(8).max(25),
@@ -1228,12 +1263,22 @@ app.post('/api/tenants/:tenantId/delivery-partners', requireAuth, async (req: Au
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Invalid delivery partner details.' });
 
-    // Either tenant owner adds a rider OR authenticated user registers as delivery partner for that store
+    const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+    if (!tenant) return res.status(404).json({ error: 'Business not found.' });
+
+    const linkCurrentUser = parsed.data.linkCurrentUser === true;
+    if (!linkCurrentUser) {
+      // Only the tenant owner/staff or a super admin may add riders on behalf
+      // of a business. Self-registration is allowed into an existing tenant.
+      const access = await assertTenantAccess(req, tenantId);
+      if (!access.ok) return res.status(access.status).json({ error: access.error });
+    }
+
     const [created] = await db
       .insert(deliveryPartners)
       .values({
         tenantId,
-        userId: parsed.data.linkCurrentUser ? req.dbUser!.id : null,
+        userId: linkCurrentUser ? req.dbUser!.id : null,
         name: parsed.data.name,
         phone: parsed.data.phone,
         vehicleType: parsed.data.vehicleType,
@@ -1241,7 +1286,7 @@ app.post('/api/tenants/:tenantId/delivery-partners', requireAuth, async (req: Au
       })
       .returning();
 
-    if (parsed.data.linkCurrentUser && req.dbUser!.role === 'customer') {
+    if (linkCurrentUser && req.dbUser!.role === 'customer') {
       await db.update(users).set({ role: 'delivery_partner' }).where(eq(users.id, req.dbUser!.id));
     }
 
@@ -1263,13 +1308,32 @@ app.get('/api/delivery/portal', requireAuth, async (req: AuthRequest, res) => {
             .from(deliveryPartners)
             .where(or(eq(deliveryPartners.userId, dbUser.id), eq(deliveryPartners.phone, dbUser.phone || '__none__')));
 
-    const partnerIds = allPartners.map((p) => p.id);
-    const assignedOrders =
-      partnerIds.length > 0
-        ? (await db.select().from(orders).orderBy(desc(orders.createdAt))).filter(
-            (o) => o.deliveryPartnerId && partnerIds.includes(o.deliveryPartnerId)
-          )
-        : [];
+    const partnerIds = allPartners.map((p) => p.id).filter((id) => Number.isFinite(id));
+    const partnerTenantIds = Array.from(
+      new Set(allPartners.map((p) => p.tenantId).filter((id) => Number.isFinite(id)))
+    );
+    let assignedOrders: Array<typeof orders.$inferSelect> = [];
+    if (partnerIds.length > 0) {
+      assignedOrders =
+        dbUser.role === 'super_admin'
+          ? await db
+              .select()
+              .from(orders)
+              .where(inArray(orders.deliveryPartnerId, partnerIds))
+              .orderBy(desc(orders.createdAt))
+          : partnerTenantIds.length > 0
+            ? await db
+                .select()
+                .from(orders)
+                .where(
+                  and(
+                    inArray(orders.tenantId, partnerTenantIds),
+                    inArray(orders.deliveryPartnerId, partnerIds)
+                  )
+                )
+                .orderBy(desc(orders.createdAt))
+            : [];
+    }
 
     res.json({ partners: allPartners, assignedOrders });
   } catch (error) {
@@ -1281,13 +1345,35 @@ app.get('/api/delivery/portal', requireAuth, async (req: AuthRequest, res) => {
 app.patch('/api/delivery/partners/:id/availability', requireAuth, async (req: AuthRequest, res) => {
   try {
     const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'Invalid partner identifier.' });
+    }
+    const [partner] = await db
+      .select()
+      .from(deliveryPartners)
+      .where(eq(deliveryPartners.id, id))
+      .limit(1);
+    if (!partner) return res.status(404).json({ error: 'Delivery partner not found.' });
+
+    const dbUser = req.dbUser!;
+    let allowed =
+      dbUser.role === 'super_admin' ||
+      partner.userId === dbUser.id ||
+      Boolean(dbUser.phone && partner.phone === dbUser.phone);
+    if (!allowed) {
+      const access = await assertTenantAccess(req, partner.tenantId);
+      allowed = access.ok;
+    }
+    if (!allowed) {
+      return res.status(403).json({ error: 'Only this partner or the business owner may change availability.' });
+    }
+
     const available = Boolean(req.body?.available);
     const [updated] = await db
       .update(deliveryPartners)
       .set({ available })
       .where(eq(deliveryPartners.id, id))
       .returning();
-    if (!updated) return res.status(404).json({ error: 'Delivery partner not found.' });
     res.json({ partner: updated });
   } catch (error) {
     console.error('PATCH delivery availability failed:', error);
@@ -1304,6 +1390,45 @@ app.patch('/api/delivery/orders/:id/status', requireAuth, async (req: AuthReques
     }
     const [existing] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
     if (!existing) return res.status(404).json({ error: 'Order not found.' });
+
+    const dbUser = req.dbUser!;
+    let authorized = dbUser.role === 'super_admin';
+    if (!authorized) {
+      const access = await assertTenantAccess(req, existing.tenantId);
+      authorized = access.ok;
+    }
+    if (!authorized && existing.deliveryPartnerId) {
+      const [partner] = await db
+        .select()
+        .from(deliveryPartners)
+        .where(
+          and(
+            eq(deliveryPartners.id, existing.deliveryPartnerId),
+            eq(deliveryPartners.tenantId, existing.tenantId)
+          )
+        )
+        .limit(1);
+      authorized = Boolean(
+        partner &&
+          (partner.userId === dbUser.id || Boolean(dbUser.phone && partner.phone === dbUser.phone))
+      );
+    }
+    if (!authorized) {
+      return res
+        .status(403)
+        .json({ error: 'Only the assigned partner or the business owner may update this order.' });
+    }
+
+    const RESTRICTED_FULFILLMENT_STATUSES = ['ready_for_pickup', 'out_for_delivery', 'delivered'];
+    if (
+      existing.paymentMethod === 'cashfree_online' &&
+      existing.paymentStatus !== 'paid' &&
+      RESTRICTED_FULFILLMENT_STATUSES.includes(status)
+    ) {
+      return res.status(409).json({
+        error: `Cannot transition an unpaid online order to "${status}". Payment must be verified before fulfillment.`,
+      });
+    }
 
     const [updated] = await db
       .update(orders)
@@ -1798,7 +1923,39 @@ export class ErrorOverlay extends HTMLElement {}
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
+    app.get('*', (req: Request, res: Response) => {
+      const pathname = req.path;
+      const storefrontSlug = getStorefrontSlug(pathname);
+
+      // Legacy /sites/{slug} is never canonical. Match the Cloudflare redirect.
+      if (isLegacyStorefrontRoute(pathname)) {
+        if (!storefrontSlug) {
+          res
+            .status(404)
+            .set('X-Robots-Tag', 'noindex, nofollow')
+            .type('html')
+            .send(buildNotFoundHtml('Page Not Found', 'Invalid storefront URL.'));
+          return;
+        }
+        const queryIndex = req.originalUrl.indexOf('?');
+        const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
+        res.redirect(301, `${STOREFRONT_ROUTE_PREFIX}${storefrontSlug}${query}`);
+        return;
+      }
+
+      const canServeShell =
+        pathname === '/' || isKnownPlatformHtmlRoute(pathname) || Boolean(storefrontSlug);
+
+      // Unknown HTML routes must be real 404s, not a 200 SPA shell that can be
+      // indexed as a duplicate home page.
+      if (!canServeShell || isStaticAssetPath(pathname)) {
+        res
+          .status(404)
+          .set('X-Robots-Tag', 'noindex, nofollow')
+          .type('html')
+          .send(buildNotFoundHtml('Page Not Found', 'The requested page does not exist.'));
+        return;
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

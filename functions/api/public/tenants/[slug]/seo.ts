@@ -4,6 +4,12 @@
 // ============================================================================
 
 import { PagesContext, handleOptions, jsonResponse } from '../../../_shared';
+import {
+  OFFICIAL_SITE_URL,
+  getTenantRobotsDirective,
+  parseTenantSeoSettings,
+  resolveTenantCanonicalUrl,
+} from '../../../../../shared/seo';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -59,18 +65,23 @@ export async function onRequestGet(
       // Optional table may not exist yet
     }
 
-    const customDomain = typeof parsed.customDomain === 'string' ? parsed.customDomain.trim() : '';
-    const canonicalUrl =
-      (typeof parsed.canonicalUrl === 'string' && parsed.canonicalUrl.trim()) ||
-      globalRow?.gsc_site_url ||
-      (customDomain ? `https://${customDomain}` : '');
+    const settings = parseTenantSeoSettings(row.website_json);
+    const canonicalUrl = resolveTenantCanonicalUrl({
+      origin: OFFICIAL_SITE_URL,
+      pathname: '/',
+      platformSiteSlug: row.public_slug,
+      configuredUrl: settings.canonicalUrl,
+    });
+    const robotsDirectives = getTenantRobotsDirective({
+      publicationStatus: 'published',
+      rawJson: row.website_json,
+      configuredRobots: settings.robotsDirectives,
+    });
 
     return jsonResponse({
       seo: {
         canonicalUrl,
-        robotsDirectives:
-          (typeof parsed.robotsDirectives === 'string' && parsed.robotsDirectives.trim()) ||
-          'index, follow',
+        robotsDirectives,
         googleSiteVerification:
           (typeof parsed.googleSiteVerification === 'string' && parsed.googleSiteVerification.trim()) ||
           globalRow?.gsc_verification_token ||

@@ -153,17 +153,17 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     // 6. Security audit logs
     try {
       const audRes = await env.DB.prepare(
-        `SELECT id, actor_user_id, actor_role, action, resource_type, resource_id, metadata_json, created_at
+        `SELECT id, actor_user_id, action, entity_type, entity_id, metadata_json, created_at
          FROM vv_audit_log ORDER BY created_at DESC LIMIT 100`
       ).all<Record<string, any>>();
       (audRes.results || []).forEach((a, idx) => {
         audits.push({
           id: idx + 1,
           actorEmail: String(a.actor_user_id || 'system'),
-          actorRole: String(a.actor_role || ''),
+          actorRole: String(a.entity_type || ''),
           tenantId: null,
           action: String(a.action || ''),
-          details: `${a.resource_type || ''}:${a.resource_id || ''} ${a.metadata_json || ''}`.trim(),
+          details: `${a.entity_type || ''}:${a.entity_id || ''} ${a.metadata_json || ''}`.trim(),
           createdAt: String(a.created_at || ''),
         });
       });
@@ -172,15 +172,16 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     // 7. Custom domains (optional migration 0002)
     try {
       const domRes = await env.DB.prepare(
-        `SELECT * FROM tenant_custom_domains ORDER BY created_at DESC LIMIT 100`
+        `SELECT id, website_id, domain_name, status, dns_verification_status, ssl_status, expiry_date
+         FROM tenant_domains ORDER BY created_at DESC LIMIT 100`
       ).all<Record<string, any>>();
       for (const d of domRes.results || []) {
-        if (d.dns_status === 'verified') verifiedDomainsCount += 1;
+        if (d.dns_verification_status === 'verified' || d.status === 'live') verifiedDomainsCount += 1;
         domains.push({
           id: Number(d.id),
           tenantId: 0,
           domainName: String(d.domain_name || ''),
-          dnsStatus: String(d.dns_status || 'pending'),
+          dnsStatus: String(d.dns_verification_status || d.status || 'pending'),
           sslStatus: String(d.ssl_status || 'pending'),
           expiryDate: String(d.expiry_date || ''),
         });

@@ -40,11 +40,21 @@ class MockD1DB {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS vv_users (
         id TEXT PRIMARY KEY,
+        auth_provider TEXT NOT NULL DEFAULT 'supabase',
         auth_subject TEXT UNIQUE,
         email TEXT,
         full_name TEXT,
         role TEXT DEFAULT 'customer',
-        status TEXT DEFAULT 'active'
+        status TEXT DEFAULT 'active',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS api_rate_limits (
+        rate_key TEXT PRIMARY KEY,
+        window_start INTEGER NOT NULL,
+        hit_count INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
 
       CREATE TABLE IF NOT EXISTS customer_website_publications (
@@ -208,7 +218,10 @@ class MockD1DB {
           async run(): Promise<{ success: boolean; meta?: any }> {
             const stmt = db.prepare(sql);
             const info = stmt.run(...params);
-            return { success: true, meta: { last_row_id: Number(info.lastInsertRowid) } };
+            return {
+              success: true,
+              meta: { changes: info.changes, last_row_id: Number(info.lastInsertRowid) },
+            };
           },
         };
       },
@@ -228,10 +241,13 @@ class MockD1DB {
           return { results: [] };
         }
       },
-      async run(): Promise<{ success: boolean }> {
+      async run(): Promise<{ success: boolean; meta?: any }> {
         const stmt = db.prepare(sql);
-        stmt.run();
-        return { success: true };
+        const info = stmt.run();
+        return {
+          success: true,
+          meta: { changes: info.changes, last_row_id: Number(info.lastInsertRowid) },
+        };
       },
     };
   }

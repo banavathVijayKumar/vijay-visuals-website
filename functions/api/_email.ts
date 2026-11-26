@@ -154,6 +154,8 @@ export async function resolveVerifiedTenantSender(
 export function redactSensitiveLogText(raw: unknown): string {
   const text = sanitizeText(String(raw || ''), 500);
   return text
+    .replace(/\+91[\s()-]*(?:\d[\s()-]*){10}/g, '[REDACTED]')
+    .replace(/\b\d{9,12}\b/g, '[REDACTED]')
     .replace(/\b\d{4,8}\b/g, '[REDACTED]')
     .replace(
       /\b(reset[_-]?link|reset[_-]?token|token|otp|code|password)\s*[=:]\s*\S+/gi,
@@ -190,18 +192,23 @@ export async function sendTransactionalEmail(
     return { ok: false, status: 'failed', error: 'Invalid recipient email address.' };
   }
 
-  // Idempotency check: if identical event sent within last 120 seconds, prevent duplicate send
+  // Durable key-based dedupe: an explicit idempotency key suppresses a repeat
+  // send for the lifetime of the notification ledger record. Callers that want
+  // a time window must encode it in the key itself.
   if (env.DB && idempotencyKey) {
     try {
       const existing = await env.DB.prepare(
         `SELECT id, provider_message_id, delivery_status FROM notification_logs
-         WHERE recipient_contact = ? AND event_type = ? AND provider_message_id = ?
+         WHERE recipient_contact = ? AND event_type = ?
+           AND (idempotency_key = ? OR (idempotency_key = '' AND provider_message_id = ?))
          LIMIT 1`
       )
-        .bind(cleanEmail, eventType, idempotencyKey)
+        .bind(cleanEmail, eventType, idempotencyKey, idempotencyKey)
         .first<{ id: number; provider_message_id: string; delivery_status: string }>();
 
-      if (existing) {
+      // A failed or setup-required attempt must never permanently suppress a
+      // later retry with the same key. Only a delivered send is a true duplicate.
+      if (existing && (existing.delivery_status === 'sent' || existing.delivery_status === 'delivered')) {
         return {
           ok: true,
           status: 'idempotent_duplicate',
@@ -223,10 +230,11 @@ export async function sendTransactionalEmail(
     if (env.DB) {
       try {
         await env.DB.prepare(
-          `INSERT INTO notification_logs (
+          `INSERT OR IGNORE INTO notification_logs (
             website_id, recipient_user_id, recipient_contact, channel, event_type,
-            subject, message_preview, consent_verified, delivery_status, error_detail, created_at
-          ) VALUES (?, ?, ?, 'email', ?, ?, ?, 1, 'setup_required', ?, datetime('now'))`
+            subject, message_preview, consent_verified, delivery_status,
+            idempotency_key, error_detail, created_at
+          ) VALUES (?, ?, ?, 'email', ?, ?, ?, 1, 'setup_required', ?, ?, datetime('now'))`
         )
           .bind(
             websiteId || null,
@@ -235,6 +243,7 @@ export async function sendTransactionalEmail(
             eventType,
             redactSensitiveLogText(subject),
             redactSensitiveLogText(text || subject),
+            idempotencyKey || '',
             notice
           )
           .run();
@@ -342,28 +351,59 @@ export async function sendTransactionalEmail(
     }
   }
 
-  // Record audit log in D1
+  // Record audit log in D1. A keyed retry updates the existing attempt row so
+  // a prior transient failure can transition to sent and suppress later dupes.
   if (env.DB) {
     try {
-      await env.DB.prepare(
-        `INSERT INTO notification_logs (
-          website_id, recipient_user_id, recipient_contact, channel, event_type,
-          subject, message_preview, consent_verified, delivery_status,
-          provider_message_id, error_detail, created_at
-        ) VALUES (?, ?, ?, 'email', ?, ?, ?, 1, ?, ?, ?, datetime('now'))`
-      )
-        .bind(
-          websiteId || null,
-          recipientUserId || null,
-          cleanEmail,
-          eventType,
-          redactSensitiveLogText(subject),
-          redactSensitiveLogText(text || subject),
-          deliveryStatus,
-          providerMessageId || (idempotencyKey ? `idemp_${idempotencyKey}` : ''),
-          redactSensitiveLogText(errorDetail)
+      const finalProviderId = providerMessageId || (idempotencyKey ? `idemp_${idempotencyKey}` : '');
+      const safeSubject = redactSensitiveLogText(subject);
+      const safePreview = redactSensitiveLogText(text || subject);
+      const safeError = redactSensitiveLogText(errorDetail);
+      let recorded = false;
+
+      if (idempotencyKey) {
+        const updated = await env.DB.prepare(
+          `UPDATE notification_logs
+           SET delivery_status = ?, provider_message_id = ?, error_detail = ?,
+               subject = ?, message_preview = ?, consent_verified = 1
+           WHERE recipient_contact = ? AND event_type = ? AND idempotency_key = ?`
         )
-        .run();
+          .bind(
+            deliveryStatus,
+            finalProviderId,
+            safeError,
+            safeSubject,
+            safePreview,
+            cleanEmail,
+            eventType,
+            idempotencyKey
+          )
+          .run();
+        recorded = (updated.meta?.changes || 0) > 0;
+      }
+
+      if (!recorded) {
+        await env.DB.prepare(
+          `INSERT OR IGNORE INTO notification_logs (
+            website_id, recipient_user_id, recipient_contact, channel, event_type,
+            subject, message_preview, consent_verified, delivery_status,
+            provider_message_id, idempotency_key, error_detail, created_at
+          ) VALUES (?, ?, ?, 'email', ?, ?, ?, 1, ?, ?, ?, ?, datetime('now'))`
+        )
+          .bind(
+            websiteId || null,
+            recipientUserId || null,
+            cleanEmail,
+            eventType,
+            safeSubject,
+            safePreview,
+            deliveryStatus,
+            finalProviderId,
+            idempotencyKey || '',
+            safeError
+          )
+          .run();
+      }
     } catch (logErr) {
       console.error('Failed to log email audit record:', logErr);
     }
@@ -420,13 +460,14 @@ function baseEmailWrapper(
     sanitizeText(options.brandSubtitle || 'Architectural Web & Digital Systems', 120)
   );
   const footerHtml = options.footerHtml || DEFAULT_EMAIL_FOOTER_HTML;
+  const safeTitle = escapeHtml(sanitizeText(title, 160));
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
+  <title>${safeTitle}</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #08080C; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #FFFFFF; -webkit-font-smoothing: antialiased;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #08080C; padding: 40px 16px;">
@@ -593,12 +634,18 @@ export function buildPaymentReceiptEmailHtml(params: {
   dashboardUrl: string;
 }): string {
   const { customerName, orderNumber, paymentId, amountFormatted, paymentTime, dashboardUrl } = params;
+  const safeCustomer = escapeHtml(sanitizeText(customerName, 80));
+  const safeOrder = escapeHtml(sanitizeText(orderNumber, 120));
+  const safePaymentId = escapeHtml(sanitizeText(paymentId, 120));
+  const safeAmount = escapeHtml(sanitizeText(amountFormatted, 60));
+  const safeTime = escapeHtml(sanitizeText(paymentTime, 80));
+  const safeDashboardUrl = escapeHtml(sanitizeText(dashboardUrl, 300));
   const content = `
     <h2 style="margin: 0 0 8px 0; font-size: 20px; font-weight: 700; color: #22C55E;">
       ✓ Payment Successfully Verified
     </h2>
     <p style="margin: 0 0 20px 0; font-size: 14px; color: #A0A0B2;">
-      Dear ${sanitizeText(customerName, 80)},
+      Dear ${safeCustomer},
     </p>
     <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #CCCCCC;">
       We have successfully received and verified your payment through <strong>Cashfree Payment Gateway</strong>. Your project is now scheduled for development.
@@ -607,29 +654,29 @@ export function buildPaymentReceiptEmailHtml(params: {
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #14141E; border: 1px solid #242436; border-radius: 8px; margin: 20px 0; padding: 16px;">
       <tr>
         <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94;">ORDER NUMBER</td>
-        <td style="padding: 8px 12px; font-size: 13px; font-weight: 700; color: #FFFFFF; text-align: right;">${orderNumber}</td>
+        <td style="padding: 8px 12px; font-size: 13px; font-weight: 700; color: #FFFFFF; text-align: right;">${safeOrder}</td>
       </tr>
       <tr>
         <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">CASHFREE PAYMENT ID</td>
-        <td style="padding: 8px 12px; font-size: 12px; font-family: monospace; color: #DFBA5A; text-align: right; border-top: 1px solid #1E1E2C;">${paymentId}</td>
+        <td style="padding: 8px 12px; font-size: 12px; font-family: monospace; color: #DFBA5A; text-align: right; border-top: 1px solid #1E1E2C;">${safePaymentId}</td>
       </tr>
       <tr>
         <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">AMOUNT PAID</td>
-        <td style="padding: 8px 12px; font-size: 15px; font-weight: 800; color: #22C55E; text-align: right; border-top: 1px solid #1E1E2C;">${amountFormatted}</td>
+        <td style="padding: 8px 12px; font-size: 15px; font-weight: 800; color: #22C55E; text-align: right; border-top: 1px solid #1E1E2C;">${safeAmount}</td>
       </tr>
       <tr>
         <td style="padding: 8px 12px; font-size: 12px; color: #7F7F94; border-top: 1px solid #1E1E2C;">TIMESTAMP</td>
-        <td style="padding: 8px 12px; font-size: 12px; color: #FFFFFF; text-align: right; border-top: 1px solid #1E1E2C;">${paymentTime}</td>
+        <td style="padding: 8px 12px; font-size: 12px; color: #FFFFFF; text-align: right; border-top: 1px solid #1E1E2C;">${safeTime}</td>
       </tr>
     </table>
 
     <div style="text-align: center; margin: 32px 0 16px 0;">
-      <a href="${dashboardUrl}" style="background: linear-gradient(135deg, #ECC86A 0%, #DFBA5A 50%, #B38D2C 100%); color: #08080C; text-decoration: none; padding: 14px 28px; font-weight: 700; border-radius: 6px; font-size: 13px; display: inline-block; letter-spacing: 0.5px; text-transform: uppercase;">
+      <a href="${safeDashboardUrl}" style="background: linear-gradient(135deg, #ECC86A 0%, #DFBA5A 50%, #B38D2C 100%); color: #08080C; text-decoration: none; padding: 14px 28px; font-weight: 700; border-radius: 6px; font-size: 13px; display: inline-block; letter-spacing: 0.5px; text-transform: uppercase;">
         Track Project Progress
       </a>
     </div>
   `;
-  return baseEmailWrapper(content, `Payment Receipt: ${orderNumber}`);
+  return baseEmailWrapper(content, `Payment Receipt: ${sanitizeText(orderNumber, 120)}`);
 }
 
 /**
@@ -739,22 +786,26 @@ export function buildWebsiteDeliveryEmailHtml(params: {
   orderNumber: string;
 }): string {
   const { customerName, businessName, liveUrl, dashboardUrl, orderNumber } = params;
+  const safeCustomer = escapeHtml(sanitizeText(customerName, 80));
+  const safeBusiness = escapeHtml(sanitizeText(businessName, 120));
+  const safeLiveUrl = escapeHtml(sanitizeText(liveUrl, 300));
+  const safeDashboardUrl = escapeHtml(sanitizeText(dashboardUrl, 300));
   const content = `
     <h2 style="margin: 0 0 8px 0; font-size: 22px; font-weight: 800; color: #DFBA5A;">
       🎉 Your Website is Live!
     </h2>
     <p style="margin: 0 0 20px 0; font-size: 14px; color: #A0A0B2;">
-      Dear ${sanitizeText(customerName, 80)},
+      Dear ${safeCustomer},
     </p>
     <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #CCCCCC;">
-      We are thrilled to announce that your bespoke digital storefront for <strong>${sanitizeText(businessName, 100)}</strong> has been successfully built, deployed, and published to the Cloudflare Edge global network!
+      We are thrilled to announce that your bespoke digital storefront for <strong>${safeBusiness}</strong> has been successfully built, deployed, and published to the Cloudflare Edge global network!
     </p>
 
     <!-- Prominent Live Site Box -->
     <div style="background-color: #14141E; border: 1px solid #DFBA5A; border-radius: 8px; padding: 24px; text-align: center; margin: 24px 0;">
       <p style="margin: 0 0 8px 0; font-size: 11px; color: #8E8EA2; text-transform: uppercase; letter-spacing: 1px;">YOUR OFFICIAL LIVE WEBSITE</p>
-      <a href="${liveUrl}" style="font-size: 18px; font-weight: 700; color: #ECC86A; text-decoration: underline; word-break: break-all;">
-        ${liveUrl}
+      <a href="${safeLiveUrl}" style="font-size: 18px; font-weight: 700; color: #ECC86A; text-decoration: underline; word-break: break-all;">
+        ${safeLiveUrl}
       </a>
     </div>
 
@@ -773,7 +824,7 @@ export function buildWebsiteDeliveryEmailHtml(params: {
     </table>
 
     <div style="text-align: center; margin: 32px 0 16px 0;">
-      <a href="${dashboardUrl}" style="background: linear-gradient(135deg, #ECC86A 0%, #DFBA5A 50%, #B38D2C 100%); color: #08080C; text-decoration: none; padding: 14px 28px; font-weight: 700; border-radius: 6px; font-size: 13px; display: inline-block; letter-spacing: 0.5px; text-transform: uppercase;">
+      <a href="${safeDashboardUrl}" style="background: linear-gradient(135deg, #ECC86A 0%, #DFBA5A 50%, #B38D2C 100%); color: #08080C; text-decoration: none; padding: 14px 28px; font-weight: 700; border-radius: 6px; font-size: 13px; display: inline-block; letter-spacing: 0.5px; text-transform: uppercase;">
         Open Management Dashboard
       </a>
     </div>
@@ -784,5 +835,5 @@ export function buildWebsiteDeliveryEmailHtml(params: {
       </p>
     </div>
   `;
-  return baseEmailWrapper(content, `Your Website is Live: ${businessName}`);
+  return baseEmailWrapper(content, `Your Website is Live: ${sanitizeText(businessName, 120)}`);
 }

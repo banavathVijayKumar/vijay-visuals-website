@@ -4,11 +4,14 @@
 //   CASHFREE_API_VERSION, and CASHFREE_WEBHOOK_SECRET ONLY from env.
 // - NEVER hardcodes keys or secrets.
 // - NEVER exposes CASHFREE_CLIENT_SECRET or CASHFREE_WEBHOOK_SECRET to client.
+// - CASHFREE_WEBHOOK_SECRET is mandatory for webhooks; CASHFREE_CLIENT_SECRET
+//   is never accepted as a webhook signing-secret fallback.
 // - Supports Cashfree PG Sandbox (https://sandbox.cashfree.com/pg) and
 //   Production (https://api.cashfree.com/pg) via official 2023-08-01 API.
 // ============================================================================
 
 import { CloudflareEnv, hmacSha256Base64, hmacSha256Hex, safeEqual } from '../_shared';
+import { parseCashfreeJsonPreservingLargeIds } from './_cashfreeIdentity';
 
 /**
  * Resilient environment variable reader:
@@ -65,7 +68,9 @@ export function getEdgeCashfreeStatus(env: CloudflareEnv): EdgeCashfreeStatus {
   return {
     configured: true,
     mode: isProduction ? 'production' : 'sandbox',
-    webhookConfigured: Boolean(webhookSecret || clientSecret),
+    // Only a dedicated webhook secret counts as configured. The API client
+    // secret is never accepted as a webhook signing secret.
+    webhookConfigured: Boolean(webhookSecret),
     apiVersion,
     message: isProduction
       ? 'Cashfree Production Mode active on Cloudflare Pages Functions.'
@@ -333,7 +338,7 @@ export async function createEdgeCashfreeOrder(
     body: JSON.stringify(payload),
   });
 
-  const data = (await res.json().catch(() => ({}))) as {
+  let data: {
     cf_order_id?: number | string;
     order_id?: string;
     order_status?: string;
@@ -343,7 +348,12 @@ export async function createEdgeCashfreeOrder(
     message?: string;
     type?: string;
     code?: string;
-  };
+  } = {};
+  try {
+    data = parseCashfreeJsonPreservingLargeIds(await res.text());
+  } catch {
+    data = {};
+  }
 
   if (!res.ok || !data.order_id || !data.payment_session_id) {
     const errMsg =
@@ -382,7 +392,7 @@ export async function fetchEdgeCashfreeOrder(
     headers: getCashfreeHeaders(env),
   });
 
-  const data = (await res.json().catch(() => ({}))) as {
+  let data: {
     cf_order_id?: number | string;
     order_id?: string;
     order_status?: string;
@@ -390,7 +400,12 @@ export async function fetchEdgeCashfreeOrder(
     order_amount?: number;
     order_currency?: string;
     message?: string;
-  };
+  } = {};
+  try {
+    data = parseCashfreeJsonPreservingLargeIds(await res.text());
+  } catch {
+    data = {};
+  }
 
   if (!res.ok || !data.order_id) {
     throw new Error(data?.message || `Cashfree Fetch Order returned HTTP ${res.status}`);
@@ -422,53 +437,98 @@ export async function fetchEdgeCashfreeOrderPayments(
   });
 
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
+    let data: { message?: string } = {};
+    try {
+      data = parseCashfreeJsonPreservingLargeIds(await res.text());
+    } catch {
+      data = {};
+    }
     throw new Error(data?.message || `Cashfree Fetch Order Payments returned HTTP ${res.status}`);
   }
 
-  const list = (await res.json().catch(() => [])) as EdgeCashfreePaymentEntity[];
-  return Array.isArray(list) ? list : [];
+  try {
+    const list = parseCashfreeJsonPreservingLargeIds<EdgeCashfreePaymentEntity[]>(await res.text());
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface EdgeCashfreeRefundResult {
+  /** Cashfree-generated refund ID (cf_refund_id), with merchant ID fallback. */
+  id: string;
+  /** Deterministic merchant refund_id sent on every retry of this operation. */
+  merchantRefundId: string;
+  status: string;
+  amount: number;
+  raw: Record<string, any>;
 }
 
 export async function createEdgeCashfreeRefund(
   env: CloudflareEnv,
   input: {
     orderId: string;
-    amountInr?: number;
-    refundId?: string;
+    amountInr: number;
+    refundId: string;
+    idempotencyKey: string;
     reason?: string;
   }
-): Promise<{ id: string; status: string; amount: number }> {
+): Promise<EdgeCashfreeRefundResult> {
   const status = getEdgeCashfreeStatus(env);
   if (!status.configured) {
     throw new Error(status.message);
   }
 
-  const baseUrl = getCashfreeBaseUrl(env);
-  const refundId = input.refundId || `ref_${Date.now()}`;
-  const payload: Record<string, any> = {
-    refund_id: refundId,
-    refund_note: input.reason || 'Admin initiated refund',
-  };
-  if (input.amountInr !== undefined) {
-    payload.refund_amount = input.amountInr;
+  // Cashfree requires a 3-40 character alphanumeric merchant refund_id.
+  const refundId = String(input.refundId || '').trim();
+  if (!/^[A-Za-z0-9]{3,40}$/.test(refundId)) {
+    throw new Error('Unsafe Cashfree merchant refund ID; refusing to start a refund.');
+  }
+  const idempotencyKey = String(input.idempotencyKey || '').trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
+    throw new Error('Unsafe Cashfree refund idempotency key; refusing to start a refund.');
+  }
+  if (!Number.isFinite(input.amountInr) || input.amountInr <= 0) {
+    throw new Error('Invalid Cashfree refund amount.');
   }
 
-  const res = await fetch(`${baseUrl}/orders/${encodeURIComponent(input.orderId)}/refunds`, {
+  const baseUrl = getCashfreeBaseUrl(env);
+  const orderId = String(input.orderId || '').trim();
+  const payload: Record<string, any> = {
+    refund_id: refundId,
+    refund_amount: input.amountInr,
+    refund_note: String(input.reason || 'Admin initiated refund').slice(0, 100),
+  };
+
+  // Same deterministic key on every retry: Cashfree replays the original
+  // response instead of creating a second refund after a timeout/failure.
+  const headers: Record<string, string> = {
+    ...(getCashfreeHeaders(env) as Record<string, string>),
+    'x-idempotency-key': idempotencyKey,
+  };
+
+  const res = await fetch(`${baseUrl}/orders/${encodeURIComponent(orderId)}/refunds`, {
     method: 'POST',
-    headers: getCashfreeHeaders(env),
+    headers,
     body: JSON.stringify(payload),
   });
 
-  const data = (await res.json().catch(() => ({}))) as Record<string, any>;
+  let data: Record<string, any> = {};
+  try {
+    data = parseCashfreeJsonPreservingLargeIds(await res.text());
+  } catch {
+    data = {};
+  }
   if (!res.ok) {
     throw new Error(data?.message || `Cashfree Refund returned HTTP ${res.status}`);
   }
 
   return {
     id: String(data.cf_refund_id || data.refund_id || refundId),
-    status: String(data.refund_status || 'SUCCESS'),
-    amount: Number(data.refund_amount || input.amountInr || 0),
+    merchantRefundId: String(data.refund_id || refundId),
+    status: String(data.refund_status || 'PENDING'),
+    amount: Number(data.refund_amount || input.amountInr),
+    raw: data,
   };
 }
 
@@ -478,36 +538,27 @@ export async function verifyEdgeCashfreeWebhookSignature(
   signature: string,
   timestamp: string
 ): Promise<boolean> {
+  // A dedicated webhook secret is mandatory. CASHFREE_CLIENT_SECRET is an API
+  // credential, never a webhook signing secret, and must not be used as a
+  // fallback even if it happens to verify an incoming signature.
   const webhookSecret = getTrimmedEnvVar(env, 'CASHFREE_WEBHOOK_SECRET');
-  const clientSecret = getTrimmedEnvVar(env, 'CASHFREE_CLIENT_SECRET');
 
   const cleanSig = (signature || '').trim();
   const cleanTs = (timestamp || '').trim();
-  if (!cleanSig || !cleanTs || (!webhookSecret && !clientSecret)) {
+  if (!cleanSig || !cleanTs || !webhookSecret) {
     return false;
   }
 
   // Cashfree PG HMAC-SHA256 signature formula: timestamp + rawBody
   const message = `${cleanTs}${rawBody}`;
 
-  // Candidate secrets configured in environment variables (CASHFREE_WEBHOOK_SECRET, CASHFREE_CLIENT_SECRET)
-  const candidateSecrets = Array.from(
-    new Set([webhookSecret, clientSecret].filter(Boolean))
-  );
-
-  for (const secret of candidateSecrets) {
-    // 1. Base64 encoding (standard for Cashfree 2023-08-01 API)
-    const expectedBase64 = await hmacSha256Base64(secret, message);
-    if (safeEqual(cleanSig, expectedBase64)) {
-      return true;
-    }
-
-    // 2. Hex encoding (supported for compatibility)
-    const expectedHex = await hmacSha256Hex(secret, message);
-    if (safeEqual(cleanSig.toLowerCase(), expectedHex.toLowerCase())) {
-      return true;
-    }
+  // 1. Base64 encoding (standard for Cashfree 2023-08-01 API)
+  const expectedBase64 = await hmacSha256Base64(webhookSecret, message);
+  if (safeEqual(cleanSig, expectedBase64)) {
+    return true;
   }
 
-  return false;
+  // 2. Hex encoding (supported for compatibility)
+  const expectedHex = await hmacSha256Hex(webhookSecret, message);
+  return safeEqual(cleanSig.toLowerCase(), expectedHex.toLowerCase());
 }

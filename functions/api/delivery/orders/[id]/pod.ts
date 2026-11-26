@@ -11,6 +11,7 @@ import {
   sanitizeText,
   writeAuditLog,
 } from '../../../_shared';
+import { checkDeliveryOrderAccess } from '../../_deliveryAccess';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -45,13 +46,21 @@ export async function onRequestPatch(
 
   try {
     const existingOrder = await env.DB.prepare(
-      'SELECT id, payment_method, payment_status FROM store_orders WHERE id = ? LIMIT 1'
+      'SELECT id, website_id, payment_method, payment_status FROM store_orders WHERE id = ? LIMIT 1'
     )
       .bind(orderId)
-      .first<{ id: number; payment_method: string; payment_status: string }>();
+      .first<{ id: number; website_id: string; payment_method: string; payment_status: string }>();
 
     if (!existingOrder) {
       return jsonResponse({ error: 'Order not found.' }, 404);
+    }
+
+    const access = await checkDeliveryOrderAccess(env, auth.user, String(existingOrder.website_id || ''));
+    if (!access.authorized) {
+      return jsonResponse(
+        { error: 'Only the assigned delivery partner or business owner can record delivery proof.' },
+        403
+      );
     }
 
     if (existingOrder.payment_method === 'cashfree_online' && existingOrder.payment_status !== 'paid') {

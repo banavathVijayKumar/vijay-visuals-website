@@ -31,13 +31,16 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   if (env.DB) {
     try {
+      // Only the authenticated email is verified. Binding it to the phone
+      // predicate would silently omit matching orders and leak nothing useful;
+      // scope the export strictly to the verified identifier.
       const ords = await env.DB.prepare(
         `SELECT id, website_id, order_number, customer_name, customer_phone, total_inr, order_status, created_at
          FROM store_orders
-         WHERE customer_email = ? OR customer_phone = ?
+         WHERE customer_email = ?
          ORDER BY id DESC LIMIT 100`
       )
-        .bind(auth.user.email, auth.user.email)
+        .bind(auth.user.email)
         .all();
       exportData.orders = ords.results || [];
     } catch {}

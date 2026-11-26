@@ -7,6 +7,8 @@ import { requireUser } from '../../../_auth';
 import { PagesContext, handleOptions, jsonResponse, writeAuditLog } from '../../../_shared';
 import { requireTenantOwnerAccess, mapProductRowToUi, mapOrderRowToUi } from '../../../_tenantAccess';
 import { mapPublicationToTenant } from '../../../_tenantMapper';
+import { TenantDomainRow } from '../../../domains/_helpers';
+import { deriveDomainFields } from './domains/index';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -37,6 +39,29 @@ export async function onRequestGet(
   const orders: any[] = [];
   const coupons: any[] = [];
   const versions: any[] = [];
+  const crmLeads: any[] = [];
+  const domains: any[] = [];
+  const newsletterSubscribers: any[] = [];
+
+  // D1 has no tenant_seo_settings table: tenant SEO config is persisted in
+  // customer_website_publications.website_json by the existing /seo route.
+  const p = access.parsed;
+  const seoSettings = {
+    canonicalUrl: p.canonicalUrl || '',
+    robotsDirectives: p.robotsDirectives || 'index, follow',
+    googleSiteVerification: p.googleSiteVerification || '',
+    ga4MeasurementId: p.ga4MeasurementId || '',
+    cityAreaKeywords: p.cityAreaKeywords || '',
+    googleMapsUrl: p.googleMapsUrl || '',
+    gbpProfileUrl: p.gbpProfileUrl || '',
+    localBusinessType: p.localBusinessType || 'LocalBusiness',
+    sectionOrderJson: JSON.stringify(
+      Array.isArray(p.sectionOrder) && p.sectionOrder.length > 0
+        ? p.sectionOrder
+        : ['hero', 'catalog', 'gallery', 'booking', 'contact']
+    ),
+    customPagesJson: JSON.stringify(Array.isArray(p.customPages) ? p.customPages : []),
+  };
 
   try {
     const prods = await env.DB.prepare('SELECT * FROM store_products WHERE website_id = ? ORDER BY id ASC')
@@ -74,6 +99,81 @@ export async function onRequestGet(
     }
   } catch {}
 
+  try {
+    const leads = await env.DB.prepare(
+      `SELECT id, full_name, phone, email, source, stage, loyalty_points, marketing_consent, unsubscribed_at, created_at
+       FROM crm_contacts_leads WHERE website_id = ? ORDER BY id ASC`
+    )
+      .bind(websiteId)
+      .all<Record<string, any>>();
+    for (const lead of leads.results || []) {
+      crmLeads.push({
+        id: Number(lead.id),
+        tenantId: tenantRowId,
+        name: String(lead.full_name || ''),
+        phone: String(lead.phone || ''),
+        email: String(lead.email || ''),
+        source: String(lead.source || 'website'),
+        stage: String(lead.stage || 'new'),
+        loyaltyPoints: Number(lead.loyalty_points || 0),
+        marketingConsent: Boolean(lead.marketing_consent),
+        unsubscribed: Boolean(lead.unsubscribed_at),
+        createdAt: String(lead.created_at || ''),
+      });
+    }
+  } catch {}
+
+  try {
+    const domainRows = await env.DB.prepare(
+      'SELECT * FROM tenant_domains WHERE website_id = ? ORDER BY is_primary DESC, created_at DESC'
+    )
+      .bind(websiteId)
+      .all<TenantDomainRow>();
+    const checks = await env.DB.prepare(
+      'SELECT * FROM domain_health_checks WHERE website_id = ? ORDER BY checked_at DESC LIMIT 100'
+    )
+      .bind(websiteId)
+      .all<Record<string, any>>();
+    const healthRows = checks.results || [];
+    for (const row of domainRows.results || []) {
+      domains.push(
+        deriveDomainFields(
+          row,
+          tenantRowId,
+          env,
+          healthRows.find((c) => Number(c.domain_id) === Number(row.id)) || null
+        )
+      );
+    }
+  } catch {}
+
+  try {
+    // Matches the existing /subscribers route: newsletter opt-ins live in
+    // crm_contacts_leads with explicit, non-unsubscribed marketing consent.
+    const subscribers = await env.DB.prepare(
+      `SELECT id, full_name, email, source, marketing_consent, unsubscribed_at, created_at
+       FROM crm_contacts_leads
+       WHERE website_id = ? AND marketing_consent = 1 AND unsubscribed_at IS NULL
+       ORDER BY created_at DESC, id DESC LIMIT 500`
+    )
+      .bind(websiteId)
+      .all<Record<string, any>>();
+    for (const subscriber of subscribers.results || []) {
+      const createdAt = String(subscriber.created_at || '');
+      newsletterSubscribers.push({
+        id: Number(subscriber.id),
+        tenantId: tenantRowId,
+        email: String(subscriber.email || ''),
+        name: String(subscriber.full_name || ''),
+        source: String(subscriber.source || 'newsletter'),
+        consentGiven: Boolean(subscriber.marketing_consent) && !subscriber.unsubscribed_at,
+        createdAt: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(createdAt)
+          ? `${createdAt.replace(' ', 'T')}Z`
+          : createdAt,
+      });
+    }
+  } catch {}
+
   const exportPayload = {
     exportVersion: '1.0',
     exportedAt: new Date().toISOString(),
@@ -85,6 +185,10 @@ export async function onRequestGet(
     orders,
     coupons,
     versions,
+    crmLeads,
+    domains,
+    seoSettings,
+    newsletterSubscribers,
   };
 
   const encoder = new TextEncoder();
@@ -103,6 +207,9 @@ export async function onRequestGet(
       checksumSha256,
       productsCount: products.length,
       ordersCount: orders.length,
+      crmLeadsCount: crmLeads.length,
+      domainsCount: domains.length,
+      newsletterSubscribersCount: newsletterSubscribers.length,
     },
   });
 

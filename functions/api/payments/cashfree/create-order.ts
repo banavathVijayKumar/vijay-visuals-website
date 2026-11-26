@@ -9,7 +9,7 @@
 import { requireUser, requireWebsiteAccess } from '../../_auth';
 import {
   PagesContext,
-  checkRateLimit,
+  checkRateLimit,  rateLimitResponse,
   errorJson,
   json,
   parseJsonBody,
@@ -35,9 +35,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
   const rl = await checkRateLimit(env, `cf_platform_order:${auth.user.id}`, 20, 3600);
-  if (!rl.allowed) {
-    return errorJson('Too many payment order attempts. Please wait a few minutes.', 429);
-  }
+  if (!rl.allowed) return rateLimitResponse(rl, 'Too many payment order attempts. Please wait a few minutes.')
 
   const cfStatus = getEdgeCashfreeStatus(env);
   if (!cfStatus.configured) {

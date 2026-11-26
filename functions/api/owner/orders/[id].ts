@@ -130,6 +130,22 @@ export async function onRequestPatch(
     return jsonResponse({ error: 'Unsupported payment status.' }, 400);
   }
 
+  // Gateway orders can never be marked paid by a manual owner edit. Only the
+  // verified Cashfree webhook/checkout verification may change that status.
+  if (
+    existing.payment_method === 'cashfree_online' &&
+    existing.payment_status !== 'paid' &&
+    nextPaymentStatus === 'paid'
+  ) {
+    return jsonResponse(
+      {
+        error:
+          'Cashfree online orders can only be marked paid after gateway verification. Do not record an unpaid transaction as successful.',
+      },
+      409
+    );
+  }
+
   // UNPAID ONLINE ORDER FULFILLMENT RESTRICTION
   const RESTRICTED_FULFILLMENT_STATUSES = ['ready_for_pickup', 'out_for_delivery', 'delivered'];
   if (

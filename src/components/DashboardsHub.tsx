@@ -1613,16 +1613,25 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                                       </div>
                                       <div className="flex items-center gap-1.5 mt-1">
                                         <span className="text-[10px] text-[#84849A] uppercase">{ord.paymentMethod}</span>
-                                        <select
-                                          value={ord.paymentStatus}
-                                          onChange={(e) => handleUpdateOrder(ord.id, { paymentStatus: e.target.value })}
-                                          className="rounded border border-[#262634] bg-[#09090D] px-1.5 py-0.5 text-[10px] text-[#D7D7E2]"
-                                        >
-                                          <option value="cod_due">COD Due</option>
-                                          <option value="pending_verification">Verify UPI</option>
-                                          <option value="paid">Paid</option>
-                                          <option value="refunded">Refunded</option>
-                                        </select>
+                                        {String(ord.paymentMethod || '').toLowerCase().includes('cashfree') ? (
+                                          <span
+                                            className="text-[10px] text-[#D7D7E2]"
+                                            title="Gateway payments are updated automatically after verification."
+                                          >
+                                            {ord.paymentStatus}
+                                          </span>
+                                        ) : (
+                                          <select
+                                            value={ord.paymentStatus}
+                                            onChange={(e) => handleUpdateOrder(ord.id, { paymentStatus: e.target.value })}
+                                            className="rounded border border-[#262634] bg-[#09090D] px-1.5 py-0.5 text-[10px] text-[#D7D7E2]"
+                                          >
+                                            <option value="cod_due">COD Due</option>
+                                            <option value="pending_verification">Verify UPI</option>
+                                            <option value="paid">Paid</option>
+                                            <option value="refunded">Refunded</option>
+                                          </select>
+                                        )}
                                       </div>
                                       {ord.paymentReference && (
                                         <div className="text-[10px] text-[#9A9AAE] mt-0.5">UTR: {ord.paymentReference}</div>
@@ -1866,7 +1875,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                             <div className="flex flex-wrap gap-2">
                               {prodImages.map((img, idx) => (
                                 <div key={idx} className="relative w-16 h-16 rounded overflow-hidden border border-[#2A2A38]">
-                                  <img src={img} alt={`Product ${idx + 1}`} className="w-full h-full object-cover" />
+                                  <img src={img} alt={`Product ${idx + 1}`} width={64} height={64} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                                   <button
                                     type="button"
                                     onClick={() => setProdImages((prev) => prev.filter((_, i) => i !== idx))}
@@ -2015,6 +2024,10 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                                         <img
                                           src={p.imageUrl}
                                           alt={p.name}
+                                          width={36}
+                                          height={36}
+                                          loading="lazy"
+                                          decoding="async"
                                           className="w-9 h-9 rounded object-cover border border-[#262634] shrink-0"
                                         />
                                       )}
@@ -2258,6 +2271,10 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                               <img
                                 src={item.url}
                                 alt={item.title || `Gallery ${idx + 1}`}
+                                width={80}
+                                height={80}
+                                loading="lazy"
+                                decoding="async"
                                 className="w-20 h-20 rounded object-cover border border-[#2A2A38] shrink-0"
                               />
                               <div className="flex-1 min-w-0 space-y-1.5">
@@ -2578,6 +2595,10 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                           <img
                             src="/logo.png"
                             alt="VIJAY VISUALS"
+                            width={32}
+                            height={32}
+                            loading="lazy"
+                            decoding="async"
                             className="w-8 h-8 rounded border border-[#D4AF37]/50 object-contain bg-black"
                           />
                           <span className="font-extrabold text-sm text-[#D4AF37] tracking-wider">VIJAY VISUALS</span>

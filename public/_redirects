@@ -1,1 +1,21 @@
-/* /index.html 200
+# Canonical storefront route: /site/{slug} is the only indexable platform-host URL.
+/sites/*  /site/:splat  301!
+
+# Explicit SPA rewrites. There is deliberately no catch-all rule: unknown paths
+# must return HTTP 404 instead of a 200 copy of index.html.
+/site/*                       /index.html  200
+/builder                      /index.html  200
+/builder/*                    /index.html  200
+/marketplace                  /index.html  200
+/marketplace/*                /index.html  200
+/demo                         /index.html  200
+/demo/*                       /index.html  200
+/ai                           /index.html  200
+/ai/*                         /index.html  200
+/dashboards                   /index.html  200
+/dashboards/*                 /index.html  200
+/admin                        /index.html  200
+/admin/*                      /index.html  200
+/proposal/*                   /index.html  200
+/proposals/*                  /index.html  200
+/payments/cashfree/return     /index.html  200

@@ -244,8 +244,9 @@ export async function onRequestGet(
   try {
     const res = await env.DB.prepare(
       `SELECT COUNT(*) AS active_count
-       FROM platform_staff
-       WHERE website_id = ? AND is_active = 1`
+       FROM tenant_memberships
+       WHERE website_id = ? AND status = 'active'
+         AND role IN ('business_manager', 'business_staff')`
     )
       .bind(websiteId)
       .first<{ active_count: number }>();
@@ -458,8 +459,8 @@ export async function onRequestGet(
   if (!payoutAccount || kycStatus !== 'verified') {
     alerts.push({
       severity: 'info',
-      title: 'Online Razorpay Route KYC pending',
-      detail: 'Cash on Delivery & Direct UPI work now. Complete Seller KYC for automated online payouts.',
+      title: 'Online Cashfree payout verification pending',
+      detail: 'Cash on Delivery & Direct UPI work now. Complete Cashfree seller verification for automated online collections.',
       actionTab: 'payments',
     });
   }

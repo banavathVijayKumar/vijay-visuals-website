@@ -8,7 +8,7 @@
 import { requireUser, requireWebsiteAccess } from '../_auth';
 import {
   PagesContext,
-  checkRateLimit,
+  checkRateLimit,  rateLimitResponse,
   errorJson,
   json,
   parseJsonBody,
@@ -270,9 +270,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         request.headers.get('X-Forwarded-For') ||
         'unknown';
       const rl = await checkRateLimit(env, `guest_order:${clientIp}`, 15, 3600);
-      if (!rl.allowed) {
-        return errorJson('Too many guest checkout attempts. Please try again later.', 429);
-      }
+      if (!rl.allowed) return rateLimitResponse(rl, 'Too many guest checkout attempts. Please try again later.')
       if (body.paymentMethod && body.paymentMethod !== 'cod') {
         return errorJson(
           'Online checkout requires signing in so payment receipts and refunds remain tied to your account. Guest checkout supports Cash on Delivery (cod).',

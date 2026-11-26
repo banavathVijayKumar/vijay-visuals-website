@@ -1302,6 +1302,8 @@ async function runWhiteLabelTests(): Promise<void> {
       RESEND_VERIFIED_SENDER_DOMAINS: 'shop.tenant-a.test',
       WHATSAPP_CLOUD_API_TOKEN: 'local-wa-token',
       WHATSAPP_PHONE_NUMBER_ID: 'local-phone-id',
+      WHATSAPP_PAYMENT_TEMPLATE_NAME: 'payment_confirmed',
+      WHATSAPP_PAYMENT_TEMPLATE_LANGUAGE: 'en',
     });
 
     const payload = {

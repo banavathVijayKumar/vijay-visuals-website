@@ -42,6 +42,21 @@ function createD1(): { db: DatabaseSync; d1: D1Database } {
   for (const file of files) {
     db.exec(fs.readFileSync(path.join(migrationsDir, file), 'utf8'));
   }
+  // `vv_users` is managed outside the numbered migrations. requireUser reads it
+  // before every authenticated endpoint, so local fixtures must provide it.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vv_users (
+      id TEXT PRIMARY KEY,
+      auth_provider TEXT NOT NULL DEFAULT 'supabase',
+      auth_subject TEXT UNIQUE,
+      email TEXT,
+      full_name TEXT,
+      role TEXT NOT NULL DEFAULT 'customer',
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
   const d1: D1Database = {
     prepare(sql: string) {
       let values: any[] = [];
@@ -379,6 +394,13 @@ async function runCashfreeTests(): Promise<void> {
 }
 
 function seedWishlistProducts(db: DatabaseSync): void {
+  const insertUser = db.prepare(
+    `INSERT INTO vv_users (id, auth_subject, email, full_name, role, status)
+     VALUES (?, ?, ?, ?, 'customer', 'active')`
+  );
+  insertUser.run('auth-user-a', 'auth-user-a', 'user-a@example.invalid', 'Auth User A');
+  insertUser.run('auth-user-b', 'auth-user-b', 'user-b@example.invalid', 'Auth User B');
+
   db.prepare(
     `INSERT INTO customer_website_publications
       (website_id, owner_id, public_slug, business_name, website_json, status)
@@ -405,7 +427,31 @@ function createBrokenWishlistDb(): D1Database {
     throw new Error('no such table: customer_wishlists');
   };
   return {
-    prepare() {
+    prepare(sql: string) {
+      const normalized = String(sql || '').toLowerCase();
+      // Authentication must succeed so the test reaches the wishlist store.
+      if (/\b(from|into|update)\s+vv_users\b/.test(normalized)) {
+        return {
+          bind() {
+            return this;
+          },
+          async first() {
+            return {
+              id: 'auth-user-a',
+              auth_subject: 'auth-user-a',
+              role: 'customer',
+              status: 'active',
+              full_name: 'Auth User A',
+            };
+          },
+          async all() {
+            return { results: [], success: true };
+          },
+          async run() {
+            return { success: true, meta: { changes: 0, last_row_id: 0 } };
+          },
+        } as any;
+      }
       return {
         bind() {
           return this;

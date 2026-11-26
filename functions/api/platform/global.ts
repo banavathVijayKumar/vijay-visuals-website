@@ -23,7 +23,7 @@ export const SUPPORTED_COUNTRIES = [
     postalRegex: '^[1-9][0-9]{5}$',
     taxLabel: 'GST',
     defaultTaxPercent: 18,
-    supportedPaymentProviders: ['Razorpay (UPI, Cards, NetBanking)', 'Cash on Delivery (COD)'],
+    supportedPaymentProviders: ['Cashfree (UPI, Cards, NetBanking)', 'Cash on Delivery (COD)'],
     taxDisclosure: 'Operational GST calculation helper; statutory GSTR filing remains with your CA.',
   },
   {
@@ -37,7 +37,7 @@ export const SUPPORTED_COUNTRIES = [
     postalRegex: '^[0-9]{5}(-[0-9]{4})?$',
     taxLabel: 'Sales Tax',
     defaultTaxPercent: 0,
-    supportedPaymentProviders: ['International Cards via Razorpay International (subject to approval)', 'Manual Invoice'],
+    supportedPaymentProviders: ['International Cards via Cashfree (subject to approval)', 'Manual Invoice'],
     taxDisclosure: 'US state/county sales tax requires configuring an external tax provider before automated charging.',
   },
   {

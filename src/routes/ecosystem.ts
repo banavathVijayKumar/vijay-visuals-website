@@ -79,7 +79,19 @@ async function assertTenantOwnership(req: AuthRequest, tenantId: number) {
 // =========================================================================
 // MODULE 3D: RAW-BODY RAZORPAY WEBHOOK HANDLER (MOUNT BEFORE express.json)
 // =========================================================================
+/** Kept as a function so legacy handlers remain type-checkable while disabled. */
+function isRazorpayRetired(): boolean {
+  return true;
+}
+
 export async function handleRazorpayRawWebhook(req: Request, res: Response) {
+  // Razorpay is decommissioned. Historical webhook_events rows are retained,
+  // but no new Razorpay event may change paid status or entitlement.
+  if (isRazorpayRetired()) {
+    return res.status(410).json({
+      error: 'Razorpay payments are decommissioned. Use the Cashfree webhook at POST /api/webhooks/cashfree.',
+    });
+  }
   try {
     const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body || ''), 'utf8');
     const signature = String(req.headers['x-razorpay-signature'] || '');
@@ -238,6 +250,9 @@ export function createEcosystemRouter(): Router {
   });
 
   router.post('/api/payments/platform/create-order', requireAuth, async (req: AuthRequest, res) => {
+    if (isRazorpayRetired()) {
+      return res.status(410).json({ error: 'Razorpay payments are decommissioned. Use Cashfree Payments.' });
+    }
     try {
       const parsed = platformOrderSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -313,6 +328,9 @@ export function createEcosystemRouter(): Router {
   });
 
   router.post('/api/payments/platform/verify', requireAuth, async (req: AuthRequest, res) => {
+    if (isRazorpayRetired()) {
+      return res.status(410).json({ error: 'Razorpay payments are decommissioned. Use Cashfree Payments.' });
+    }
     try {
       const parsed = verifyPlatformSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -420,6 +438,9 @@ export function createEcosystemRouter(): Router {
   });
 
   router.post('/api/payments/platform/:id/refund', requireAuth, async (req: AuthRequest, res) => {
+    if (isRazorpayRetired()) {
+      return res.status(410).json({ error: 'Razorpay refunds are decommissioned. Use Cashfree refunds.' });
+    }
     try {
       if (req.dbUser!.role !== 'super_admin') {
         return res.status(403).json({ error: 'Only Super Admin can issue platform refunds.' });
@@ -580,6 +601,9 @@ export function createEcosystemRouter(): Router {
 
   // Marketplace Storefront Razorpay Route Checkout Order
   router.post('/api/payments/store/create-order', optionalAuth, async (req: AuthRequest, res) => {
+    if (isRazorpayRetired()) {
+      return res.status(410).json({ error: 'Razorpay Route is decommissioned. Use Cashfree Payments.' });
+    }
     try {
       const orderId = Number(req.body?.orderId);
       if (!orderId) return res.status(400).json({ error: 'Order ID is required.' });

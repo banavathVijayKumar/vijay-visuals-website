@@ -95,7 +95,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
           <div className="space-y-2">
             <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 bg-amber-950/60 px-2.5 py-0.5 rounded border border-amber-500/30">
-              VIJAY VISUALS · SYSTEM RECOVERY
+              SERVICE RECOVERY
             </span>
             <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
               {fallbackTitle || `${sectionName || 'Application'} Temporarily Unavailable`}

@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { AuthenticatedUser, TenantRole } from './_auth';
-import { CloudflareEnv, errorJson } from './_shared';
+import { CloudflareEnv, errorJson, jsonResponse, writeAuditLog } from './_shared';
 import { PublicationRow, cleanString } from './_tenantMapper';
 import {
   FREE_START_PLAN_CODE,
@@ -71,6 +71,19 @@ export function validateSafeHttpUrl(raw: unknown, maxLen = 500): string {
     if (u.protocol === 'https:' || u.protocol === 'http:') {
       return u.toString().slice(0, maxLen);
     }
+  } catch {
+    return '';
+  }
+  return '';
+}
+
+/** Attachment links must be absolute HTTPS URLs; never render javascript:, data: or file: links. */
+export function validateAttachmentUrl(raw: unknown, maxLen = 500): string {
+  const s = cleanString(raw, maxLen);
+  if (!s) return '';
+  try {
+    const u = new URL(s);
+    if (u.protocol === 'https:' && u.hostname) return u.toString().slice(0, maxLen);
   } catch {
     return '';
   }
@@ -268,6 +281,54 @@ export type TenantAccessResult =
  * - Allows super_admin / platform_staff
  * - Returns HTTP 403 for any cross-tenant access attempt.
  */
+/**
+ * Customer approval gate for post-purchase changes. A website with any open
+ * change request must be accepted by the customer before it can go live again.
+ * First-time package activation has no change-request rows and is unaffected.
+ * Returns a Response when publishing must be blocked, otherwise null.
+ */
+export async function customerApprovalBlockedResponse(
+  env: CloudflareEnv,
+  websiteId: string
+): Promise<Response | null> {
+  if (!env.DB) return null;
+  if (!websiteId) return null;
+  try {
+    const pending = await env.DB.prepare(
+      `SELECT id FROM website_change_requests
+       WHERE website_id = ?
+         AND status IN ('submitted', 'under_review', 'quoted', 'approved', 'in_progress', 'review_ready')
+       LIMIT 1`
+    )
+      .bind(websiteId)
+      .first<{ id: number }>();
+    if (pending) {
+      return jsonResponse(
+        {
+          error:
+            'Customer approval is required before this website can be published. Review the completed work and accept it first.',
+          code: 'CUSTOMER_APPROVAL_REQUIRED',
+          requestId: pending.id,
+        },
+        409
+      );
+    }
+  } catch (err) {
+    if (isMissingTableError(err)) {
+      // Optional support schema not applied: no tracked change requests exist.
+      return null;
+    }
+    return jsonResponse(
+      {
+        error: 'Customer approval status could not be verified. Publishing is temporarily unavailable.',
+        code: 'APPROVAL_CHECK_UNAVAILABLE',
+      },
+      503
+    );
+  }
+  return null;
+}
+
 export async function requireTenantOwnerAccess(
   env: CloudflareEnv,
   user: AuthenticatedUser,
@@ -474,7 +535,14 @@ export function mapOrderRowToUi(
     rawMethod === 'upi_manual' ? 'upi_reference' : rawMethod;
 
   const rawStatus = String(o.order_status || 'placed');
-  const status = rawStatus === 'placed' ? 'pending' : rawStatus;
+  // D1 stores the ready_for_pickup milestone as `packed` because its
+  // order_status CHECK excludes ready_for_pickup. Restore the UI label here.
+  const status =
+    rawStatus === 'placed'
+      ? 'pending'
+      : rawStatus === 'packed'
+      ? 'ready_for_pickup'
+      : rawStatus;
 
   return {
     id: Number(o.id),
@@ -693,6 +761,147 @@ export async function revokePaymentEntitlement(
     .run();
 }
 
+export interface CashfreeRefundFinalizationInput {
+  paymentId: number;
+  orderId: string;
+  merchantRefundId: string;
+  cfRefundId: string;
+  amountInr: number;
+  reason: string;
+  providerStatus: string;
+  actorId: string;
+  rawWebhookJson?: string;
+}
+
+function parseNotesJson(raw: unknown): Record<string, any> {
+  try {
+    const parsed = JSON.parse(String(raw || '{}'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function withRefundNotes(
+  raw: unknown,
+  input: CashfreeRefundFinalizationInput
+): Record<string, any> {
+  const notes = parseNotesJson(raw);
+  const refundId = input.cfRefundId || input.merchantRefundId;
+  const priorRefunds = Array.isArray(notes.refunds) ? notes.refunds.slice(-19) : [];
+  notes.refunds = [
+    ...priorRefunds,
+    {
+      merchantRefundId: input.merchantRefundId,
+      cfRefundId: input.cfRefundId || null,
+      amountInr: input.amountInr,
+      reason: String(input.reason || '').slice(0, 300),
+      providerStatus: input.providerStatus,
+      finalizedAt: new Date().toISOString(),
+    },
+  ];
+  notes.refundStatus = 'REFUNDED';
+  notes.refundId = refundId;
+  notes.refundAmountInr = input.amountInr;
+  notes.refundReason = String(input.reason || '').slice(0, 300);
+  notes.refundedAt = new Date().toISOString();
+  return notes;
+}
+
+/**
+ * Single terminal-refund finalizer used by both the admin refund response and
+ * the REFUND_STATUS_WEBHOOK handler. It deliberately updates every existing
+ * ledger in place; no historical payment or refund row is deleted or replaced.
+ */
+export async function finalizeCashfreePlatformRefund(
+  env: CloudflareEnv,
+  input: CashfreeRefundFinalizationInput
+): Promise<void> {
+  if (!env.DB) return;
+
+  const payment = await env.DB.prepare(
+    `SELECT id, subscription_id, razorpay_payment_id, notes_json
+     FROM platform_payments WHERE id = ? LIMIT 1`
+  )
+    .bind(input.paymentId)
+    .first<{ id: number; subscription_id: number | null; razorpay_payment_id: string | null; notes_json: string }>();
+
+  const cashfreePayment = await env.DB.prepare(
+    'SELECT notes_json FROM cashfree_payments WHERE order_id = ? LIMIT 1'
+  )
+    .bind(input.orderId)
+    .first<{ notes_json: string }>();
+
+  const refundId = input.cfRefundId || input.merchantRefundId;
+  const platformNotes = JSON.stringify(withRefundNotes(payment?.notes_json, input));
+  const cashfreeNotes = JSON.stringify(withRefundNotes(cashfreePayment?.notes_json, input));
+
+  await env.DB.prepare(
+    `UPDATE refunds
+     SET status = 'processed',
+         razorpay_payment_id = COALESCE(razorpay_payment_id, ?),
+         updated_at = datetime('now')
+     WHERE razorpay_refund_id = ?`
+  )
+    .bind(payment?.razorpay_payment_id || '', input.merchantRefundId)
+    .run();
+
+  await env.DB.prepare(
+    `UPDATE cashfree_payments
+     SET status = 'REFUNDED',
+         notes_json = ?,
+         raw_webhook_json = CASE WHEN ? = '' THEN raw_webhook_json ELSE ? END,
+         updated_at = datetime('now')
+     WHERE order_id = ?`
+  )
+    .bind(
+      cashfreeNotes,
+      String(input.rawWebhookJson || ''),
+      String(input.rawWebhookJson || ''),
+      input.orderId
+    )
+    .run();
+
+  await env.DB.prepare(
+    `UPDATE platform_payments
+     SET status = 'refunded',
+         refund_id = COALESCE(?, refund_id),
+         notes_json = ?,
+         updated_at = datetime('now')
+     WHERE razorpay_order_id = ?`
+  )
+    .bind(refundId, platformNotes, `cf_${input.orderId}`)
+    .run();
+
+  if (payment?.subscription_id) {
+    await env.DB.prepare(
+      `UPDATE tenant_subscriptions
+       SET status = 'cancelled', updated_at = datetime('now')
+       WHERE id = ?`
+    )
+      .bind(payment.subscription_id)
+      .run();
+  }
+
+  // One-time purchases are lifetime entitlements; revocation is idempotent.
+  await revokePaymentEntitlement(env, input.paymentId);
+
+  await writeAuditLog(env, {
+    actorId: input.actorId,
+    actorRole: input.actorId === 'cashfree_webhook' ? 'system' : 'super_admin',
+    action: 'cashfree_refund_finalized',
+    targetType: 'platform_payments',
+    targetId: String(input.paymentId),
+    details: {
+      orderId: input.orderId,
+      merchantRefundId: input.merchantRefundId,
+      cfRefundId: input.cfRefundId,
+      amountInr: input.amountInr,
+      providerStatus: input.providerStatus,
+    },
+  });
+}
+
 export async function provisionLifetimeEntitlement(
   env: CloudflareEnv,
   input: ProvisionLifetimeEntitlementInput
@@ -857,6 +1066,51 @@ export async function assertProductQuota(
   }
 }
 
+export function websitePublishLimitAllows(
+  publishedCount: number,
+  maxWebsites: number,
+  alreadyPublished: boolean
+): boolean {
+  if (alreadyPublished) return true;
+  const limit = Math.max(0, Math.floor(Number(maxWebsites) || 0));
+  return Math.max(0, Math.floor(Number(publishedCount) || 0)) < limit;
+}
+
+/**
+ * Count-based guard used only where the caller cannot add the limit directly
+ * to its atomic UPDATE/INSERT. Publish handlers should prefer the SQL form:
+ * `... AND (status = 'published' OR (SELECT COUNT(*) ...) < maxWebsites)`.
+ */
+export async function enforceWebsitePublishLimit(
+  env: CloudflareEnv,
+  ownerId: string,
+  websiteId: string,
+  maxWebsites: number
+): Promise<Response | null> {
+  if (!env.DB) {
+    return errorJson('Website limit cannot be verified right now.', 503, { code: 'DB_UNAVAILABLE' });
+  }
+  try {
+    const row = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT website_id) AS published_count
+       FROM customer_website_publications
+       WHERE owner_id = ? AND status = 'published' AND website_id <> ?`
+    )
+      .bind(ownerId, websiteId)
+      .first<{ published_count: number }>();
+    if (!websitePublishLimitAllows(Number(row?.published_count || 0), maxWebsites, false)) {
+      return errorJson('Your current package has reached its live website limit.', 409, {
+        code: 'WEBSITE_LIMIT_REACHED',
+      });
+    }
+  } catch {
+    return errorJson('Unable to verify your website limit. Please retry.', 503, {
+      code: 'WEBSITE_LIMIT_CHECK_FAILED',
+    });
+  }
+  return null;
+}
+
 export async function checkTenantSubscriptionEntitlement(
   env: CloudflareEnv,
   websiteId: string,
@@ -909,10 +1163,10 @@ export async function checkTenantSubscriptionEntitlement(
   // 2. Active recurring subscriptions. Period end is always a real timestamp.
   try {
     const sub = await env.DB.prepare(
-      `SELECT ts.plan_code, ts.status, ts.current_period_end, sp.max_websites, sp.max_products
+      `SELECT ts.id, ts.plan_code, ts.status, ts.current_period_end, sp.max_websites, sp.max_products
        FROM tenant_subscriptions ts
        LEFT JOIN subscription_plans sp ON sp.code = ts.plan_code
-       WHERE (ts.website_id = ? OR ts.owner_id = ?)
+       WHERE (ts.website_id = ? OR (ts.owner_id = ? AND COALESCE(ts.website_id, '') = ''))
          -- Self-service trial subscriptions do not grant live publishing.
          -- Trial users may edit/save/preview drafts; verified paid or
          -- Super Admin activated subscriptions use status = 'active'.
@@ -922,6 +1176,7 @@ export async function checkTenantSubscriptionEntitlement(
     )
       .bind(websiteId, ownerId)
       .first<{
+        id: number;
         plan_code: string;
         status: string;
         current_period_end: string;
@@ -930,6 +1185,20 @@ export async function checkTenantSubscriptionEntitlement(
       }>();
 
     if (sub) {
+      // An owner-level subscription is only a provisioning fallback. Bind it
+      // to this website immediately so it cannot unlock unrelated websites.
+      if (sub.id) {
+        try {
+          await env.DB.prepare(
+            `UPDATE tenant_subscriptions SET website_id = ?, updated_at = datetime('now')
+             WHERE id = ? AND (website_id IS NULL OR website_id = '')`
+          )
+            .bind(websiteId, sub.id)
+            .run();
+        } catch {
+          // entitlement remains valid; binding is retried on next check
+        }
+      }
       const code = String(sub.plan_code || '').toLowerCase();
       return entitlementFromPlanCode(
         code,
@@ -945,17 +1214,29 @@ export async function checkTenantSubscriptionEntitlement(
   // Free Start is never a payment and must not be inferred from a payment row.
   try {
     const payment = await env.DB.prepare(
-      `SELECT plan_code FROM platform_payments
-       WHERE (website_id = ? OR owner_id = ?)
+      `SELECT id, plan_code FROM platform_payments
+       WHERE (website_id = ? OR (owner_id = ? AND COALESCE(website_id, '') = ''))
          AND status = 'paid' AND signature_verified = 1
          AND purpose IN ('platform_subscription', 'website_purchase')
          AND plan_code <> ?
        ORDER BY id DESC LIMIT 1`
     )
       .bind(websiteId, ownerId, FREE_START_PLAN_CODE)
-      .first<{ plan_code: string }>();
+      .first<{ id: number; plan_code: string }>();
 
     if (payment) {
+      if (payment.id) {
+        try {
+          await env.DB.prepare(
+            `UPDATE platform_payments SET website_id = ?, updated_at = datetime('now')
+             WHERE id = ? AND (website_id IS NULL OR website_id = '')`
+          )
+            .bind(websiteId, payment.id)
+            .run();
+        } catch {
+          // entitlement remains valid; binding is retried on next check
+        }
+      }
       const code = String(payment.plan_code || '').toLowerCase();
       return entitlementFromPlanCode(code, 1, 500);
     }

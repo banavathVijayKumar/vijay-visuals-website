@@ -4,7 +4,7 @@
 
 import {
   PagesContext,
-  checkRateLimit,
+  checkRateLimit,  rateLimitResponse,
   getClientIp,
   handleOptions,
   jsonResponse,
@@ -22,9 +22,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   if (!env.DB) return jsonResponse({ error: 'Subscription storage is not configured.' }, 503);
 
   const rl = await checkRateLimit(env, `newsletter:${getClientIp(request)}`, 10, 600);
-  if (!rl.allowed) {
-    return jsonResponse({ error: 'Too many requests. Please wait a few minutes.' }, 429);
-  }
+  if (!rl.allowed) return rateLimitResponse(rl, 'Too many requests. Please wait a few minutes.')
 
   const body = await parseJsonBody<Record<string, any>>(request);
   if (!body) return jsonResponse({ error: 'Invalid JSON request payload.' }, 400);

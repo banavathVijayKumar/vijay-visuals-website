@@ -16,6 +16,7 @@ import {
 } from '../_shared';
 import {
   checkTenantSubscriptionEntitlement,
+  customerApprovalBlockedResponse,
   mapProductRowToUi,
   requireTenantOwnerAccess,
   validateEnabledModules,
@@ -66,7 +67,6 @@ interface ProductReviewRow {
   id: number;
   product_id?: number | null;
   product_name?: string | null;
-  reviewer_user_id?: string;
   reviewer_name: string;
   rating: number;
   title?: string;
@@ -84,7 +84,7 @@ export async function onRequestOptions(): Promise<Response> {
 export async function onRequestGet(
   context: PagesContext<{ slug: string }>
 ): Promise<Response> {
-  const { params, env } = context;
+  const { request, params, env } = context;
   const slug = String(params?.slug || '').toLowerCase().trim();
 
   if (!SLUG_PATTERN.test(slug)) {
@@ -206,7 +206,6 @@ export async function onRequestGet(
     websiteId: string;
     productId: number;
     productName: string;
-    reviewerUserId: string;
     customerName: string;
     rating: number;
     title: string;
@@ -222,7 +221,7 @@ export async function onRequestGet(
 
   try {
     const revRes = await env.DB.prepare(
-      `SELECT r.id, r.product_id, r.reviewer_user_id, r.reviewer_name, r.rating, r.title, r.comment,
+      `SELECT r.id, r.product_id, r.reviewer_name, r.rating, r.title, r.comment,
               r.verified_purchase, r.owner_reply, r.owner_replied_at, r.created_at, p.name AS product_name
        FROM product_reviews r
        LEFT JOIN store_products p ON p.id = r.product_id
@@ -257,7 +256,6 @@ export async function onRequestGet(
         websiteId: row.website_id,
         productId: Number(r.product_id || 0),
         productName: r.product_name || '',
-        reviewerUserId: r.reviewer_user_id || '',
         customerName: cleanString(r.reviewer_name, 120) || 'Verified Customer',
         rating: Number(r.rating) || 0,
         title: cleanString(r.title, 140) || '',
@@ -305,8 +303,16 @@ export async function onRequestGet(
     // Optional table
   }
 
-  // Prepend dedicated Sandbox Test Product in Sandbox mode for safe ₹1 Cashfree testing
-  if (cfStatus.mode === 'sandbox') {
+  // The ₹1 Cashfree test item is for local/preview verification only. It must
+  // never be injected into a customer's public production catalog.
+  const requestHost = String(new URL(request.url).hostname || '').toLowerCase().replace(/\.$/, '');
+  const isPreviewHost =
+    requestHost === 'localhost' ||
+    requestHost === '127.0.0.1' ||
+    (requestHost.endsWith('.vijay-visuals-site.pages.dev') &&
+      requestHost !== 'vijay-visuals-site.pages.dev');
+
+  if (cfStatus.mode === 'sandbox' && isPreviewHost) {
     products.unshift({
       id: 999999,
       tenantId: tenant.id,
@@ -475,6 +481,9 @@ export async function onRequestPatch(
     };
   }
   if (typeof body.tagline === 'string') current.tagline = sanitizeText(body.tagline, 240);
+  if (typeof body.heroHeadline === 'string') current.heroHeadline = sanitizeText(body.heroHeadline, 240);
+  if (typeof body.heroSubheadline === 'string') current.heroSubheadline = sanitizeText(body.heroSubheadline, 600);
+  if (typeof body.ctaText === 'string') current.ctaText = sanitizeText(body.ctaText, 80);
   if (typeof body.description === 'string') current.description = sanitizeText(body.description, 1200);
   if (typeof body.logoText === 'string') current.logoText = sanitizeText(body.logoText, 8).toUpperCase();
   if (body.logoImage !== undefined) current.logoImage = validateSafeImageSource(body.logoImage);
@@ -603,6 +612,11 @@ export async function onRequestPatch(
   }
   if (typeof body.codEnabled === 'boolean') current.codEnabled = body.codEnabled;
   if (typeof body.upiId === 'string') current.upiId = sanitizeText(body.upiId, 120);
+
+  if (body.published === true) {
+    const approvalBlocked = await customerApprovalBlockedResponse(env, access.row.website_id);
+    if (approvalBlocked) return approvalBlocked;
+  }
 
   const nextStatus =
     typeof body.published === 'boolean'

@@ -11,6 +11,7 @@ import {
   sanitizeText,
   writeAuditLog,
 } from '../../../_shared';
+import { checkDeliveryOrderAccess } from '../../_deliveryAccess';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -35,17 +36,27 @@ export async function onRequestPatch(
   const body = await parseJsonBody<{ status?: string }>(request);
   const nextStatus = sanitizeText(body?.status, 30);
   const validStatuses = ['ready_for_pickup', 'out_for_delivery', 'delivered', 'returned'];
+  // store_orders.order_status has a D1 CHECK that does not include
+  // ready_for_pickup. Persist the DB-compatible equivalent while keeping the
+  // UI milestone in the response and audit log.
+  const UI_TO_DB_ORDER_STATUS: Record<string, string> = {
+    ready_for_pickup: 'packed',
+    out_for_delivery: 'out_for_delivery',
+    delivered: 'delivered',
+    returned: 'returned',
+  };
   if (!validStatuses.includes(nextStatus)) {
     return jsonResponse({ error: 'Invalid delivery status.' }, 400);
   }
 
   try {
     const existingOrder = await env.DB.prepare(
-      'SELECT id, payment_method, payment_status, order_status FROM store_orders WHERE id = ? LIMIT 1'
+      'SELECT id, website_id, payment_method, payment_status, order_status FROM store_orders WHERE id = ? LIMIT 1'
     )
       .bind(orderId)
       .first<{
         id: number;
+        website_id: string;
         payment_method: string;
         payment_status: string;
         order_status: string;
@@ -53,6 +64,14 @@ export async function onRequestPatch(
 
     if (!existingOrder) {
       return jsonResponse({ error: 'Order not found.' }, 404);
+    }
+
+    const access = await checkDeliveryOrderAccess(env, auth.user, String(existingOrder.website_id || ''));
+    if (!access.authorized) {
+      return jsonResponse(
+        { error: 'Only the assigned delivery partner or business owner can update this order.' },
+        403
+      );
     }
 
     // UNPAID ORDER FULFILLMENT PROTECTION:
@@ -75,7 +94,7 @@ export async function onRequestPatch(
     await env.DB.prepare(
       `UPDATE store_orders SET order_status = ?, updated_at = datetime('now') WHERE id = ?`
     )
-      .bind(nextStatus, orderId)
+      .bind(UI_TO_DB_ORDER_STATUS[nextStatus], orderId)
       .run();
 
     await writeAuditLog(env, {

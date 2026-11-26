@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { PagesContext, handleOptions, jsonResponse } from '../_shared';
+import { getSupabaseAdminConfig } from './_supabaseAdmin';
 
 const PLACEHOLDER_URLS = new Set(['https://your-project.supabase.co', 'https://your_project_ref.supabase.co']);
 const PLACEHOLDER_KEYS = new Set(['your-anon-key', 'your_supabase_anon_key']);
@@ -59,6 +60,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   const supabaseAnonKey = String(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || '').trim();
 
   const configured = isValidSupabaseUrl(supabaseUrl) && isValidAnonKey(supabaseAnonKey);
+  // Boolean-only server diagnostic. The service-role/secret key value is never
+  // returned to the browser or written to logs.
+  const admin = getSupabaseAdminConfig(env);
 
   return jsonResponse(
     configured
@@ -66,11 +70,15 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
           configured: true,
           supabaseUrl,
           supabaseAnonKey,
+          hasServerAdminCredential: Boolean(admin),
+          serverAdminKeyFormat: admin?.keyFormat || null,
         }
       : {
           configured: false,
           supabaseUrl: '',
           supabaseAnonKey: '',
+          hasServerAdminCredential: Boolean(admin),
+          serverAdminKeyFormat: admin?.keyFormat || null,
         },
     200,
     { 'Cache-Control': 'no-store' }

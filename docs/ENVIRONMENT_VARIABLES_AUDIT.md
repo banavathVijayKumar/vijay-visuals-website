@@ -1,5 +1,7 @@
 # VIJAY VISUALS — COMPLETE ENVIRONMENT VARIABLES & SECRETS AUDIT
 
+> **SUPERSEDED / HISTORICAL RAZORPAY-ERA AUDIT — DO NOT USE FOR LAUNCH.** The Razorpay, Stripe and `WHATSAPP_ACCESS_TOKEN` entries below are historical only. Current authorized configuration is **Cashfree only**, Meta WhatsApp Cloud API with approved templates, and Resend for email. See `.env.example` for the current variable set and the Cashfree-only guidance in this repository. Never configure or reintroduce Razorpay; preserve historical Razorpay records only.
+
 **Deployment Target**: Cloudflare Pages (`vijay-visuals-site`) + Cloudflare D1 (`vijay-visuals-marketplace`) + Supabase Auth  
 **Security Rule**: NEVER paste secret values into source files, `.env` committed to Git, browser localStorage, or frontend `VITE_*` variables. Configure all secrets exclusively inside **Cloudflare Pages -> Settings -> Environment Variables (Encrypt / Secret)**.
 

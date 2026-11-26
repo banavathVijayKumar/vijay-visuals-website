@@ -253,15 +253,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = useCallback(async () => {
     const client = getSupabaseClient();
-    if (client) {
-      await client.auth.signOut();
+    try {
+      if (client) {
+        await client.auth.signOut();
+      }
+    } catch (error) {
+      // Remote sign-out can fail on a network error. Local auth state must
+      // still be cleared so the UI never keeps a stale signed-in session.
+      console.error('Supabase signOut failed; clearing local session anyway.', error);
+    } finally {
+      authService.logout();
+      setSession(null);
+      setSupabaseUser(null);
+      setProfile(null);
+      setOwnedTenants([]);
+      setDeliveryProfiles([]);
     }
-    authService.logout();
-    setSession(null);
-    setSupabaseUser(null);
-    setProfile(null);
-    setOwnedTenants([]);
-    setDeliveryProfiles([]);
   }, []);
 
   return (

@@ -9,16 +9,20 @@ import {
   Zap,
 } from 'lucide-react';
 import { AppView } from '../types/platform';
+import { Lang, getI18n } from '../data/content';
 
 interface CinematicHeroProps {
+  lang: Lang;
   onNavigate: (view: AppView) => void;
   onOpenQuote?: () => void;
 }
 
 export const CinematicHero: React.FC<CinematicHeroProps> = ({
+  lang,
   onNavigate,
   onOpenQuote,
 }) => {
+  const t = getI18n(lang);
   const heroRef = useRef<HTMLDivElement>(null);
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -203,6 +207,11 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
                 <img
                   src="/founder_hero_portrait.png"
                   alt="Vijay Kumar — Founder & Creative Director, VIJAY VISUALS"
+                  width={935}
+                  height={1024}
+                  loading="eager"
+                  fetchPriority="high"
+                  decoding="async"
                   className="w-full h-auto object-cover object-bottom select-none transition-transform duration-500 ease-out group-hover:scale-[1.02]"
                 />
                 {/* Base dark blend */}
@@ -238,17 +247,22 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
               </span>
             </div>
 
+            {/* Descriptive, localized H1; the brand lettering remains visual only. */}
+            <h1 className="font-luxury font-bold text-xl sm:text-2xl md:text-3xl text-[#F7E7B4] tracking-tight mt-1 drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+              {t.heroTitle}
+            </h1>
+
             {/* Massive 3D Brand Title */}
-            <div className="flex flex-col leading-none tracking-tight select-none my-1 sm:my-2 w-full">
+            <div aria-hidden="true" className="flex flex-col leading-none tracking-tight select-none my-1 sm:my-2 w-full">
               {/* "VIJAY" — Extruded Metallic Gold */}
-              <h1 className="font-luxury font-black text-6xl sm:text-7xl md:text-8xl lg:text-[102px] xl:text-[114px] text-3d-gold tracking-[0.06em] leading-[0.92] drop-shadow-2xl">
+              <p className="font-luxury font-black text-6xl sm:text-7xl md:text-8xl lg:text-[102px] xl:text-[114px] text-3d-gold tracking-[0.06em] leading-[0.92] drop-shadow-2xl">
                 VIJAY
-              </h1>
+              </p>
 
               {/* "VISUALS" — Chrome Silver & Beveled Metallic Gold */}
-              <h2 className="font-luxury font-black text-5xl sm:text-6xl md:text-7xl lg:text-[88px] xl:text-[98px] text-3d-chrome tracking-[0.08em] leading-[0.95] drop-shadow-2xl mt-1">
+              <p className="font-luxury font-black text-5xl sm:text-6xl md:text-7xl lg:text-[88px] xl:text-[98px] text-3d-chrome tracking-[0.08em] leading-[0.95] drop-shadow-2xl mt-1">
                 VISUALS
-              </h2>
+              </p>
             </div>
 
             {/* 3D Golden Satin Ribbon Banner: "Creative Solutions for a Digital World" */}
@@ -269,26 +283,32 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
             <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 sm:gap-4 mt-4 sm:mt-6 w-full">
               
               {/* Primary: "Watch Demo" */}
-              <button
-                type="button"
-                onClick={handleWatchDemo}
+              <a
+                href="/demo"
+                onClick={(event) => {
+                  event.preventDefault();
+                  handleWatchDemo();
+                }}
                 className="group inline-flex items-center gap-2.5 px-6 sm:px-8 py-3 rounded-full bg-gradient-to-r from-[#FDE082] via-[#E2B743] to-[#B8861B] text-[#08080C] font-bold text-xs sm:text-sm shadow-[0_0_25px_rgba(212,175,55,0.45)] hover:shadow-[0_0_35px_rgba(212,175,55,0.7)] hover:scale-105 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
               >
                 <span className="w-6 h-6 rounded-full bg-[#08080C] flex items-center justify-center text-[#ECC86A] shadow-inner group-hover:scale-110 transition-transform">
                   <Play className="w-3 h-3 fill-current ml-0.5" />
                 </span>
                 <span>Watch Demo</span>
-              </button>
+              </a>
 
               {/* Secondary: "Explore Services" */}
-              <button
-                type="button"
-                onClick={handleExploreServices}
+              <a
+                href="/#services"
+                onClick={(event) => {
+                  event.preventDefault();
+                  handleExploreServices();
+                }}
                 className="inline-flex items-center gap-2 px-6 sm:px-7 py-3 rounded-full bg-[#0E1324]/85 backdrop-blur-sm border border-[#D4AF37]/65 text-[#F5E2AC] font-semibold text-xs sm:text-sm shadow-lg hover:bg-[#D4AF37]/15 hover:border-[#ECC86A] hover:text-white transition-all cursor-pointer whitespace-nowrap"
               >
                 <span>Explore Services</span>
                 <ArrowRight className="w-4 h-4 text-[#ECC86A] group-hover:translate-x-1 transition-transform" />
-              </button>
+              </a>
             </div>
           </div>
         </div>

@@ -686,8 +686,11 @@ export function StorefrontReviews({
                         <img
                           src={ph.photoUrl}
                           alt={ph.caption || 'Review photo'}
+                          width={80}
+                          height={80}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                           loading="lazy"
+                          decoding="async"
                         />
                       </button>
                     ))}
@@ -863,7 +866,7 @@ export function StorefrontReviews({
                   <div className="flex flex-wrap gap-2 pt-1">
                     {formPhotos.map((url, i) => (
                       <div key={i} className="relative rounded-lg overflow-hidden border border-[#29293E] w-16 h-16">
-                        <img src={url} alt={`Upload ${i + 1}`} className="w-full h-full object-cover" />
+                        <img src={url} alt={`Upload ${i + 1}`} width={120} height={120} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                         <button
                           type="button"
                           onClick={() => handleRemovePhoto(i)}
@@ -1007,7 +1010,7 @@ export function StorefrontReviews({
                   <div className="flex flex-wrap gap-2 pt-1">
                     {formPhotos.map((url, i) => (
                       <div key={i} className="relative rounded-lg overflow-hidden border border-[#29293E] w-16 h-16">
-                        <img src={url} alt={`Upload ${i + 1}`} className="w-full h-full object-cover" />
+                        <img src={url} alt={`Upload ${i + 1}`} width={120} height={120} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                         <button
                           type="button"
                           onClick={() => handleRemovePhoto(i)}
@@ -1105,7 +1108,7 @@ export function StorefrontReviews({
           onClick={() => setLightboxPhoto(null)}
         >
           <div className="relative max-w-3xl max-h-[90vh]">
-            <img src={lightboxPhoto} alt="Review enlarged" className="max-w-full max-h-[85vh] rounded-xl object-contain shadow-2xl" />
+            <img src={lightboxPhoto} alt="Review enlarged" width={1200} height={900} loading="lazy" decoding="async" className="max-w-full max-h-[85vh] rounded-xl object-contain shadow-2xl" />
             <button
               type="button"
               onClick={() => setLightboxPhoto(null)}

@@ -1,25 +1,20 @@
 // ============================================================================
-// VIJAY VISUALS — DYNAMIC EDGE ROBOTS.TXT (PER-HOST TENANT & PLATFORM AWARE)
+// VIJAY VISUALS — DYNAMIC EDGE ROBOTS.TXT
+// Platform routes and tenant-owned domains share one authoritative rule set.
 // ============================================================================
 
-import { PagesContext } from './api/_shared';
+import { PagesContext, isPlatformHostname } from './api/_shared';
+import { OFFICIAL_SITE_URL, buildRobotsTxt } from '../shared/seo';
 
 export async function onRequestGet(context: PagesContext): Promise<Response> {
-  const url = new URL(context.request.url);
-  const origin = `${url.protocol}//${url.host}`;
+  const { request, env } = context;
+  const url = new URL(request.url);
+  const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
+  const origin = isPlatformHostname(hostname, env)
+    ? OFFICIAL_SITE_URL
+    : `${url.protocol}//${url.host}`;
 
-  const body = [
-    'User-agent: *',
-    'Allow: /',
-    'Disallow: /api/',
-    'Disallow: /dashboards',
-    'Disallow: /admin',
-    '',
-    `Sitemap: ${origin}/sitemap.xml`,
-    '',
-  ].join('\n');
-
-  return new Response(body, {
+  return new Response(buildRobotsTxt(origin), {
     status: 200,
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',

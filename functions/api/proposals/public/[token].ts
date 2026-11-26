@@ -73,13 +73,38 @@ export async function onRequestGet(context: PagesContext<{ token: string }>): Pr
       preferredColors = JSON.parse(proposal.preferred_colors_json || '{}');
     } catch {}
 
+    // Explicit allowlist: secure tokens, internal delivery/admin state and
+    // unrelated identifiers must never be exposed on a public proposal link.
     return json({
       proposal: {
-        ...proposal,
+        id: proposal.id,
+        proposal_number: proposal.proposal_number,
+        status: proposal.status,
+        delivery_status: proposal.delivery_status,
+        expires_at: proposal.expires_at,
+        package_tier: proposal.package_tier,
+        gst_percent: proposal.gst_percent,
+        gst_inr: proposal.gst_inr,
+        development_fee_inr: proposal.development_fee_inr,
+        grand_total_inr: proposal.grand_total_inr,
+        customer_name: proposal.customer_name,
+        customer_phone: proposal.customer_phone,
+        customer_email: proposal.customer_email,
+        business_name: proposal.business_name,
+        business_category: proposal.business_category,
+        business_logo_url: proposal.business_logo_url,
+        cover_image_url: proposal.cover_image_url,
+        business_address: proposal.business_address,
+        area: proposal.area,
+        city: proposal.city,
+        state: proposal.state,
+        pincode: proposal.pincode,
+        opening_hours: proposal.opening_hours,
         features,
         products,
         businessPhotos,
         packagesComparison,
+        packages_comparison_json: packagesComparison,
         preferredColors,
         isExpired,
       },

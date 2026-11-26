@@ -1,8 +1,8 @@
 // ============================================================================
-// VIJAY VISUALS — PROFESSIONAL 404 NOT FOUND VIEW
+// PROFESSIONAL 404 NOT FOUND VIEW
 // - Prevents blank screen when accessing broken, unknown, or expired routes.
-// - Provides one-click navigation back to Home or Marketplace.
-// - Displays official agency support contact: +91 9381362201 / vk66278@gmail.com.
+// - On platform routes it offers Home / Marketplace and platform concierge.
+// - On public tenant hosts it stays neutral and never exposes platform contact details.
 // ============================================================================
 
 import React from 'react';
@@ -11,9 +11,15 @@ import { Compass, Home, Phone, Mail, MessageCircle, Store } from 'lucide-react';
 interface NotFoundViewProps {
   onGoHome?: () => void;
   onGoMarketplace?: () => void;
+  /** True on a customer-owned/public tenant host: hide all platform branding. */
+  publicHost?: boolean;
 }
 
-export const NotFoundView: React.FC<NotFoundViewProps> = ({ onGoHome, onGoMarketplace }) => {
+export const NotFoundView: React.FC<NotFoundViewProps> = ({
+  onGoHome,
+  onGoMarketplace,
+  publicHost = false,
+}) => {
   const handleHome = () => {
     if (onGoHome) {
       onGoHome();
@@ -41,10 +47,13 @@ export const NotFoundView: React.FC<NotFoundViewProps> = ({ onGoHome, onGoMarket
           <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 bg-amber-950/60 px-2.5 py-0.5 rounded border border-amber-500/30">
             ERROR 404 · PAGE NOT FOUND
           </span>
-          <h1 className="text-2xl font-extrabold text-white">Looking for a Digital Storefront?</h1>
+          <h1 className="text-2xl font-extrabold text-white">
+            {publicHost ? 'Page Not Found' : 'Looking for a Digital Storefront?'}
+          </h1>
           <p className="text-xs text-[#A0A0B8] leading-relaxed">
-            The page, storefront, or proposal link you requested could not be located.
-            It may have been moved, updated, or the address might be slightly mistyped.
+            {publicHost
+              ? 'The page you requested could not be located. It may have been moved or the address might be slightly mistyped.'
+              : 'The page, storefront, or proposal link you requested could not be located. It may have been moved, updated, or the address might be slightly mistyped.'}
           </p>
         </div>
 
@@ -57,17 +66,19 @@ export const NotFoundView: React.FC<NotFoundViewProps> = ({ onGoHome, onGoMarket
             <Home className="w-3.5 h-3.5" />
             <span>Return to Home</span>
           </button>
-          <button
-            type="button"
-            onClick={handleMarketplace}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#1A1A26] border border-[#2C2C3E] text-white text-xs font-semibold hover:bg-[#252536] hover:border-[#D4AF37]/50 active:scale-95 transition-all"
-          >
-            <Store className="w-3.5 h-3.5 text-amber-300" />
-            <span>Explore Stores</span>
-          </button>
+          {!publicHost && (
+            <button
+              type="button"
+              onClick={handleMarketplace}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#1A1A26] border border-[#2C2C3E] text-white text-xs font-semibold hover:bg-[#252536] hover:border-[#D4AF37]/50 active:scale-95 transition-all"
+            >
+              <Store className="w-3.5 h-3.5 text-amber-300" />
+              <span>Explore Stores</span>
+            </button>
+          )}
         </div>
 
-        <div className="border-t border-[#1F1F2E] pt-4 text-[11px] text-[#8E8EA2] space-y-2">
+        {!publicHost && <div className="border-t border-[#1F1F2E] pt-4 text-[11px] text-[#8E8EA2] space-y-2">
           <div className="font-semibold text-white">VIJAY VISUALS Client Concierge</div>
           <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
             <a
@@ -96,7 +107,7 @@ export const NotFoundView: React.FC<NotFoundViewProps> = ({ onGoHome, onGoMarket
               <span>vk66278@gmail.com</span>
             </a>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );

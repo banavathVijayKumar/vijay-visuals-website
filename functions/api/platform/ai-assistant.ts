@@ -15,7 +15,7 @@ import { requireUser } from '../_auth';
 import {
   PagesContext,
   callGeminiEdge,
-  checkRateLimit,
+  checkRateLimit,  rateLimitResponse,
   errorJson,
   formatAiError,
   json,
@@ -62,9 +62,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
   const rl = await checkRateLimit(env, `ai_assistant:${auth.user.id}`, 30, 3600);
-  if (!rl.allowed) {
-    return errorJson('AI assistant hourly rate limit reached. Please wait a few minutes.', 429);
-  }
+  if (!rl.allowed) return rateLimitResponse(rl, 'AI assistant hourly rate limit reached. Please wait a few minutes.')
 
   const body = await parseJsonBody<{
     websiteId?: string;

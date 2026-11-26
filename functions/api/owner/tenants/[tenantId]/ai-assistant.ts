@@ -8,7 +8,7 @@ import { requireUser } from '../../../_auth';
 import {
   PagesContext,
   callGeminiEdge,
-  checkRateLimit,
+  checkRateLimit,  rateLimitResponse,
   formatAiError,
   handleOptions,
   jsonResponse,
@@ -33,12 +33,7 @@ export async function onRequestPost(
   if (!access.ok) return access.response;
 
   const rl = await checkRateLimit(env, `ai_asst:${auth.user.id}`, 30, 3600);
-  if (!rl.allowed) {
-    return jsonResponse(
-      { error: 'Hourly AI Assistant request limit reached. Please try again later.' },
-      429
-    );
-  }
+  if (!rl.allowed) return rateLimitResponse(rl, 'Hourly AI Assistant request limit reached. Please try again later.')
 
   const body = await parseJsonBody<{ question?: string; language?: string; requestId?: string }>(request);
   const question = sanitizeText(body?.question, 1000);

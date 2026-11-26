@@ -14,10 +14,11 @@ import {
   resolveVerifiedTenantSender,
 } from './_email';
 import { sendWhatsAppNotification } from './_whatsapp';
+import { releaseReservedStock, reservationLines } from './_stockReservation';
 import { resolveTenantPublicUrl } from './_tenantUrl';
 import {
   PagesContext,
-  checkRateLimit,
+  checkRateLimit,  rateLimitResponse,
   getClientIp,
   handleOptions,
   jsonResponse,
@@ -48,15 +49,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   if (!env.DB) {
     return jsonResponse({ error: 'Order storage is not configured.' }, 503);
   }
+  const db = env.DB;
 
   const clientIp = getClientIp(request);
   const rl = await checkRateLimit(env, `order_create:${clientIp}`, 15, 600);
-  if (!rl.allowed) {
-    return jsonResponse(
-      { error: 'Too many order attempts. Please wait a few minutes and try again.' },
-      429
-    );
-  }
+  if (!rl.allowed) return rateLimitResponse(rl, 'Too many order attempts. Please wait a few minutes and try again.')
 
   // Optional authenticated customer attribution
   let customerUserId: string | null = null;
@@ -151,6 +148,19 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const deliveryFee = Math.max(0, Math.round(Number(parsedWebsite.deliveryFee || 0)));
   const isWholesale = Boolean(body.isWholesale);
 
+  let compensationOrderNumber = '';
+  let compensationCustomerId = '';
+  let compensationWebsiteId = '';
+  let orderLinesForCompensation = [] as Array<{
+    productId: number;
+    name: string;
+    variant: string;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+  }>;
+  let stockReservationAttempted = false;
+
   try {
     // 1. Validate every item against authoritative D1 store_products table
     const orderLines: Array<{
@@ -175,10 +185,17 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         return jsonResponse({ error: 'Invalid item quantity.' }, 400);
       }
 
-      // Safe Sandbox Test Product bypass (₹1 test item in Sandbox mode)
+      // Safe Sandbox Test Product bypass: preview/local hosts only. A crafted
+      // request on the public production host must not create a ₹1 test order.
       if (productId === 999999) {
         const cfStatus = getEdgeCashfreeStatus(env);
-        if (cfStatus.mode === 'sandbox') {
+        const requestHost = String(new URL(request.url).hostname || '').toLowerCase().replace(/\.$/, '');
+        const isPreviewHost =
+          requestHost === 'localhost' ||
+          requestHost === '127.0.0.1' ||
+          (requestHost.endsWith('.vijay-visuals-site.pages.dev') &&
+            requestHost !== 'vijay-visuals-site.pages.dev');
+        if (cfStatus.mode === 'sandbox' && isPreviewHost) {
           const unitPrice = 1;
           const lineTotal = unitPrice * quantity;
           subtotal += lineTotal;
@@ -273,6 +290,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }
     }
 
+    orderLinesForCompensation = orderLines.slice();
+    compensationWebsiteId = pub.website_id;
     const hasSandboxItem = orderLines.some((l) => l.productId === 999999);
     const cfStatus = getEdgeCashfreeStatus(env);
     const isSandboxTestOrder = hasSandboxItem || cfStatus.mode === 'sandbox';
@@ -282,23 +301,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       ? `TEST-ORD-${Date.now().toString().slice(-6)}-${randomHex(2).toUpperCase()}`
       : `VV-${Date.now().toString().slice(-6)}-${randomHex(2).toUpperCase()}`;
 
-    // 3. Decrement product stock atomically (skip 999999 sandbox test items)
-    for (const line of orderLines) {
-      if (line.productId === 999999) continue;
-      const dec = await env.DB.prepare(
-        `UPDATE store_products
-         SET stock_qty = stock_qty - ?, updated_at = datetime('now')
-         WHERE id = ? AND website_id = ? AND stock_qty >= ?`
-      )
-        .bind(line.quantity, line.productId, pub.website_id, line.quantity)
-        .run();
-      if (dec?.meta?.changes === 0) {
-        return jsonResponse(
-          { error: `Stock changed while placing order for "${line.name}". Please retry.` },
-          409
-        );
-      }
-    }
+    // 3. Cashfree order is created before any stock is reserved. A gateway
+    // failure must never consume inventory. Stock, order and payment ledger
+    // writes are committed together in step 5.
 
     // 4. Create Cashfree Order if online payment selected
     let cfSessionId: string | null = null;
@@ -343,79 +348,126 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       cfMode = cfRes.mode;
     }
 
-    // 5. Insert order with honest payment_status = 'pending' (never fake paid)
+    // 5. Atomically reserve stock, insert the order and its payment ledger row.
+    // The gateway order already exists at this point, so a D1 failure cannot
+    // leave inventory decremented without an order.
     const effectiveShippingAddress = isSandboxTestOrder
       ? `[SANDBOX TEST ORDER] ${shippingAddress}`
       : shippingAddress;
-
-    const insertRes = await env.DB.prepare(
-      `INSERT INTO store_orders
-       (order_number, website_id, owner_id, customer_user_id, customer_name, customer_phone, customer_email,
-        shipping_address, items_json, subtotal_inr, discount_inr, gst_inr, shipping_inr, total_inr,
-        coupon_code, payment_method, payment_status, gateway_order_id, gateway_payment_id, order_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'pending', ?, ?, 'placed')`
-    )
-      .bind(
-        orderNumber,
-        pub.website_id,
-        pub.owner_id,
-        customerUserId,
-        isSandboxTestOrder ? `[SANDBOX TEST] ${customerName}` : customerName,
-        customerPhone,
-        customerEmail,
-        effectiveShippingAddress,
-        JSON.stringify(orderLines),
-        subtotal,
-        discount,
-        effectiveDeliveryFee,
-        total,
-        appliedCode,
-        dbPaymentMethod,
-        cfOrderId,
-        paymentReference
-      )
-      .run();
-
-    const orderId = Number(insertRes?.meta?.last_row_id || 0);
-
-    // Record in cashfree_payments ledger if online Cashfree order
-    if (dbPaymentMethod === 'cashfree_online' && cfOrderId && cfSessionId) {
-      await env.DB.prepare(
-        `INSERT INTO cashfree_payments (
-          order_id, cf_order_id, payment_session_id, entity_type, reference_id,
-          website_id, user_id, user_email, user_phone, base_amount_inr,
-          gst_amount_inr, amount_inr, currency, environment, status,
-          notes_json, raw_response_json, created_at, updated_at
-        ) VALUES (
-          ?, NULL, ?, 'storefront_order', ?,
-          ?, ?, ?, ?, ?,
-          0, ?, 'INR', ?, 'CREATED',
-          ?, '{}', datetime('now'), datetime('now')
-        )`
+    const stockLines = reservationLines(orderLines);
+    const statements: Array<ReturnType<typeof db.prepare>> = [];
+    for (const line of stockLines) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE store_products
+           SET stock_qty = stock_qty - ?, updated_at = datetime('now')
+           WHERE id = ? AND website_id = ? AND stock_qty >= ?`
+        )
+          .bind(line.quantity, line.productId, pub.website_id, line.quantity)
+      );
+    }
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO store_orders
+         (order_number, website_id, owner_id, customer_user_id, customer_name, customer_phone, customer_email,
+          shipping_address, items_json, subtotal_inr, discount_inr, gst_inr, shipping_inr, total_inr,
+          coupon_code, payment_method, payment_status, gateway_order_id, gateway_payment_id, order_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'pending', ?, ?, 'placed')`
       )
         .bind(
-          cfOrderId,
-          cfSessionId,
           orderNumber,
           pub.website_id,
-          customerUserId || 'guest',
-          customerEmail,
+          pub.owner_id,
+          customerUserId,
+          isSandboxTestOrder ? `[SANDBOX TEST] ${customerName}` : customerName,
           customerPhone,
+          customerEmail,
+          effectiveShippingAddress,
+          JSON.stringify(orderLines),
+          subtotal,
+          discount,
+          effectiveDeliveryFee,
           total,
-          total,
-          cfMode,
-          JSON.stringify({
-            storeOrderId: orderId,
-            orderNumber,
-            websiteId: pub.website_id,
-            isSandboxTest: isSandboxTestOrder,
-            deliveryFee: effectiveDeliveryFee,
-            subtotal,
-            discount,
-          })
+          appliedCode,
+          dbPaymentMethod,
+          cfOrderId,
+          paymentReference
         )
-        .run();
+    );
+
+    const hasPaymentLedger = dbPaymentMethod === 'cashfree_online' && Boolean(cfOrderId && cfSessionId);
+    if (hasPaymentLedger) {
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO cashfree_payments (
+            order_id, cf_order_id, payment_session_id, entity_type, reference_id,
+            website_id, user_id, user_email, user_phone, base_amount_inr,
+            gst_amount_inr, amount_inr, currency, environment, status,
+            notes_json, raw_response_json, created_at, updated_at
+          ) VALUES (
+            ?, NULL, ?, 'storefront_order', ?,
+            ?, ?, ?, ?, ?,
+            0, ?, 'INR', ?, 'CREATED',
+            ?, '{}', datetime('now'), datetime('now')
+          )`
+        )
+          .bind(
+            cfOrderId,
+            cfSessionId,
+            orderNumber,
+            pub.website_id,
+            customerUserId || 'guest',
+            customerEmail,
+            customerPhone,
+            total,
+            total,
+            cfMode,
+            JSON.stringify({
+              orderNumber,
+              websiteId: pub.website_id,
+              isSandboxTest: isSandboxTestOrder,
+              deliveryFee: effectiveDeliveryFee,
+              subtotal,
+              discount,
+            })
+          )
+      );
     }
+
+    compensationOrderNumber = orderNumber;
+    compensationCustomerId = customerUserId || '';
+    stockReservationAttempted = true;
+    if (!db.batch) throw new Error('D1 batch is unavailable.');
+    const batch = db.batch;
+    const writeResults = await batch.call(db, statements);
+
+    let insufficientLineName = '';
+    stockLines.forEach((line, index) => {
+      if (!insufficientLineName && Number(writeResults[index]?.meta?.changes || 0) < 1) {
+        insufficientLineName = line.name || `Product ${line.productId}`;
+      }
+    });
+    if (insufficientLineName) {
+      await releaseReservedStock(env, {
+        websiteId: pub.website_id,
+        orderNumber,
+        lines: stockLines,
+        actorId: customerUserId || 'system',
+      });
+      await env.DB.prepare(
+        `UPDATE store_orders
+         SET order_status = 'cancelled', payment_status = 'failed', updated_at = datetime('now')
+         WHERE order_number = ? AND website_id = ? AND payment_status = 'pending'`
+      )
+        .bind(orderNumber, pub.website_id)
+        .run();
+      return jsonResponse(
+        { error: `Stock changed while placing order for "${insufficientLineName}". Please retry.` },
+        409
+      );
+    }
+
+    const orderId = Number(writeResults[stockLines.length]?.meta?.last_row_id || 0);
 
     const createdRow = orderId
       ? await env.DB.prepare('SELECT * FROM store_orders WHERE id = ? LIMIT 1')
@@ -501,6 +553,20 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       201
     );
   } catch (err) {
+    // If a gateway order was created and reservation was attempted, release
+    // any inventory that may have been committed before the failure. The
+    // release is keyed by order number and safe to retry.
+    if (stockReservationAttempted && compensationOrderNumber) {
+      const reserved = orderLinesForCompensation;
+      if (reserved.length) {
+        await releaseReservedStock(env, {
+          websiteId: compensationWebsiteId,
+          orderNumber: compensationOrderNumber,
+          lines: reserved,
+          actorId: compensationCustomerId || 'system',
+        });
+      }
+    }
     if (isMissingTableError(err)) {
       return jsonResponse(
         {

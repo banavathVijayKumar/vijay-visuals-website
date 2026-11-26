@@ -6,11 +6,13 @@
 // touched after verification succeeds.
 // ============================================================================
 
+import { redactSensitiveLogText } from '../_email';
 import {
   PagesContext,
   handleOptions,
   jsonResponse,
   hmacSha256Hex,
+  readBoundedText,
   safeEqual,
 } from '../_shared';
 
@@ -76,7 +78,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   }
 
   // Meta signs the exact raw JSON body; never re-stringify before verifying.
-  const rawBody = await request.text();
+  const rawBody = await readBoundedText(request);
+  if (rawBody === null) return errorResponse('Webhook payload is too large.', 413);
   const expectedSignature = await hmacSha256Hex(appSecret, rawBody);
   if (!safeEqual(providedSignature.toLowerCase(), expectedSignature)) {
     return errorResponse('Invalid WhatsApp webhook signature.', 401);
@@ -96,16 +99,16 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           const statuses = change.value?.statuses || [];
           for (const statusObj of statuses) {
             const messageId = statusObj.id;
-            const newStatus = statusObj.status; // 'sent', 'delivered', 'read', 'failed'
+            // Unknown/unsupported Meta statuses are recorded as failed, never as
+            // a successful delivery, so logs stay honest and within the D1 CHECK.
+            const newStatus = statusObj.status; // 'sent', 'delivered', 'read', 'failed', ...
             if (messageId && newStatus) {
               const mappedStatus =
                 newStatus === 'delivered' || newStatus === 'read'
                   ? 'delivered'
                   : newStatus === 'sent'
                   ? 'sent'
-                  : newStatus === 'failed'
-                  ? 'failed'
-                  : 'sent';
+                  : 'failed';
 
               await env.DB.prepare(
                 `UPDATE notification_logs
@@ -116,7 +119,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
                 .bind(
                   mappedStatus,
                   mappedStatus,
-                  statusObj.errors?.[0]?.message || 'WhatsApp delivery failed',
+                  redactSensitiveLogText(
+                    statusObj.errors?.[0]?.message || 'WhatsApp delivery failed'
+                  ),
                   messageId
                 )
                 .run();

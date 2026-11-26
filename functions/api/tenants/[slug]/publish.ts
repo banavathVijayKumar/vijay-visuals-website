@@ -13,6 +13,7 @@ import {
 } from '../../_shared';
 import {
   checkTenantSubscriptionEntitlement,
+  customerApprovalBlockedResponse,
   provisionLifetimeEntitlement,
   requireTenantOwnerAccess,
 } from '../../_tenantAccess';
@@ -47,13 +48,18 @@ async function handlePublish(
     access.parsedWebsite?.planCode === FREE_START_PLAN_CODE;
 
   // Server-side entitlement verification before allowing website to be published live
+  let maxWebsites = 1;
   if (published) {
+    const approvalBlocked = await customerApprovalBlockedResponse(env, access.row.website_id);
+    if (approvalBlocked) return approvalBlocked;
+
     const entitlement = await checkTenantSubscriptionEntitlement(
       env,
       access.row.website_id,
       auth.user.id,
       auth.user.isSuperAdmin
     );
+    maxWebsites = Math.max(1, Math.floor(Number(entitlement.maxWebsites) || 1));
 
     const hasPaidEntitlement = entitlement.hasActiveSubscription && !entitlement.isFreeStart;
     if (isFreeStartRequested && hasPaidEntitlement) {
@@ -93,15 +99,34 @@ async function handlePublish(
   const nextStatus = published ? 'published' : 'unpublished';
   const nowIso = new Date().toISOString();
 
-  await env.DB!.prepare(
+  const publishRes = await env.DB!.prepare(
     `UPDATE customer_website_publications
      SET status = ?,
          published_at = CASE WHEN ? THEN COALESCE(published_at, ?) ELSE published_at END,
          updated_at = ?
-     WHERE website_id = ?`
+     WHERE website_id = ?
+       AND (status = 'published' OR (
+         SELECT COUNT(DISTINCT website_id) FROM customer_website_publications
+         WHERE owner_id = ? AND status = 'published' AND website_id <> ?
+       ) < ?)`
   )
-    .bind(nextStatus, published ? 1 : 0, nowIso, nowIso, access.row.website_id)
+    .bind(
+      nextStatus,
+      published ? 1 : 0,
+      nowIso,
+      nowIso,
+      access.row.website_id,
+      access.row.owner_id,
+      access.row.website_id,
+      published ? maxWebsites : 0
+    )
     .run();
+  if (published && Number(publishRes?.meta?.changes || 0) < 1) {
+    return jsonResponse(
+      { error: 'Your current package has reached its live website limit.', code: 'WEBSITE_LIMIT_REACHED' },
+      409
+    );
+  }
 
   await writeAuditLog(env, {
     actorId: auth.user.id,

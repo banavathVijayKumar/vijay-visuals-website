@@ -278,6 +278,10 @@ export const CustomerLogoCustomizer: React.FC<CustomerLogoCustomizerProps> = ({
           <img
             src={config.imageUrl}
             alt={config.businessName}
+            width={64}
+            height={64}
+            loading="lazy"
+            decoding="async"
             className={`${sizeCls.badge} object-contain rounded shrink-0`}
           />
           {config.layout !== 'badge_only' && (
@@ -464,7 +468,7 @@ export const CustomerLogoCustomizer: React.FC<CustomerLogoCustomizerProps> = ({
               {config.imageUrl && (
                 <div className="flex items-center justify-between p-2.5 rounded bg-[#181824] border border-[#282838]">
                   <div className="flex items-center gap-2.5">
-                    <img src={config.imageUrl} alt="Uploaded logo" className="w-8 h-8 object-contain rounded bg-black/40" />
+                    <img src={config.imageUrl} alt="Uploaded logo" width={32} height={32} loading="lazy" decoding="async" className="w-8 h-8 object-contain rounded bg-black/40" />
                     <div>
                       <p className="text-xs text-white font-medium truncate max-w-[180px]">
                         {config.imageFileName || 'Custom Logo File'}

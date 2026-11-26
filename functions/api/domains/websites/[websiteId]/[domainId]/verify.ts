@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { requireUser, requireWebsiteAccess } from '../../../../_auth';
-import { PagesContext, checkRateLimit, errorJson, json } from '../../../../_shared';
+import { PagesContext, checkRateLimit, errorJson, json, rateLimitResponse } from '../../../../_shared';
 import {
   TenantDomainRow,
   buildDnsInstructions,
@@ -27,9 +27,7 @@ export async function onRequestPost(
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
   const rl = await checkRateLimit(env, `domain_verify:${auth.user.id}`, 30, 3600);
-  if (!rl.allowed) {
-    return errorJson('Verification rate limit reached. Wait a few minutes before retrying DNS check.', 429);
-  }
+  if (!rl.allowed) return rateLimitResponse(rl, 'Verification rate limit reached. Wait a few minutes before retrying DNS check.')
 
   const domainId = Number(params.domainId);
   if (!Number.isInteger(domainId) || domainId <= 0) {

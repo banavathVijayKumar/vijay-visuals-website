@@ -13,6 +13,19 @@ import {
   writeAuditLog,
 } from '../_shared';
 
+const ALLOWED_STATUSES = new Set([
+  'submitted',
+  'under_review',
+  'quoted',
+  'approved',
+  'rejected',
+  'in_progress',
+  'review_ready',
+  'completed',
+  'cancelled',
+]);
+const LOCKED_STATUSES = new Set(['approved', 'in_progress', 'review_ready', 'completed']);
+
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
 }
@@ -113,6 +126,19 @@ export async function onRequestPatch(context: PagesContext): Promise<Response> {
 
     if (!existing) {
       return jsonResponse({ error: 'Change request not found.' }, 404);
+    }
+
+    if (nextStatus !== undefined && !ALLOWED_STATUSES.has(nextStatus)) {
+      return jsonResponse({ error: 'Unsupported change request status.' }, 400);
+    }
+    if (
+      LOCKED_STATUSES.has(existing.status) &&
+      (quotationInr !== undefined || estimatedHours !== undefined || deliveryDays !== undefined)
+    ) {
+      return jsonResponse(
+        { error: 'Quotation and timeline are locked after approval.' },
+        409
+      );
     }
 
     const qInr = quotationInr !== undefined ? quotationInr : existing.quotation_inr;

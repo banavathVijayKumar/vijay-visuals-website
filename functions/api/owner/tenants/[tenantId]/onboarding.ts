@@ -56,7 +56,7 @@ const CHECKLIST_STEPS: StepDef[] = [
   {
     step: 5,
     key: 'payout_account',
-    title: 'Configure Razorpay or Bank Payout Details',
+    title: 'Configure Cashfree or Bank Payout Details',
     simpleGuide: 'Enter your bank account or UPI ID to accept online customer payments.',
     targetAction: 'seller_payout',
   },

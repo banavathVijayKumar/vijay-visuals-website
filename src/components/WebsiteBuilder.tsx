@@ -561,7 +561,11 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     try {
       const res = await apiFetch<{ draft: AiSetupDraft }>('/api/ai/setup-assistant', {
         method: 'POST',
-        body: JSON.stringify({ businessBrief: aiBrief.trim(), language: aiLang }),
+        body: JSON.stringify({
+          businessBrief: aiBrief.trim(),
+          language: aiLang,
+          tenantId: editingTenantId || undefined,
+        }),
       });
       setAiDraft(res.draft);
       onNotify('AI blueprint generated! Review the draft below and click Approve to apply.');
@@ -920,14 +924,22 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
         await refreshProfile();
         setEditingTenantId(res.tenant.id);
         setPublishedSlug(res.tenant.slug);
-        setSitePublished(true);
+        // The server can keep a site in draft/unpaid state. Only report a live
+        // site when the returned record is actually published.
+        const publishedStatus = String(res.tenant.status || '').toLowerCase();
+        const isPublic =
+          Boolean(res.tenant.published) &&
+          !['unpublished', 'draft', 'private', 'suspended'].includes(publishedStatus);
+        setSitePublished(isPublic);
         setSlug(res.tenant.slug);
         setFormError(null);
         onPublished(res.tenant);
         onNotify(
-          editingTenantId
-            ? `Saved updates to "${res.tenant.name}" — live at /site/${res.tenant.slug}.`
-            : `Published "${res.tenant.name}" live at /site/${res.tenant.slug}!`
+          isPublic
+            ? editingTenantId
+              ? `Saved updates to "${res.tenant.name}" — live at /site/${res.tenant.slug}.`
+              : `Published "${res.tenant.name}" live at /site/${res.tenant.slug}!`
+            : `Saved "${res.tenant.name}" as a draft. Complete package activation before it can go live.`
         );
       } catch (publishErr) {
         const pMsg = publishErr instanceof Error ? publishErr.message : 'Unable to publish website.';
@@ -1469,6 +1481,10 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                     <img
                       src={item.url}
                       alt={item.title || 'Gallery photo'}
+                      width={56}
+                      height={56}
+                      loading="lazy"
+                      decoding="async"
                       className="w-14 h-14 rounded object-cover shrink-0 border border-[#282838]"
                     />
                     <div className="flex-1 min-w-0 space-y-1.5">
@@ -1895,6 +1911,10 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                     <img
                       src={logoImage}
                       alt={name}
+                      width={36}
+                      height={36}
+                      loading="lazy"
+                      decoding="async"
                       className="w-9 h-9 rounded object-cover border border-white/20 shrink-0"
                     />
                   ) : (
@@ -1924,6 +1944,10 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                 <img
                   src={bannerImage}
                   alt={name}
+                  width={1200}
+                  height={675}
+                  loading="lazy"
+                  decoding="async"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover"
                 />
@@ -1955,6 +1979,10 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                           key={g.id}
                           src={g.url}
                           alt={g.title || 'Preview'}
+                          width={160}
+                          height={160}
+                          loading="lazy"
+                          decoding="async"
                           className="aspect-square rounded object-cover border border-white/10"
                         />
                       ))}

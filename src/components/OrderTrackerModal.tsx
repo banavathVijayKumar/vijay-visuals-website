@@ -36,6 +36,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   onOpenInvoice,
 }) => {
   const [orderNumber, setOrderNumber] = useState('');
+  const [verification, setVerification] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
@@ -52,16 +53,26 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     fetchMapsConfig().then(setMapsConfig).catch(() => {});
   }, [open]);
 
-  const fetchLiveLocation = useCallback(async (ordNum: string) => {
-    try {
-      const data = await apiFetch<LiveLocationResponse>(
-        `/api/orders/${encodeURIComponent(ordNum)}/live-location`
-      );
-      setLiveLoc(data);
-    } catch {
-      // Non-fatal: milestone tracker continues working
-    }
-  }, []);
+  const verificationQuery = useCallback(() => {
+    const value = verification.trim();
+    if (!value) return '';
+    const key = value.includes('@') ? 'email' : 'phone';
+    return `?${key}=${encodeURIComponent(value)}`;
+  }, [verification]);
+
+  const fetchLiveLocation = useCallback(
+    async (ordNum: string) => {
+      try {
+        const data = await apiFetch<LiveLocationResponse>(
+          `/api/orders/${encodeURIComponent(ordNum)}/live-location${verificationQuery()}`
+        );
+        setLiveLoc(data);
+      } catch {
+        // Non-fatal: milestone tracker continues working
+      }
+    },
+    [verificationQuery]
+  );
 
   // Battery & bandwidth-friendly conditional polling:
   // Polls ONLY while modal is open, tab is visible, and order is in transit!
@@ -101,7 +112,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
         tenantName: string;
         tenantPhone: string;
         deliveryPartner: DeliveryPartnerRecord | null;
-      }>(`/api/orders/track/${encodeURIComponent(orderNumber.trim())}`);
+      }>(`/api/orders/track/${encodeURIComponent(orderNumber.trim())}${verificationQuery()}`);
       setResult(data);
     } catch (err) {
       setResult(null);
@@ -136,13 +147,20 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleTrack} className="flex gap-2 mb-5">
+        <form onSubmit={handleTrack} className="flex flex-wrap gap-2 mb-5">
           <input
             type="text"
             value={orderNumber}
             onChange={(e) => setOrderNumber(e.target.value)}
             placeholder="Enter your Order ID"
-            className="flex-1 rounded-md border border-[#2A2A38] bg-[#09090D] px-3.5 py-2.5 text-sm text-white placeholder-[#68687A] focus:border-[#D4AF37] focus:outline-none"
+            className="min-w-[160px] flex-1 rounded-md border border-[#2A2A38] bg-[#09090D] px-3.5 py-2.5 text-sm text-white placeholder-[#68687A] focus:border-[#D4AF37] focus:outline-none"
+          />
+          <input
+            type="text"
+            value={verification}
+            onChange={(e) => setVerification(e.target.value)}
+            placeholder="Phone or email used for this order"
+            className="min-w-[220px] flex-1 rounded-md border border-[#2A2A38] bg-[#09090D] px-3.5 py-2.5 text-sm text-white placeholder-[#68687A] focus:border-[#D4AF37] focus:outline-none"
           />
           <button
             type="submit"
@@ -153,6 +171,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
             <span>{loading ? 'Searching...' : 'Track'}</span>
           </button>
         </form>
+        <p className="text-[11px] text-[#78788E] -mt-3 mb-4">
+          Use the phone number or email from your order to view verified details and live delivery location.
+        </p>
 
         {error && (
           <div className="rounded-lg border border-rose-500/30 bg-rose-950/30 px-4 py-3 text-xs text-rose-200 mb-4">

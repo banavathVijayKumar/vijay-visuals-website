@@ -3,6 +3,7 @@ import { ChevronDown, ExternalLink, LogOut, Menu, Sparkles, User, X, ArrowRight 
 import { AppView } from '../types/platform';
 import { getI18n, Lang } from '../data/content';
 import { useAuth } from '../hooks/useAuth';
+import { getSupabaseClient } from '../lib/supabase';
 
 interface NavbarProps {
   activeView: AppView;
@@ -15,7 +16,55 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [servicesDropdownOpen, setServicesDropdownOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
   const t = getI18n(lang);
+
+  const handleChangePassword = async () => {
+    setPasswordMessage('');
+    if (newPassword.length < 8) {
+      setPasswordMessage('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage('New passwords do not match.');
+      return;
+    }
+    const client = getSupabaseClient();
+    if (!client || !profile?.email) {
+      setPasswordMessage('Account service is unavailable. Please try again later.');
+      return;
+    }
+    setPasswordBusy(true);
+    try {
+      const { error: reauthError } = await client.auth.signInWithPassword({
+        email: profile.email,
+        password: currentPassword,
+      });
+      if (reauthError) {
+        setPasswordMessage('Current password is incorrect.');
+        return;
+      }
+      const { error: updateError } = await client.auth.updateUser({ password: newPassword });
+      if (updateError) {
+        setPasswordMessage('Could not update the password. Please try again.');
+        return;
+      }
+      await client.auth.signOut({ scope: 'others' });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordMessage('Password updated. Other active sessions were signed out.');
+    } catch {
+      setPasswordMessage('Could not update the password. Please try again.');
+    } finally {
+      setPasswordBusy(false);
+    }
+  };
 
   const scrollToSection = (id: string) => {
     setMobileOpen(false);
@@ -45,6 +94,18 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
     setAccountMenuOpen(false);
   };
 
+  const handleSectionClick = (event: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    event.preventDefault();
+    scrollToSection(id);
+  };
+
+  const handleViewClick = (event: React.MouseEvent<HTMLAnchorElement>, view: AppView) => {
+    event.preventDefault();
+    handleNavigateView(view);
+  };
+
+  const viewHref = (view: AppView) => (view === 'studio' ? '/' : `/${view}`);
+
   const servicesList = [
     { name: 'Website Design & Dev', desc: 'Custom storefronts & business portals' },
     { name: 'Video Editing & Cinema', desc: '4K color grading, VFX & sound design' },
@@ -58,14 +119,20 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 h-16 sm:h-18 flex items-center justify-between gap-2 sm:gap-4 md:gap-6">
         
         {/* Left: Official Circular Logo + Brand Title + Tagline */}
-        <div
-          onClick={() => scrollToSection('hero')}
+        <a
+          href="/"
+          onClick={(event) => handleSectionClick(event, 'hero')}
+          aria-label="Vijay Visuals — home"
           className="flex items-center gap-2.5 sm:gap-3 cursor-pointer shrink-0 group select-none min-w-0"
         >
           <div className="relative w-9 h-9 sm:w-11 sm:h-11 shrink-0 rounded-full p-[1.5px] bg-gradient-to-tr from-[#D4AF37] via-[#FFF2B8] to-[#966F17] shadow-[0_0_12px_rgba(212,175,55,0.35)] group-hover:scale-105 transition-transform">
             <img
               src="/official_logo_circle.png"
               alt="Vijay Visuals Official Emblem"
+              width={1024}
+              height={1024}
+              loading="eager"
+              decoding="async"
               className="w-full h-full object-contain rounded-full bg-[#050811]"
             />
           </div>
@@ -77,13 +144,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
               Creative Solutions for a Digital World
             </span>
           </div>
-        </div>
+        </a>
 
         {/* Center: Desktop Navigation Bar matching Reference Layout */}
         <nav className="hidden lg:flex items-center gap-1 sm:gap-2 text-xs font-medium text-[#C4C4D4]">
-          <button
-            type="button"
-            onClick={() => scrollToSection('hero')}
+          <a
+            href="/#hero"
+            onClick={(event) => handleSectionClick(event, 'hero')}
             className={`px-3.5 py-1.5 rounded-full transition-all ${
               activeView === 'studio'
                 ? 'bg-[#251E10]/90 text-[#ECC86A] border border-[#D4AF37]/60 shadow-[0_0_12px_rgba(212,175,55,0.25)] font-semibold'
@@ -91,15 +158,15 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
             }`}
           >
             Home
-          </button>
+          </a>
 
-          <button
-            type="button"
-            onClick={() => scrollToSection('about')}
+          <a
+            href="/#about"
+            onClick={(event) => handleSectionClick(event, 'about')}
             className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
             About
-          </button>
+          </a>
 
           {/* Services with Dropdown */}
           <div className="relative">
@@ -124,11 +191,11 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
                   </span>
                 </div>
                 {servicesList.map((srv, idx) => (
-                  <button
+                  <a
                     key={idx}
-                    type="button"
-                    onClick={() => scrollToSection('services')}
-                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#161B2E] transition-colors group"
+                    href="/#services"
+                    onClick={(event) => handleSectionClick(event, 'services')}
+                    className="w-full block text-left px-3 py-2 rounded-lg hover:bg-[#161B2E] transition-colors group"
                   >
                     <p className="text-xs font-semibold text-white group-hover:text-[#ECC86A]">
                       {srv.name}
@@ -136,43 +203,43 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
                     <p className="text-[10px] text-[#8E8EA2] group-hover:text-[#B6B6C8]">
                       {srv.desc}
                     </p>
-                  </button>
+                  </a>
                 ))}
               </div>
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => scrollToSection('portfolio')}
+          <a
+            href="/#portfolio"
+            onClick={(event) => handleSectionClick(event, 'portfolio')}
             className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
             Portfolio
-          </button>
+          </a>
 
-          <button
-            type="button"
-            onClick={() => scrollToSection('pricing')}
+          <a
+            href="/#pricing"
+            onClick={(event) => handleSectionClick(event, 'pricing')}
             className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
             Packages
-          </button>
+          </a>
 
-          <button
-            type="button"
-            onClick={() => scrollToSection('testimonials')}
+          <a
+            href="/#testimonials"
+            onClick={(event) => handleSectionClick(event, 'testimonials')}
             className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
             Testimonials
-          </button>
+          </a>
 
-          <button
-            type="button"
-            onClick={() => scrollToSection('contact')}
+          <a
+            href="/#contact"
+            onClick={(event) => handleSectionClick(event, 'contact')}
             className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
             Contact
-          </button>
+          </a>
         </nav>
 
         {/* Right: "Get a Quote ->" Button + Customer Auth / Profile */}
@@ -215,6 +282,52 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
                   </button>
                   <button
                     type="button"
+                    onClick={() => {
+                      setPasswordMessage('');
+                      setChangePasswordOpen((prev) => !prev);
+                    }}
+                    className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-[#1B1F32] text-[#D7D7E2] font-medium"
+                  >
+                    Change Password
+                  </button>
+                  {changePasswordOpen && (
+                    <div className="mt-1 rounded-lg border border-[#272736] bg-[#12141F] p-2.5 space-y-2">
+                      <input
+                        type="password"
+                        value={currentPassword}
+                        onChange={(event) => setCurrentPassword(event.target.value)}
+                        placeholder="Current password"
+                        className="w-full rounded-md border border-[#2A2A3A] bg-[#0E111C] px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#D4AF37]"
+                      />
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        placeholder="New password (8+ characters)"
+                        className="w-full rounded-md border border-[#2A2A3A] bg-[#0E111C] px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#D4AF37]"
+                      />
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        placeholder="Confirm new password"
+                        className="w-full rounded-md border border-[#2A2A3A] bg-[#0E111C] px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#D4AF37]"
+                      />
+                      {passwordMessage && (
+                        <p className="text-[11px] text-[#F5E2AC]">{passwordMessage}</p>
+                      )}
+                      <button
+                        type="button"
+                        disabled={passwordBusy}
+                        onClick={handleChangePassword}
+                        className="w-full rounded-md bg-gold-gradient py-1.5 text-[11px] font-semibold text-[#08080A] disabled:opacity-60"
+                      >
+                        {passwordBusy ? 'Updating…' : 'Update Password'}
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
                     onClick={async () => {
                       setAccountMenuOpen(false);
                       await logout();
@@ -255,62 +368,62 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
         <div className="lg:hidden border-t border-[#1E1E28] bg-[#070A14]/98 backdrop-blur-xl px-4 py-4 space-y-2 max-h-[80vh] overflow-y-auto">
           {/* Main Anchor Links */}
           <div className="grid grid-cols-2 gap-1.5 pb-3 border-b border-[#1A1F30]">
-            <button
-              type="button"
-              onClick={() => scrollToSection('hero')}
+            <a
+              href="/#hero"
+              onClick={(event) => handleSectionClick(event, 'hero')}
               className="py-2 px-3 text-left rounded-lg text-xs font-semibold bg-[#221B0F] text-[#ECC86A] border border-[#D4AF37]/40"
             >
               Home
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('about')}
+            </a>
+            <a
+              href="/#about"
+              onClick={(event) => handleSectionClick(event, 'about')}
               className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               About
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('services')}
+            </a>
+            <a
+              href="/#services"
+              onClick={(event) => handleSectionClick(event, 'services')}
               className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Services
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('portfolio')}
+            </a>
+            <a
+              href="/#portfolio"
+              onClick={(event) => handleSectionClick(event, 'portfolio')}
               className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Portfolio
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('pricing')}
+            </a>
+            <a
+              href="/#pricing"
+              onClick={(event) => handleSectionClick(event, 'pricing')}
               className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Packages
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('testimonials')}
+            </a>
+            <a
+              href="/#testimonials"
+              onClick={(event) => handleSectionClick(event, 'testimonials')}
               className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Testimonials
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('contact')}
+            </a>
+            <a
+              href="/#contact"
+              onClick={(event) => handleSectionClick(event, 'contact')}
               className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Contact
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('pricing')}
+            </a>
+            <a
+              href="/#pricing"
+              onClick={(event) => handleSectionClick(event, 'pricing')}
               className="py-2 px-3 text-left rounded-lg text-xs font-bold text-[#F5E2AC] bg-gradient-to-r from-[#D4AF37]/20 to-[#ECC86A]/30 border border-[#D4AF37]/50"
             >
               Get a Quote →
-            </button>
+            </a>
           </div>
 
           {/* Secondary Platform Portals & Tools */}
@@ -318,44 +431,44 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
             <p className="text-[10px] font-bold text-[#8A8A9E] uppercase tracking-wider px-3 pb-1">
               Platform Features &amp; Tools
             </p>
-            <button
-              type="button"
-              onClick={() => handleNavigateView('demo')}
+            <a
+              href={viewHref('demo')}
+              onClick={(event) => handleViewClick(event, 'demo')}
               className="w-full flex items-center justify-between py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               <span>Live Interactive Demo</span>
               <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40">
                 Interactive
               </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleNavigateView('builder')}
+            </a>
+            <a
+              href={viewHref('builder')}
+              onClick={(event) => handleViewClick(event, 'builder')}
               className="w-full text-left py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Storefront Website Builder
-            </button>
-            <button
-              type="button"
-              onClick={() => handleNavigateView('marketplace')}
+            </a>
+            <a
+              href={viewHref('marketplace')}
+              onClick={(event) => handleViewClick(event, 'marketplace')}
               className="w-full text-left py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Store Directory &amp; Showcase
-            </button>
-            <button
-              type="button"
-              onClick={() => handleNavigateView('dashboards')}
+            </a>
+            <a
+              href={viewHref('dashboards')}
+              onClick={(event) => handleViewClick(event, 'dashboards')}
               className="w-full text-left py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Workspace Portals (Owner / Admin)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleNavigateView('ai')}
+            </a>
+            <a
+              href={viewHref('ai')}
+              onClick={(event) => handleViewClick(event, 'ai')}
               className="w-full text-left py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               AI Automation &amp; Multi-Lang Studio
-            </button>
+            </a>
           </div>
         </div>
       )}

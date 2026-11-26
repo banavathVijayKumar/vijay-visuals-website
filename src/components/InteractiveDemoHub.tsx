@@ -467,7 +467,7 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
                     className="rounded-xl border border-[#20202E] bg-[#0E0E16] overflow-hidden flex flex-col hover:border-[#D4AF37]/50 transition-colors shadow-lg"
                   >
                     <div className="aspect-[16/10] bg-[#14141E] relative overflow-hidden">
-                      <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                      <img src={p.image} alt={p.name} width={800} height={500} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                       {p.badge && (
                         <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded text-[10px] font-bold bg-black/75 text-[#D4AF37] border border-[#D4AF37]/30 backdrop-blur-sm">
                           {p.badge}
@@ -759,7 +759,7 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
                 <div className="divide-y divide-[#181824] max-h-[50vh] overflow-y-auto my-4 pr-1">
                   {cart.map((item) => (
                     <div key={item.product.id} className="py-3 flex items-center justify-between gap-3">
-                      <img src={item.product.image} alt={item.product.name} className="w-12 h-12 object-cover rounded-md shrink-0" />
+                      <img src={item.product.image} alt={item.product.name} width={48} height={48} loading="lazy" decoding="async" className="w-12 h-12 object-cover rounded-md shrink-0" />
                       <div className="flex-1 truncate">
                         <p className="font-semibold text-white truncate">{item.product.name}</p>
                         <p className="text-[11px] text-[#D4AF37] font-mono">₹{item.product.price} each</p>

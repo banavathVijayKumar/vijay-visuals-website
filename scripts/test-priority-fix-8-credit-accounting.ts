@@ -261,7 +261,7 @@ async function run() {
     assert(records[0].error_message.includes('503 Overloaded'));
   });
 
-  await it('Stale reservation (> 2 min ago) auto-expires and consumes ZERO credits', async () => {
+  await it('Old reservations stay counted so slow calls cannot bypass quota', async () => {
     // Manually insert an orphaned reservation from 10 minutes ago
     mockDb.exec(`
       INSERT INTO tenant_ai_usage (
@@ -273,13 +273,13 @@ async function run() {
       );
     `);
 
-    // getTenantAiQuota should auto-expire the stale reservation
+    // Reservations remain counted until the owning request records a terminal state.
     const quota = await getTenantAiQuota(mockEnv, 'prev_site_svs', 1);
-    assert.strictEqual(quota.used, 2, 'Stale reservation must NOT be counted in used credits');
+    assert.strictEqual(quota.used, 3, 'Reservation must stay counted even when older than two minutes');
 
     const staleRecord = mockDb.query("SELECT credits_deducted, status FROM tenant_ai_usage WHERE id = 'stale_001'");
-    assert.strictEqual(staleRecord[0].status, 'failed');
-    assert.strictEqual(staleRecord[0].credits_deducted, 0);
+    assert.strictEqual(staleRecord[0].status, 'reserved');
+    assert.strictEqual(staleRecord[0].credits_deducted, 1);
   });
 
   console.log('\n[SECTION 3: IDEMPOTENCY & DUPLICATE / CONCURRENT SAFETY]');
@@ -376,8 +376,8 @@ async function run() {
 
     // Verify SVS tenant was completely unaffected by Tenant B's exhaustion
     const svsQuota = await getTenantAiQuota(mockEnv, 'prev_site_svs', 1);
-    assert.strictEqual(svsQuota.used, 4, 'SVS tenant usage must remain 4');
-    assert.strictEqual(svsQuota.remaining, 96, 'SVS tenant remaining must remain 96');
+    assert.strictEqual(svsQuota.used, 5, 'SVS tenant usage must include the retained reservation');
+    assert.strictEqual(svsQuota.remaining, 95, 'SVS tenant remaining must remain 95');
   });
 
   console.log('\n====================================================================');

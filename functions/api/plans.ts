@@ -35,7 +35,7 @@ const DEFAULT_PLANS = [
     includesPwa: false,
     active: true,
     featuresJson: JSON.stringify([
-      'Mobile-responsive business website across 35 industry templates',
+      'Mobile-responsive business website across 16 broad industry groups and 36 ready-to-customize templates',
       'Free subdomain (/site/your-brand) on Cloudflare Pages infrastructure',
       'Up to 15 product or service catalog items',
       'Contact, WhatsApp enquiry & Call lead forms',

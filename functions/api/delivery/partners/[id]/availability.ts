@@ -34,11 +34,23 @@ export async function onRequestPatch(
   const nextStatus = body?.available ? 'active' : 'suspended';
 
   try {
-    await env.DB.prepare(
-      `UPDATE tenant_memberships SET status = ? WHERE id = ? AND role = 'delivery_partner'`
-    )
-      .bind(nextStatus, partnerId)
-      .run();
+    const result = auth.user.isSuperAdmin
+      ? await env.DB.prepare(
+          `UPDATE tenant_memberships SET status = ? WHERE id = ? AND role = 'delivery_partner'`
+        )
+          .bind(nextStatus, partnerId)
+          .run()
+      : await env.DB.prepare(
+          `UPDATE tenant_memberships SET status = ?
+           WHERE id = ? AND role = 'delivery_partner'
+             AND (user_id = ? OR user_id = ? OR email = ?)`
+        )
+          .bind(nextStatus, partnerId, auth.user.id, auth.user.authSubject, auth.user.email)
+          .run();
+
+    if (!auth.user.isSuperAdmin && result.meta?.changes === 0) {
+      return jsonResponse({ error: 'Delivery partner profile not found.' }, 404);
+    }
 
     return jsonResponse({ success: true, available: body?.available ?? true });
   } catch (err) {

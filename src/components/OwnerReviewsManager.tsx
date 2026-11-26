@@ -665,7 +665,7 @@ export function OwnerReviewsManager({
                         rel="noopener noreferrer"
                         className="rounded-lg overflow-hidden border border-[#252538] w-14 h-14 shrink-0 block"
                       >
-                        <img src={ph.photoUrl} alt="Customer upload" className="w-full h-full object-cover" />
+                        <img src={ph.photoUrl} alt="Customer upload" width={56} height={56} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                       </a>
                     ))}
                   </div>

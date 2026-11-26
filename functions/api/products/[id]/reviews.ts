@@ -5,7 +5,7 @@
 import { requireUser } from '../../_auth';
 import {
   PagesContext,
-  checkRateLimit,
+  checkRateLimit,  rateLimitResponse,
   getClientIp,
   handleOptions,
   jsonResponse,
@@ -33,9 +33,7 @@ export async function onRequestPost(
   }
 
   const rl = await checkRateLimit(env, `review:${getClientIp(request)}:${productId}`, 5, 3600);
-  if (!rl.allowed) {
-    return jsonResponse({ error: 'Too many reviews submitted recently. Please wait.' }, 429);
-  }
+  if (!rl.allowed) return rateLimitResponse(rl, 'Too many reviews submitted recently. Please wait.')
 
   let reviewerUserId = `guest_${randomHex(6)}`;
   let authUser: { id: string; authSubject: string; email: string; fullName: string } | null = null;

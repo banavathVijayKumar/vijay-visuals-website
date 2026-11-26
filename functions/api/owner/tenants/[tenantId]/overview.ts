@@ -153,11 +153,11 @@ export async function onRequestGet(
   const recentActivities: Array<{ id: string; action: string; description: string; timestamp: string }> = [];
   try {
     const audits = await env.DB!.prepare(
-      `SELECT id, action, details_json, created_at FROM vv_audit_log
-       WHERE details_json LIKE ?
-       ORDER BY id DESC LIMIT 10`
+      `SELECT id, action, metadata_json, created_at FROM vv_audit_log
+       WHERE entity_id = ? OR metadata_json LIKE ?
+       ORDER BY created_at DESC LIMIT 10`
     )
-      .bind(`%${row.website_id}%`)
+      .bind(row.website_id, `%${row.website_id}%`)
       .all<Record<string, any>>();
     for (const a of audits.results || []) {
       recentActivities.push({

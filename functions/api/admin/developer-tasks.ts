@@ -270,6 +270,14 @@ export async function onRequestPatch(context: PagesContext): Promise<Response> {
   const nextPriority = body.priority;
   const appendNotes = body.internalNotes ? sanitizeText(body.internalNotes, 2000) : '';
 
+  const allowedStatuses = ['assigned', 'in_progress', 'review_pending', 'completed', 'blocked'];
+  if (nextStatus !== undefined && !allowedStatuses.includes(nextStatus)) {
+    return jsonResponse({ error: 'Unsupported developer task status.' }, 400);
+  }
+  if (nextPriority !== undefined && !['low', 'normal', 'high', 'urgent'].includes(nextPriority)) {
+    return jsonResponse({ error: 'Unsupported developer task priority.' }, 400);
+  }
+
   try {
     const existing = await env.DB.prepare('SELECT * FROM developer_tasks WHERE id = ? LIMIT 1')
       .bind(taskId)
@@ -324,7 +332,8 @@ export async function onRequestPatch(context: PagesContext): Promise<Response> {
     if (updatedStatus === 'completed' && existing.change_request_id) {
       try {
         await env.DB.prepare(
-          `UPDATE website_change_requests SET status = 'review_ready', updated_at = datetime('now') WHERE id = ?`
+          `UPDATE website_change_requests SET status = 'review_ready', updated_at = datetime('now')
+           WHERE id = ? AND status IN ('approved', 'in_progress')`
         ).bind(existing.change_request_id).run();
       } catch {}
     }

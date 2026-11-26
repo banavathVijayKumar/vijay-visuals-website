@@ -5,13 +5,24 @@
 // - Generates fresh cryptographic 6-digit code and dispatches via Resend
 // ============================================================================
 
-import { PagesContext, errorJson, handleOptions, json, parseJsonBody, sanitizeText } from '../../_shared';
+import {
+  PagesContext,
+  checkRateLimit,
+  errorJson,
+  handleOptions,
+  isValidEmailAddress,
+  json,
+  parseJsonBody,
+  rateLimitResponse,
+  sanitizeText,
+} from '../../_shared';
 import { sendTransactionalEmail, buildOtpEmailHtml } from '../../_email';
 import {
   ensureOtpTable,
   generateSalt,
   generateSecureNumericOtp,
   hashOtp,
+  MAX_OTP_ATTEMPTS,
   OTP_EXPIRY_MINUTES,
   RESEND_COOLDOWN_SECONDS,
 } from '../_otpShared';
@@ -40,9 +51,18 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson('Email address is required.', 400);
   }
 
-  const cleanEmail = sanitizeText(body.email, 140).trim().toLowerCase();
+  const cleanEmail = sanitizeText(body.email, 254).trim().toLowerCase();
+  if (!isValidEmailAddress(cleanEmail)) {
+    return errorJson('Please provide a valid email address.', 400);
+  }
   const purpose = body.purpose || 'registration';
   const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '';
+
+  // Fail-closed IP throttle: prevents one caller from enumerating many recipients.
+  const ipLimit = await checkRateLimit(env, `otp_resend_ip:${clientIp || 'unknown'}`, 20, 3600);
+  if (!ipLimit.allowed) {
+    return rateLimitResponse(ipLimit, 'Too many verification code requests. Please try again later.');
+  }
 
   // 1. Check existing active OTP for cooldown
   const activeOtp = await env.DB.prepare(
@@ -95,7 +115,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       attempts, max_attempts, expires_at, resend_available_at, created_at, ip_address
     ) VALUES (
       ?, ?, ?, ?, ?,
-      0, 5, datetime('now', '+${OTP_EXPIRY_MINUTES} minutes'),
+      0, ${MAX_OTP_ATTEMPTS}, datetime('now', '+${OTP_EXPIRY_MINUTES} minutes'),
       datetime('now', '+${RESEND_COOLDOWN_SECONDS} seconds'),
       datetime('now'), ?
     )`
@@ -115,6 +135,20 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     eventType: 'registration_otp_resend',
     idempotencyKey: `otp_resend_${cleanEmail}_${Date.now()}`,
   });
+
+  if (!sendResult.ok) {
+    await env.DB.prepare(
+      `UPDATE auth_email_otps SET consumed_at = datetime('now')
+       WHERE email = ? AND purpose = ? AND consumed_at IS NULL`
+    )
+      .bind(cleanEmail, purpose)
+      .run();
+    console.error('OTP resend email delivery failed; status:', sendResult.status || 'unknown');
+    return errorJson(
+      'The verification email could not be delivered. Please try again later or contact support.',
+      503
+    );
+  }
 
   return json({
     ok: true,

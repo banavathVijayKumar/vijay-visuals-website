@@ -83,6 +83,9 @@ export interface MappedTenantRecord {
   templateName: string;
   templateFeatures: string[];
   tagline: string;
+  heroHeadline: string;
+  heroSubheadline: string;
+  ctaText: string;
   description: string;
   logoText: string;
   logoImage: string;
@@ -193,7 +196,8 @@ function computeInitials(name: string): string {
   if (words.length >= 2) {
     return `${words[0][0]}${words[1][0]}`.toUpperCase();
   }
-  return (name.trim().slice(0, 2) || 'VV').toUpperCase();
+  // No platform initials on customer storefronts.
+  return name.trim().slice(0, 2).toUpperCase();
 }
 
 function defaultModulesForCategory(category: string): MappedTenantModules {
@@ -441,17 +445,21 @@ export function mapPublicationToTenant(
     templateName,
     templateFeatures,
     tagline: cleanString(parsed.tagline, 240) || cleanString(parsed.subtitle, 240),
+    heroHeadline:
+      cleanString(parsed.heroHeadline, 240) ||
+      cleanString(parsed.tagline, 240) ||
+      cleanString(parsed.subtitle, 240),
+    heroSubheadline:
+      cleanString(parsed.heroSubheadline, 600) || cleanString(parsed.description, 600),
+    ctaText: cleanString(parsed.ctaText, 80) || 'Explore Catalog',
     description:
       cleanString(parsed.description, 1200) ||
       cleanString(parsed.about, 1200) ||
       cleanString(profile?.description, 1200),
     logoText: cleanString(parsed.logoText, 8) || computeInitials(name),
     logoImage: cleanMediaSrc(parsed.logoImage),
-    bannerImage:
-      cleanMediaSrc(parsed.bannerImage) ||
-      cleanMediaSrc(parsed.heroImage) ||
-      cleanString(parsed.bannerImage, 1000) ||
-      cleanString(parsed.heroImage, 1000),
+    // Only validated media sources are emitted to customer storefronts.
+    bannerImage: cleanMediaSrc(parsed.bannerImage) || cleanMediaSrc(parsed.heroImage),
     galleryImages,
     galleryItems,
     primaryColor,

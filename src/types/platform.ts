@@ -47,6 +47,9 @@ export interface TenantRecord {
   templateName?: string;
   templateFeatures?: string[];
   tagline: string;
+  heroHeadline?: string;
+  heroSubheadline?: string;
+  ctaText?: string;
   description: string;
   logoText: string;
   logoImage?: string;
@@ -571,4 +574,4 @@ export interface CartItem {
   variant: string;
 }
 
-export type AppView = 'studio' | 'builder' | 'marketplace' | 'storefront' | 'dashboards' | 'ai' | 'demo' | 'proposal';
+export type AppView = 'studio' | 'builder' | 'marketplace' | 'storefront' | 'dashboards' | 'ai' | 'demo' | 'proposal' | 'not-found';

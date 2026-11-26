@@ -7,7 +7,7 @@
 import { requireUser, requireWebsiteAccess } from '../../../_auth';
 import {
   PagesContext,
-  checkRateLimit,
+  checkRateLimit,  rateLimitResponse,
   errorJson,
   getCnameTarget,
   json,
@@ -86,9 +86,7 @@ export async function onRequestPost(
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
 
   const rl = await checkRateLimit(env, `domain_connect:${auth.user.id}`, 15, 3600);
-  if (!rl.allowed) {
-    return errorJson('Too many domain connection requests. Please try again shortly.', 429);
-  }
+  if (!rl.allowed) return rateLimitResponse(rl, 'Too many domain connection requests. Please try again shortly.')
 
   const body = await parseJsonBody<{
     domainName?: string;

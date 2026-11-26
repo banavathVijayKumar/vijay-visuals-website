@@ -7,9 +7,12 @@
 
 import {
   PagesContext,
+  checkRateLimit,
   handleOptions,
   jsonResponse,
+  rateLimitResponse,
 } from '../_shared';
+import { requirePlatformStaff } from '../_auth';
 import { redactSecretsAndPii, callGeminiWithFallback } from '../_gemini';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -17,7 +20,13 @@ export async function onRequestOptions(): Promise<Response> {
 }
 
 export async function onRequestGet(context: PagesContext): Promise<Response> {
-  const { env } = context;
+  const { request, env } = context;
+  const auth = await requirePlatformStaff(request, env);
+  if (!auth.ok) return auth.response;
+
+  const rl = await checkRateLimit(env, `ai_diagnostic:${auth.user.id}`, 5, 3600);
+  if (!rl.allowed) return rateLimitResponse(rl, 'AI diagnostic rate limit reached. Please try again later.');
+
   const apiKey = env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
 
   if (!apiKey) {

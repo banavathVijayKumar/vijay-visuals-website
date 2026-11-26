@@ -145,17 +145,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
 
       if (pub) {
         targetSlug = pub.public_slug;
-        if (pub.status !== 'published') {
-          await env.DB.prepare(
-            `UPDATE customer_website_publications
-             SET status = 'published',
-                 published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
-                 updated_at = datetime('now')
-             WHERE website_id = ?`
-          )
-            .bind(targetWebsiteId)
-            .run();
-        }
+        // Publication is deferred until the entitlement has been persisted.
       }
     }
 
@@ -187,7 +177,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
           (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
            total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
            current_period_start, current_period_end, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'razorpay', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'cashfree', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
       )
         .bind(
           targetWebsiteId,
@@ -213,6 +203,17 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
         .bind(targetWebsiteId, subscriptionId)
         .run();
     }
+
+    // Publish only after the paid entitlement/subscription has been persisted.
+    await env.DB.prepare(
+      `UPDATE customer_website_publications
+       SET status = 'published',
+           published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
+           updated_at = datetime('now')
+       WHERE website_id = ? AND status != 'published'`
+    )
+      .bind(targetWebsiteId)
+      .run();
 
     // 3. Mark delivery success
     notes.orderState = 'ACTIVE';
@@ -276,12 +277,10 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       details: { error: errorMsg },
     });
 
-    return json({
-      ok: false,
-      orderState: 'DELIVERY_FAILED',
-      deliveryStatus: 'DELIVERY_FAILED',
-      error: errorMsg,
-      message: 'Website delivery retry failed. Please contact Vijay Visuals administrator for manual review.',
-    }, 500);
+    return errorJson(
+      'Website delivery retry failed. Please contact platform support for manual review.',
+      502,
+      { code: 'DELIVERY_RETRY_FAILED', error: errorMsg }
+    );
   }
 }

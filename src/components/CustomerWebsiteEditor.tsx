@@ -206,6 +206,9 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
       const payload = {
         name: name.trim() || tenant.name,
         tagline: tagline.trim(),
+        heroHeadline: heroHeadline.trim(),
+        heroSubheadline: heroSubheadline.trim(),
+        ctaText: ctaText.trim(),
         category,
         description: description.trim(),
         phone: phone.trim(),
@@ -616,7 +619,7 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
                           : 'border-[#262638] opacity-75 hover:opacity-100'
                       }`}
                     >
-                      <img src={bp.url} alt={bp.label} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                      <img src={bp.url} alt={bp.label} width={320} height={180} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                       <div className="absolute inset-0 bg-black/50 p-2 flex items-end">
                         <span className="text-[10px] font-semibold text-white truncate drop-shadow">{bp.label}</span>
                       </div>
@@ -842,6 +845,10 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
                 <img
                   src={customBannerUrl.trim() || bannerImage}
                   alt={name}
+                  width={1200}
+                  height={750}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#060608] via-black/40 to-black/20" />

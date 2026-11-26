@@ -5,14 +5,75 @@
 // and logs delivery audit records.
 // ============================================================================
 
-import { requireUser } from '../../_auth';
+import { AuthenticatedUser, requireUser } from '../../_auth';
 import { getSafeRequestOrigin } from '../../payments/_cashfree';
-import { PagesContext, errorJson, handleOptions, json, parseJsonBody, sanitizeText } from '../../_shared';
+import {
+  PagesContext,
+  errorJson,
+  handleOptions,
+  json,
+  parseJsonBody,
+  safeEqual,
+  sanitizeText,
+  writeAuditLog,
+} from '../../_shared';
 import { sendTransactionalEmail } from '../../_email';
 import { sendWhatsAppNotification } from '../../_whatsapp';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
+}
+
+/**
+ * Delivery authorization is intentionally strict: the proposal owner, a
+ * super-admin, or a caller holding the unguessable proposal token. Guessed
+ * numeric IDs from unrelated authenticated users are treated as not found.
+ */
+export function isAuthorizedProposalDelivery(
+  proposal: Record<string, any>,
+  user: AuthenticatedUser,
+  token?: string
+): boolean {
+  if (user.isSuperAdmin) return true;
+  const ownerId = String(proposal.owner_id || '');
+  if (
+    ownerId &&
+    (ownerId === user.id || ownerId === user.authSubject)
+  ) {
+    return true;
+  }
+
+  const expectedToken = String(proposal.secure_token || '');
+  const suppliedToken = String(token || '').trim();
+  if (expectedToken.length < 12 || suppliedToken.length < 12) return false;
+  if (!safeEqual(suppliedToken, expectedToken)) return false;
+
+  const expiresAt = Date.parse(String(proposal.expires_at || ''));
+  return !Number.isFinite(expiresAt) || expiresAt > Date.now();
+}
+
+/**
+ * Non-admin callers may only send to the stored customer contact. A custom
+ * recipient must exactly match that stored value; super-admins may explicitly
+ * override it for support/recovery delivery.
+ */
+export function resolveProposalDeliveryRecipient(
+  proposal: Record<string, any>,
+  channel: 'whatsapp' | 'email',
+  customRecipient: string | undefined,
+  user: AuthenticatedUser
+): string {
+  const stored = channel === 'whatsapp'
+    ? String(proposal.customer_phone || '')
+    : String(proposal.customer_email || '');
+  const custom = String(customRecipient || '').trim();
+  if (!custom) return stored;
+
+  const normalize = (value: string) => channel === 'whatsapp'
+    ? value.replace(/\D/g, '')
+    : value.trim().toLowerCase();
+  if (user.isSuperAdmin) return custom;
+  return normalize(custom) === normalize(stored) ? stored : '';
 }
 
 export async function onRequestPost(context: PagesContext<{ id: string }>): Promise<Response> {
@@ -28,20 +89,52 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
   const body = await parseJsonBody<{
     channel: 'whatsapp' | 'email';
     customRecipient?: string;
+    token?: string;
   }>(request);
 
-  if (!body || !body.channel) return errorJson('Channel (whatsapp or email) is required.', 400);
+  if (!body || (body.channel !== 'whatsapp' && body.channel !== 'email')) {
+    return errorJson('Channel (whatsapp or email) is required.', 400);
+  }
 
   const proposal = await env.DB.prepare('SELECT * FROM platform_proposals WHERE id = ?').bind(id).first<Record<string, any>>();
-  if (!proposal) return errorJson('Proposal not found.', 404);
+  if (!proposal || !isAuthorizedProposalDelivery(proposal, auth.user, body.token)) {
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: auth.user.isSuperAdmin ? 'super_admin' : 'business_owner',
+      action: 'PROPOSAL_DELIVERY_DENIED',
+      targetType: 'proposal',
+      targetId: String(id),
+      details: { channel: body.channel, reason: 'authorization_failed' },
+    });
+    return errorJson('Proposal not found.', 404);
+  }
+
+  const recipient = resolveProposalDeliveryRecipient(
+    proposal,
+    body.channel,
+    body.customRecipient,
+    auth.user
+  );
+  if (!recipient) {
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: auth.user.isSuperAdmin ? 'super_admin' : 'business_owner',
+      action: 'PROPOSAL_DELIVERY_DENIED',
+      targetType: 'proposal',
+      targetId: String(id),
+      details: { channel: body.channel, reason: 'custom_recipient_rejected' },
+    });
+    return errorJson('Custom recipients are not permitted for this proposal.', 403);
+  }
 
   const baseUrl = getSafeRequestOrigin(request, env);
   const proposalUrl = `${baseUrl}/proposal/${proposal.secure_token}`;
+  const idempotencyVersion = String(proposal.updated_at || 'initial').replace(/[^A-Za-z0-9]/g, '') || 'initial';
   const amountFormatted = `₹${(proposal.grand_total_inr || proposal.development_fee_inr || 7999).toLocaleString('en-IN')}`;
   const hasConfirmedGst = Boolean(proposal.gst_confirmed || (proposal.gst_percent && Number(proposal.gst_percent) > 0 && proposal.gst_status === 'confirmed'));
 
   if (body.channel === 'whatsapp') {
-    const rawPhone = (body.customRecipient || proposal.customer_phone || '').replace(/[^0-9]/g, '');
+    const rawPhone = recipient.replace(/[^0-9]/g, '');
     const cleanPhone = rawPhone.startsWith('91') && rawPhone.length === 12
       ? rawPhone
       : rawPhone.length === 10
@@ -76,7 +169,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       messageText,
       eventType: 'proposal_shared',
       websiteId: proposal.website_id,
-      idempotencyKey: `prop_wa_${id}_${Date.now()}`,
+      idempotencyKey: `prop_wa_${id}_${idempotencyVersion}`,
     });
 
     // Update counts & status in proposal ledger
@@ -89,6 +182,19 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
     )
       .bind(id)
       .run();
+
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: auth.user.isSuperAdmin ? 'super_admin' : 'business_owner',
+      action: 'PROPOSAL_DELIVERY_DISPATCHED',
+      targetType: 'proposal',
+      targetId: String(id),
+      details: {
+        channel: 'whatsapp',
+        deliveryStatus: waResult.status,
+        proposalNumber: sanitizeText(proposal.proposal_number, 80),
+      },
+    });
 
     return json({
       channel: 'whatsapp',
@@ -105,7 +211,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
   }
 
   if (body.channel === 'email') {
-    const recipientEmail = sanitizeText(body.customRecipient || proposal.customer_email || '', 140);
+    const recipientEmail = sanitizeText(recipient, 140);
     const subject = `Vijay Visuals — Official Website Proposal & Future Preview: ${proposal.business_name}`;
 
     const htmlBody = `
@@ -154,7 +260,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       html: htmlBody,
       eventType: 'proposal_email_sent',
       websiteId: proposal.website_id,
-      idempotencyKey: `prop_em_${id}_${Date.now()}`,
+      idempotencyKey: `prop_em_${id}_${idempotencyVersion}`,
     });
 
     const emailSent = emailResult.ok;
@@ -169,6 +275,19 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
     )
       .bind(emailSent ? 1 : 0, emailSent ? 1 : 0, id)
       .run();
+
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: auth.user.isSuperAdmin ? 'super_admin' : 'business_owner',
+      action: 'PROPOSAL_DELIVERY_DISPATCHED',
+      targetType: 'proposal',
+      targetId: String(id),
+      details: {
+        channel: 'email',
+        deliveryStatus: emailResult.status,
+        proposalNumber: sanitizeText(proposal.proposal_number, 80),
+      },
+    });
 
     return json({
       channel: 'email',

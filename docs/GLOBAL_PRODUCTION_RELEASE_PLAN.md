@@ -1,5 +1,7 @@
 # VIJAY VISUALS — STAGED GLOBAL PRODUCTION RELEASE PLAN (STAGES 1–5)
 
+> **SUPERSEDED / HISTORICAL RAZORPAY-ERA PLAN — DO NOT EXECUTE.** VIJAY VISUALS now uses **Cashfree only**. The Razorpay steps below are retained only as historical context; historical Razorpay records must be preserved, but no Razorpay credential, route, webhook or live mode may be configured or reintroduced. Use the current `.env.example` and the Cashfree-only guidance in this repository for any Preview or Production work.
+
 **Brand Positioning**: `VIJAY VISUALS — Made in India. Built for the World. Empowering Every Business to Go Digital.`  
 **Target Production Project**: `vijay-visuals-site` (`https://vijay-visuals-site.pages.dev`)  
 **GitHub Repository**: `https://github.com/banavathVijayKumar/vijay-visuals-website`  

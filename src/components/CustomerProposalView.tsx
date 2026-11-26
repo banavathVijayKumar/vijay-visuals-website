@@ -289,6 +289,10 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
             <img
               src="/logo.png"
               alt="VIJAY VISUALS"
+              width={36}
+              height={36}
+              loading="lazy"
+              decoding="async"
               className="w-9 h-9 rounded-lg border border-[#D4AF37]/50 object-contain bg-black shadow"
             />
             <div>
@@ -753,6 +757,10 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
             <img
               src="/logo.png"
               alt="VIJAY VISUALS"
+              width={40}
+              height={40}
+              loading="lazy"
+              decoding="async"
               className="w-10 h-10 rounded-lg border border-[#D4AF37]/50 object-contain bg-black shadow"
             />
             <div>

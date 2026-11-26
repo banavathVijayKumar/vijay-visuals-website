@@ -6,7 +6,7 @@
 // signature and timestamp have been verified.
 // ============================================================================
 
-import { PagesContext, handleOptions, jsonResponse, safeEqual } from '../_shared';
+import { PagesContext, handleOptions, jsonResponse, readBoundedText, safeEqual } from '../_shared';
 
 const SVIX_SECRET_PREFIX = 'whsec_';
 const SVIX_TIMESTAMP_TOLERANCE_SECONDS = 300;
@@ -91,7 +91,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   // The exact raw body is the only value used for verification. JSON.parse is
   // deliberately deferred until after the signature has been proven valid.
-  const rawBody = await request.text();
+  const rawBody = await readBoundedText(request);
+  if (rawBody === null) return errorResponse('Webhook payload is too large.', 413);
   const expectedSignature = await computeSvixSignature(secret, messageId, timestamp, rawBody);
   if (!expectedSignature) {
     return errorResponse('Resend webhook signing secret is invalid.', 500);

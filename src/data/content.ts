@@ -1,3 +1,5 @@
+import { TEMPLATES_DATA } from '../lib/templatesData';
+
 export type Lang =
   | 'en'
   | 'te'
@@ -34,6 +36,36 @@ export const SUPPORTED_LANGUAGES: readonly SupportedLanguageMeta[] = [
   { code: 'pa', nativeName: 'ਪੰਜਾਬੀ', englishName: 'Punjabi', dir: 'ltr' },
   { code: 'or', nativeName: 'ଓଡ଼ିଆ', englishName: 'Odia', dir: 'ltr' },
   { code: 'ur', nativeName: 'اردو', englishName: 'Urdu', dir: 'rtl' },
+] as const;
+
+/**
+ * Only languages with a complete, crawlable page are advertised to search
+ * engines. English is the source language; the other eleven locales translate
+ * hero/navigation strings only and still fall back to English in lower page
+ * sections, FAQs, portfolio and package copy.
+ */
+export const SEO_READY_LANGUAGES: readonly Lang[] = ['en'];
+
+export interface LocalizationAuditEntry {
+  code: Lang;
+  englishName: string;
+  seoReady: boolean;
+  evidence: string;
+}
+
+export const LOCALIZATION_AUDIT: readonly LocalizationAuditEntry[] = [
+  { code: 'en', englishName: 'English', seoReady: true, evidence: 'Source-language page; all visible sections are authored in English.' },
+  { code: 'te', englishName: 'Telugu', seoReady: false, evidence: 'Hero/navigation translated; services, portfolio, testimonials, FAQs and package copy remain English.' },
+  { code: 'hi', englishName: 'Hindi', seoReady: false, evidence: 'Hero/navigation translated; services, portfolio, testimonials, FAQs and package copy remain English.' },
+  { code: 'ta', englishName: 'Tamil', seoReady: false, evidence: 'Partial UI strings; liveStoresSubtitle and pricingSubtitle fall back to English, as do all lower sections.' },
+  { code: 'kn', englishName: 'Kannada', seoReady: false, evidence: 'Partial UI strings; multiple keys and all lower sections fall back to English.' },
+  { code: 'ml', englishName: 'Malayalam', seoReady: false, evidence: 'Partial UI strings; multiple keys and all lower sections fall back to English.' },
+  { code: 'mr', englishName: 'Marathi', seoReady: false, evidence: 'Partial UI strings; multiple keys and all lower sections fall back to English.' },
+  { code: 'bn', englishName: 'Bengali', seoReady: false, evidence: 'Partial UI strings; multiple keys and all lower sections fall back to English.' },
+  { code: 'gu', englishName: 'Gujarati', seoReady: false, evidence: 'Partial UI strings; multiple keys and all lower sections fall back to English.' },
+  { code: 'pa', englishName: 'Punjabi', seoReady: false, evidence: 'Partial UI strings; multiple keys and all lower sections fall back to English.' },
+  { code: 'or', englishName: 'Odia', seoReady: false, evidence: 'Partial UI strings; multiple keys and all lower sections fall back to English.' },
+  { code: 'ur', englishName: 'Urdu', seoReady: false, evidence: 'Partial UI strings with RTL layout; multiple keys and all lower sections fall back to English.' },
 ] as const;
 
 export const GLOBAL_CURRENCIES = [
@@ -139,6 +171,13 @@ export const BUSINESS_CATEGORIES = [
   { id: 'other', label: 'Other Business Categories', te: 'ఇతర వ్యాపారాలు', hi: 'अन्य व्यवसाय', defaultBanner: '/src/assets/images/hero_vijay_studio_1795055804014.jpg' },
 ] as const;
 
+// Verified from source data: 16 broad categories and 36 selectable templates.
+// Earlier marketing copy alternated between 35 and 36 templates; these derived
+// constants keep all count claims tied to the actual arrays.
+export const CORE_BUSINESS_CATEGORY_COUNT = BUSINESS_CATEGORIES.length;
+export const TEMPLATE_COUNT = TEMPLATES_DATA.length;
+export const TEMPLATE_CATEGORY_COUNT = new Set(TEMPLATES_DATA.map((t) => t.category)).size;
+
 export const WEBSITE_TEMPLATES = [
   {
     id: 'obsidian-luxury',
@@ -180,7 +219,7 @@ export const SERVICES_DATA = [
     number: '01',
     title: 'AI Website Builder & Global E-Commerce Engine',
     shortDescription:
-      'Launch mobile-responsive websites across 16 business categories with 12 Indian & global languages, live checkout, multi-currency FX, wholesale pricing, and GST invoices.',
+      `Launch mobile-responsive websites across ${CORE_BUSINESS_CATEGORY_COUNT} broad industry groups and ${TEMPLATE_CATEGORY_COUNT} ready-to-customize templates, with 12 interface languages, live checkout, multi-currency FX, wholesale pricing, and GST invoices.`,
     deliverables: [
       'Instant /site/your-brand URL, 12-language SEO metadata & custom domain DNS wizard',
       'Product variants, coupons, bulk wholesale pricing, wishlists & verified-purchase reviews',
@@ -204,9 +243,9 @@ export const SERVICES_DATA = [
     number: '03',
     title: 'AI Automation Center & 12-Language Content Studio',
     shortDescription:
-      'Gemini-powered customer support, website copy, SEO suggestions, product descriptions, business names, and approval-gated workflows across 12 languages.',
+      'Gemini-assisted customer support drafting, website copy, SEO suggestions, product descriptions and business names with approval-gated workflows across 12 languages.',
     deliverables: [
-      '9 structured AI modes grounded strictly in your verified store metrics',
+      'Structured AI modes grounded in published business details; no invented prices or offers',
       'Trigger-condition-action workflows with manual approval & retry safety',
       'Metered AI credit tracking, history logs & declarative plugin connectors',
     ],
@@ -321,7 +360,7 @@ const EN_STRINGS: Record<string, string> = {
   heroKicker: 'VIJAY VISUALS · Made in India. Built for the World.',
   heroTitle: 'Empowering Every Business to Go Digital.',
   heroSubtitle:
-    'Proudly built in India for entrepreneurs worldwide. Launch websites across 16 categories, full e-commerce, 12 languages, multi-currency display, custom domains, SEO tools, delivery ops, and Gemini AI automation.',
+    `Proudly built in India for entrepreneurs worldwide. Launch websites across ${CORE_BUSINESS_CATEGORY_COUNT} broad industry groups and ${TEMPLATE_CATEGORY_COUNT} ready-to-customize templates, full e-commerce, 12 interface languages, multi-currency display, custom domains, SEO tools, delivery ops, and Gemini AI automation.`,
   ctaLaunchBuilder: 'Launch Website Builder',
   ctaExploreStores: 'Explore Live Stores',
   ctaWhatsApp: 'Start Project on WhatsApp',

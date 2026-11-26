@@ -66,14 +66,26 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
          ORDER BY id DESC LIMIT 50`
       ).all<Record<string, any>>();
       ordersRes = ords.results || [];
-    } else if (partnerIds.length > 0) {
-      // Load orders assigned to this delivery partner or ready for pickup
-      const ords = await env.DB.prepare(
-        `SELECT * FROM store_orders
-         WHERE (delivery_partner_id IN (${partnerIds.join(',')}) OR order_status IN ('ready_for_pickup', 'out_for_delivery'))
-         ORDER BY id DESC LIMIT 50`
-      ).all<Record<string, any>>();
-      ordersRes = ords.results || [];
+    } else {
+      // Tenant isolation: only websites where this caller holds an active
+      // delivery_partner membership may be listed. Never fall back to a global
+      // status filter, which leaked ready/out-for-delivery orders across tenants.
+      const websiteIds = Array.from(
+        new Set(partnerRows.map((p) => String(p.website_id || '')).filter(Boolean))
+      );
+      if (websiteIds.length > 0) {
+        const websitePlaceholders = websiteIds.map(() => '?').join(',');
+        const partnerPlaceholders = partnerIds.length > 0 ? partnerIds.map(() => '?').join(',') : "''";
+        const ords = await env.DB.prepare(
+          `SELECT * FROM store_orders
+           WHERE website_id IN (${websitePlaceholders})
+             AND (delivery_partner_id IN (${partnerPlaceholders}) OR delivery_partner_id IS NULL)
+           ORDER BY id DESC LIMIT 50`
+        )
+          .bind(...websiteIds, ...partnerIds)
+          .all<Record<string, any>>();
+        ordersRes = ords.results || [];
+      }
     }
 
     for (const o of ordersRes) {

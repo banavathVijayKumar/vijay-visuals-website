@@ -8,13 +8,16 @@
 import { requireUser } from '../../../_auth';
 import {
   PagesContext,
+  checkRateLimit,
+  getClientIp,
   handleOptions,
   jsonResponse,
   parseJsonBody,
+  rateLimitResponse,
   sanitizeText,
   writeAuditLog,
 } from '../../../_shared';
-import { requireTenantOwnerAccess } from '../../../_tenantAccess';
+import { requireTenantOwnerAccess, validateAttachmentUrl } from '../../../_tenantAccess';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -88,6 +91,14 @@ export async function onRequestPost(
 
   if (!env.DB) return jsonResponse({ error: 'Database binding not configured.' }, 503);
 
+  const rl = await checkRateLimit(
+    env,
+    `change_request:${auth.user.id}:${getClientIp(request)}`,
+    10,
+    600
+  );
+  if (!rl.allowed) return rateLimitResponse(rl, 'Too many change requests. Please try again later.');
+
   const body = await parseJsonBody<{
     title?: string;
     description?: string;
@@ -131,9 +142,8 @@ export async function onRequestPost(
   const attachments: string[] = [];
   if (Array.isArray(body.attachments)) {
     for (const a of body.attachments) {
-      if (typeof a === 'string' && a.trim()) {
-        attachments.push(sanitizeText(a.trim(), 500));
-      }
+      const safeUrl = validateAttachmentUrl(a, 500);
+      if (safeUrl) attachments.push(safeUrl);
     }
   }
 
@@ -219,12 +229,15 @@ export async function onRequestPatch(
 
   const body = await parseJsonBody<{
     requestId?: number;
-    decision?: 'approved' | 'rejected';
+    decision?: 'approved' | 'rejected' | 'accept_review' | 'request_changes';
     customerNotes?: string;
   }>(request);
 
   if (!body || !body.requestId || !body.decision) {
-    return jsonResponse({ error: 'requestId and decision (approved | rejected) are required.' }, 400);
+    return jsonResponse(
+      { error: 'requestId and decision (approved | rejected | accept_review | request_changes) are required.' },
+      400
+    );
   }
 
   const reqId = Number(body.requestId);
@@ -243,17 +256,49 @@ export async function onRequestPatch(
     }
 
     const nowIso = new Date().toISOString();
-    let newStatus = decision === 'approved' ? 'approved' : 'rejected';
+    const isQuotationDecision = decision === 'approved' || decision === 'rejected';
+    const isReviewDecision = decision === 'accept_review' || decision === 'request_changes';
+
+    // A decision is only valid for the phase it belongs to. This prevents a
+    // stale client action from re-opening an already completed request.
+    if (isQuotationDecision && existing.status !== 'quoted') {
+      return jsonResponse(
+        { error: 'A quotation decision is only available while the request is quoted.' },
+        409
+      );
+    }
+    if (isReviewDecision && existing.status !== 'review_ready') {
+      return jsonResponse(
+        { error: 'Customer review is only available when the work is ready for review.' },
+        409
+      );
+    }
+
+    const newStatus =
+      decision === 'approved'
+        ? 'approved'
+        : decision === 'rejected'
+          ? 'rejected'
+          : decision === 'accept_review'
+            ? 'completed'
+            : 'in_progress';
+    // Use existing schema columns so the approval gate works on any deployed
+    // D1 schema without requiring a remote migration.
+    const decisionNote = isReviewDecision
+      ? `${decision === 'accept_review' ? '[Customer approved delivery]' : '[Customer requested changes]'} ${customerNotes || ''}`.trim()
+      : customerNotes || existing.customer_notes;
+    const completedAt = decision === 'accept_review' ? nowIso : existing.completed_at;
 
     await env.DB.prepare(
       `UPDATE website_change_requests
-       SET status = ?, customer_notes = ?, approved_at = ?, updated_at = datetime('now')
+       SET status = ?, customer_notes = ?, approved_at = ?, completed_at = ?, updated_at = datetime('now')
        WHERE id = ?`
     )
       .bind(
         newStatus,
-        customerNotes || existing.customer_notes,
-        decision === 'approved' ? nowIso : null,
+        decisionNote,
+        decision === 'approved' ? nowIso : existing.approved_at,
+        completedAt,
         reqId
       )
       .run();
@@ -261,7 +306,13 @@ export async function onRequestPatch(
     await writeAuditLog(env, {
       actorId: auth.user.id,
       actorRole: access.effectiveRole,
-      action: decision === 'approved' ? 'approve_change_quotation' : 'reject_change_quotation',
+      action: isQuotationDecision
+        ? decision === 'approved'
+          ? 'approve_change_quotation'
+          : 'reject_change_quotation'
+        : decision === 'accept_review'
+          ? 'customer_accepted_delivery'
+          : 'customer_requested_changes',
       targetType: 'change_request',
       targetId: String(reqId),
       details: { requestNumber: existing.request_number, decision, quotationInr: existing.quotation_inr },
@@ -272,8 +323,11 @@ export async function onRequestPatch(
       requestId: reqId,
       status: newStatus,
       decision,
+      reviewDecision: isReviewDecision ? decision : null,
       quotationInr: existing.quotation_inr,
-      note: 'Quotation decision recorded. Work begins only after confirmed scheduling and agreement.',
+      note: isReviewDecision
+        ? 'Customer review decision recorded.'
+        : 'Quotation decision recorded. Work begins only after confirmed scheduling and agreement.',
     });
   } catch (err) {
     return jsonResponse({ error: 'Failed to update change request decision.' }, 500);

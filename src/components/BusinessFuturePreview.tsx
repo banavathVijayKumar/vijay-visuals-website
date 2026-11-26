@@ -211,7 +211,7 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
           <header className="border-b border-[#1E1E2C] bg-[#0E0E16]/95 backdrop-blur px-4 py-3 flex items-center justify-between sticky top-0 z-20">
             <div className="flex items-center gap-2.5">
               {data.businessLogoUrl ? (
-                <img src={data.businessLogoUrl} alt="Logo" className="w-7 h-7 rounded-md object-cover border border-amber-500/30" />
+                <img src={data.businessLogoUrl} alt="Logo" width={28} height={28} loading="lazy" decoding="async" className="w-7 h-7 rounded-md object-cover border border-amber-500/30" />
               ) : (
                 <div
                   className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-black"

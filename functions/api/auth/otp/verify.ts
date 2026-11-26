@@ -7,8 +7,19 @@
 // - Synchronizes verified user profile in D1 `users` ledger
 // ============================================================================
 
-import { PagesContext, errorJson, handleOptions, json, parseJsonBody, sanitizeText } from '../../_shared';
+import {
+  PagesContext,
+  checkRateLimit,
+  errorJson,
+  getClientIp,
+  handleOptions,
+  json,
+  parseJsonBody,
+  rateLimitResponse,
+  sanitizeText,
+} from '../../_shared';
 import { ensureOtpTable, hashOtp, timingSafeEqual } from '../_otpShared';
+import { provisionVerifiedCustomer } from '../_supabaseAdmin';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -28,6 +39,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const body = await parseJsonBody<{
     email?: string;
     otp?: string;
+    password?: string;
     purpose?: 'registration' | 'password_recovery' | 'login';
   }>(request);
 
@@ -35,12 +47,30 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson('Email address and 6-digit verification code are required.', 400);
   }
 
-  const cleanEmail = sanitizeText(body.email, 140).trim().toLowerCase();
+  // Send/resend accept up to 254 characters; verification must use the same
+  // limit or valid long addresses can never be verified.
+  const cleanEmail = sanitizeText(body.email, 254).trim().toLowerCase();
   const rawOtp = sanitizeText(body.otp, 10).trim();
   const purpose = body.purpose || 'registration';
+  const password = String(body.password || '');
+  if (purpose === 'registration' && (password.length < 6 || password.length > 128)) {
+    return errorJson('Password must be between 6 and 128 characters.', 400);
+  }
 
   if (!/^\d{6}$/.test(rawOtp)) {
     return errorJson('Verification code must be exactly 6 digits.', 400);
+  }
+
+  // Fail-closed throttles: per-IP and per-email, in addition to the atomic
+  // per-code attempt counter below.
+  const clientIp = getClientIp(request);
+  const ipLimit = await checkRateLimit(env, `otp_verify_ip:${clientIp}`, 30, 600);
+  if (!ipLimit.allowed) {
+    return rateLimitResponse(ipLimit, 'Too many verification attempts. Please try again later.');
+  }
+  const emailLimit = await checkRateLimit(env, `otp_verify_email:${cleanEmail}`, 15, 600);
+  if (!emailLimit.allowed) {
+    return rateLimitResponse(emailLimit, 'Too many verification attempts. Please try again later.');
   }
 
   // 1. Retrieve the latest active unconsumed OTP record
@@ -70,9 +100,13 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     );
   }
 
-  // 2. Check if already exceeded maximum attempts
+  // 2. Check if already exceeded maximum attempts. The conditional update also
+  // invalidates stale rows left by older concurrent requests.
   if (record.attempts >= record.max_attempts) {
-    await env.DB.prepare('UPDATE auth_email_otps SET consumed_at = datetime(\'now\') WHERE id = ?')
+    await env.DB.prepare(
+      `UPDATE auth_email_otps SET consumed_at = datetime('now')
+       WHERE id = ? AND consumed_at IS NULL`
+    )
       .bind(record.id)
       .run();
     return json(
@@ -105,17 +139,21 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const isMatch = timingSafeEqual(computedHash, record.otp_hash);
 
   if (!isMatch) {
-    const nextAttempts = record.attempts + 1;
-    const remaining = Math.max(0, record.max_attempts - nextAttempts);
+    // Atomic conditional increment: concurrent incorrect submissions cannot
+    // both read the same old count and exceed the configured attempt limit.
+    const claim = await env.DB.prepare(
+      `UPDATE auth_email_otps
+       SET attempts = attempts + 1,
+           consumed_at = CASE
+             WHEN attempts + 1 >= max_attempts THEN datetime('now')
+             ELSE consumed_at
+           END
+       WHERE id = ? AND consumed_at IS NULL AND attempts < max_attempts`
+    )
+      .bind(record.id)
+      .run();
 
-    if (nextAttempts >= record.max_attempts) {
-      // Invalidate code upon hitting maximum attempts
-      await env.DB.prepare(
-        'UPDATE auth_email_otps SET attempts = ?, consumed_at = datetime(\'now\') WHERE id = ?'
-      )
-        .bind(nextAttempts, record.id)
-        .run();
-
+    if (!claim.meta?.changes) {
       return json(
         {
           ok: false,
@@ -127,10 +165,29 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       );
     }
 
-    // Increment attempt count
-    await env.DB.prepare('UPDATE auth_email_otps SET attempts = ? WHERE id = ?')
-      .bind(nextAttempts, record.id)
-      .run();
+    // Read the durable post-claim value so the response cannot report a stale
+    // allowance when multiple requests raced.
+    const updated = await env.DB.prepare(
+      'SELECT attempts, max_attempts, consumed_at FROM auth_email_otps WHERE id = ? LIMIT 1'
+    )
+      .bind(record.id)
+      .first<{ attempts: number; max_attempts: number; consumed_at: string | null }>();
+
+    const nextAttempts = Number(updated?.attempts ?? record.attempts + 1);
+    const maxAttempts = Number(updated?.max_attempts ?? record.max_attempts);
+    const remaining = Math.max(0, maxAttempts - nextAttempts);
+
+    if (updated?.consumed_at || remaining === 0) {
+      return json(
+        {
+          ok: false,
+          error: 'Too many incorrect attempts. This verification code has been invalidated. Please request a new code.',
+          code: 'MAX_ATTEMPTS_EXCEEDED',
+          remainingAttempts: 0,
+        },
+        429
+      );
+    }
 
     return json(
       {
@@ -151,8 +208,44 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   const fullName = sanitizeText(metadata.fullName || '', 100);
   const phone = sanitizeText(metadata.phone || '', 20);
-  const requestedRole = sanitizeText(metadata.requestedRole || 'customer', 40);
+  // OTP metadata is client-influenced and must never grant a privileged role.
+  // Preserve an already-server-assigned role, otherwise create a customer only.
   const resolvedName = fullName.trim() || cleanEmail.split('@')[0];
+
+  // Registration no longer calls client.auth.signUp(). A confirmed Supabase
+  // identity is provisioned server-side after the OTP is proven valid, so no
+  // second confirmation email is sent and email rate limits cannot block it.
+  let supabaseUserId = '';
+  let provisioningCreated = false;
+  if (purpose === 'registration') {
+    const provision = await provisionVerifiedCustomer(env, {
+      email: cleanEmail,
+      password,
+      fullName: resolvedName,
+      phone,
+    });
+    if (!provision.ok) {
+      const safeMessages: Record<string, string> = {
+        ADMIN_CREDENTIAL_MISSING: 'Account provisioning is not configured. Please try again later.',
+        ADMIN_KEY_FORMAT_INVALID: 'Account provisioning credentials are invalid. Please contact support.',
+        SUPABASE_RATE_LIMITED: 'Account creation is temporarily busy. Please wait a moment and retry.',
+        EMAIL_ADDRESS_INVALID: 'Please enter a valid email address.',
+        PASSWORD_REJECTED: 'Password must be between 6 and 128 characters.',
+        ADMIN_LOOKUP_FAILED: 'Account service is temporarily unavailable. Please try again.',
+        PROVISIONING_FAILED: 'Account creation failed. Please try again.',
+      };
+      return json(
+        {
+          ok: false,
+          error: safeMessages[provision.code] || 'Account creation failed. Please try again.',
+          code: provision.code,
+        },
+        provision.status
+      );
+    }
+    supabaseUserId = provision.userId;
+    provisioningCreated = provision.created;
+  }
 
   let effectiveUserId: string;
   let effectiveRole: string = 'customer';
@@ -165,7 +258,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
        WHERE LOWER(email) = LOWER(?) OR auth_subject = ?
        LIMIT 1`
     )
-      .bind(cleanEmail, cleanEmail)
+      .bind(cleanEmail, supabaseUserId || cleanEmail)
       .first<{
         id: string;
         auth_provider: string;
@@ -177,30 +270,47 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }>();
 
     if (existingUser) {
-      effectiveUserId = existingUser.id;
-      // Rule: Never overwrite an existing owner/admin role with customer
+      // For registration, the canonical D1 identity is the real Supabase UID.
+      effectiveUserId = supabaseUserId || existingUser.id;
+      // Rule: Never overwrite an existing owner/admin role with customer, and
+      // never elevate a role from OTP registration metadata.
       const isExistingAdmin = existingUser.role === 'admin';
-      effectiveRole = isExistingAdmin ? 'admin' : (requestedRole === 'admin' ? 'admin' : 'customer');
+      effectiveRole = isExistingAdmin ? 'admin' : 'customer';
       const targetName = (existingUser.full_name && existingUser.full_name.trim()) ? existingUser.full_name : resolvedName;
 
+      const linkedSubject = supabaseUserId || existingUser.auth_subject || existingUser.id;
       await env.DB.prepare(
         `UPDATE vv_users
-         SET full_name = ?,
+         SET id = ?, auth_provider = ?, auth_subject = ?, full_name = ?,
              role = CASE WHEN role = 'admin' THEN 'admin' ELSE ? END,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`
       )
-        .bind(targetName, effectiveRole, existingUser.id)
+        .bind(
+          effectiveUserId,
+          supabaseUserId ? 'supabase' : existingUser.auth_provider || 'email_otp',
+          linkedSubject,
+          targetName,
+          effectiveRole,
+          existingUser.id
+        )
         .run();
     } else {
-      effectiveUserId = crypto.randomUUID ? crypto.randomUUID() : `usr_${Date.now()}`;
-      effectiveRole = requestedRole === 'admin' ? 'admin' : 'customer';
+      effectiveUserId = supabaseUserId || (crypto.randomUUID ? crypto.randomUUID() : `usr_${Date.now()}`);
+      effectiveRole = 'customer';
 
       await env.DB.prepare(
         `INSERT INTO vv_users (id, auth_provider, auth_subject, email, full_name, role, status, created_at, updated_at)
-         VALUES (?, 'email_otp', ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+         VALUES (?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
       )
-        .bind(effectiveUserId, effectiveUserId, cleanEmail, resolvedName, effectiveRole)
+        .bind(
+          effectiveUserId,
+          supabaseUserId ? 'supabase' : 'email_otp',
+          effectiveUserId,
+          cleanEmail,
+          resolvedName,
+          effectiveRole
+        )
         .run();
     }
   } catch (syncErr: any) {
@@ -208,10 +318,27 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson('Failed to persist customer profile. Please try again.', 500);
   }
 
-  // 6. Success: Mark OTP as consumed (only after profile persistence succeeds)
-  await env.DB.prepare('UPDATE auth_email_otps SET consumed_at = datetime(\'now\') WHERE id = ?')
+  // 6. Success: Claim the OTP atomically, then report success. The conditional
+  // guard prevents a correct code from being redeemed after a concurrent
+  // attempt exhausted or consumed the same record.
+  const consume = await env.DB.prepare(
+    `UPDATE auth_email_otps SET consumed_at = datetime('now')
+     WHERE id = ? AND consumed_at IS NULL AND attempts < max_attempts
+       AND datetime('now') <= expires_at`
+  )
     .bind(record.id)
     .run();
+
+  if (!consume.meta?.changes) {
+    return json(
+      {
+        ok: false,
+        error: 'This verification code is no longer valid. Please request a new code.',
+        code: 'OTP_NO_LONGER_VALID',
+      },
+      409
+    );
+  }
 
   return json({
     ok: true,
@@ -226,6 +353,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       phone,
       role: effectiveRole,
       emailVerified: true,
+      authProvider: supabaseUserId ? 'supabase' : 'email_otp',
+      provisioningCreated,
     },
   });
 }

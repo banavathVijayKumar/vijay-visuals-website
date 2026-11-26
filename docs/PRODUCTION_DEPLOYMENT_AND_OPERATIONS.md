@@ -1,5 +1,7 @@
 # VIJAY VISUALS — PRODUCTION DEPLOYMENT, OPERATIONS & HANDOVER GUIDE
 
+> **HISTORICAL / PARTIALLY SUPERSEDED RUNBOOK.** The endpoint table and migration examples below still mention Razorpay-era flows. Current policy is **Cashfree only**; do not configure or reintroduce Razorpay, Stripe or any other gateway. Historical Razorpay ledger data is preserved read-only. No Production action is authorized without separate owner approval; use the current `.env.example` and the Cashfree-only guidance in this repository for launch preparation.
+
 **Existing Production Project**: `vijay-visuals-site` (`https://vijay-visuals-site.pages.dev`)  
 **Existing GitHub Repository**: `https://github.com/banavathVijayKumar/vijay-visuals-website`  
 **Existing Production Database**: Cloudflare D1 `vijay-visuals-marketplace` (`5e6c67d1-ccc0-4e98-a787-c6643e9f0f6c`, binding `DB`)  

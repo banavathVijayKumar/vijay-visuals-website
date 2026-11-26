@@ -1,5 +1,7 @@
 // ============================================================================
 // POST /api/webhooks/cashfree — Production Cashfree Webhook Handler (Cloudflare Edge)
+// - Requires a dedicated CASHFREE_WEBHOOK_SECRET; CASHFREE_CLIENT_SECRET is never
+//   accepted as a webhook signing-secret fallback
 // - Verifies x-webhook-signature Base64 HMAC-SHA256 on exact raw body + timestamp
 // - Supports OPTIONS preflight and GET health checks for dashboard verification
 // - Enforces strict idempotency via payment_webhook_events(event_id PK)
@@ -8,8 +10,20 @@
 // - Dual-ledger atomic reconciliation across cashfree_payments and store_orders
 // ============================================================================
 
-import { PagesContext, errorJson, handleOptions, json, sanitizeText, writeAuditLog } from '../_shared';
-import { provisionLifetimeEntitlement } from '../_tenantAccess';
+import {
+  PagesContext,
+  errorJson,
+  handleOptions,
+  json,
+  readBoundedText,
+  sanitizeText,
+  writeAuditLog,
+} from '../_shared';
+import {
+  customerApprovalBlockedResponse,
+  finalizeCashfreePlatformRefund,
+  provisionLifetimeEntitlement,
+} from '../_tenantAccess';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from '../plans';
 import { FREE_START_PLAN_CODE } from '../_planTiers';
 import {
@@ -28,12 +42,43 @@ import {
   getTrimmedEnvVar,
   verifyEdgeCashfreeWebhookSignature,
 } from '../payments/_cashfree';
+import {
+  buildCashfreeRefundWebhookEventId,
+  buildCashfreeWebhookEventId,
+  cashfreeNotificationIdempotencyKey,
+  cashfreeSettlementIdempotencyKey,
+  normalizeCashfreePaymentId,
+  normalizeCashfreeRefundId,
+  parseCashfreeJsonPreservingLargeIds,
+} from '../payments/_cashfreeIdentity';
 
 function toIntegerPaise(amount: unknown): number {
   if (typeof amount === 'string' && amount.trim() === '') return -1;
   const num = Number(amount);
   if (!Number.isFinite(num) || isNaN(num) || num <= 0) return -1;
   return Math.round(num * 100);
+}
+
+function approvedPaymentTemplate(env: PagesContext['env']): { name: string; language: string } | null {
+  const name = sanitizeText(env.WHATSAPP_PAYMENT_TEMPLATE_NAME, 512);
+  const language = sanitizeText(env.WHATSAPP_PAYMENT_TEMPLATE_LANGUAGE, 16);
+  if (!/^[A-Za-z0-9_.-]+$/.test(name)) return null;
+  if (!/^[A-Za-z]{2}(?:[-_][A-Za-z0-9]{2,4})?$/.test(language)) return null;
+  return { name, language };
+}
+
+function retryablePaidProvisioning(rawNotes: unknown): boolean {
+  let notes: Record<string, any> = {};
+  try {
+    notes = JSON.parse(String(rawNotes || '{}'));
+  } catch {}
+  const orderState = String(notes.orderState || '').toUpperCase();
+  const deliveryStatus = String(notes.deliveryStatus || '').toUpperCase();
+  return (
+    orderState === 'PROVISIONING' ||
+    orderState === 'DELIVERY_FAILED' ||
+    deliveryStatus === 'DELIVERY_FAILED'
+  );
 }
 
 interface CashfreeWebhookPayload {
@@ -58,6 +103,28 @@ interface CashfreeWebhookPayload {
       payment_group?: string;
       payment_message?: string;
     };
+    refund?: {
+      cf_refund_id?: number | string;
+      cf_payment_id?: number | string;
+      refund_id?: string;
+      order_id?: string;
+      refund_amount?: number;
+      refund_currency?: string;
+      refund_status?: string;
+      refund_arn?: string;
+      refund_note?: string;
+      status_description?: string;
+    };
+    auto_refund?: {
+      cf_refund_id?: number | string;
+      cf_payment_id?: number | string;
+      refund_id?: string;
+      order_id?: string;
+      refund_amount?: number;
+      refund_currency?: string;
+      refund_status?: string;
+      refund_reason?: string;
+    };
     customer_details?: {
       customer_id?: string;
       customer_name?: string;
@@ -73,13 +140,19 @@ export async function onRequestOptions(): Promise<Response> {
 
 export async function onRequestGet(context: PagesContext): Promise<Response> {
   const endpoint = getSafeCashfreeNotifyUrl(context.request, context.env);
+  const hasDedicatedWebhookSecret = Boolean(
+    getTrimmedEnvVar(context.env, 'CASHFREE_WEBHOOK_SECRET')
+  );
   return json({
     ok: true,
-    status: 'active',
+    status: hasDedicatedWebhookSecret ? 'active' : 'setup_required',
     gateway: 'Cashfree Payment Gateway',
     apiVersion: '2023-08-01',
     endpoint,
-    message: 'Cashfree webhook endpoint is ready and accepting requests.',
+    webhookSecretConfigured: hasDedicatedWebhookSecret,
+    message: hasDedicatedWebhookSecret
+      ? 'Cashfree webhook endpoint is ready and accepting signed requests.'
+      : 'CASHFREE_WEBHOOK_SECRET is not configured; webhook POST requests are rejected.',
   });
 }
 
@@ -89,7 +162,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   const signature = (request.headers.get('x-webhook-signature') || '').trim();
   const timestamp = (request.headers.get('x-webhook-timestamp') || '').trim();
-  const rawBody = await request.text();
+  const rawBody = await readBoundedText(request);
+  if (rawBody === null) return errorJson('Webhook payload is too large.', 413);
 
   // 1. Strict Cryptographic Signature Check (Enforced for ALL POST requests)
   // Per security requirements: Never bypass HMAC verification based on "TEST", synthetic IDs, or email.
@@ -97,12 +171,12 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson('Missing x-webhook-signature or x-webhook-timestamp header.', 401);
   }
 
-  const hasSecret = Boolean(
-    getTrimmedEnvVar(env, 'CASHFREE_WEBHOOK_SECRET') || getTrimmedEnvVar(env, 'CASHFREE_CLIENT_SECRET')
-  );
+  // A dedicated webhook signing secret is mandatory. CASHFREE_CLIENT_SECRET
+  // must never be accepted as a substitute for webhook verification.
+  const hasDedicatedWebhookSecret = Boolean(getTrimmedEnvVar(env, 'CASHFREE_WEBHOOK_SECRET'));
 
-  if (!hasSecret) {
-    return errorJson('Cashfree secret key is not configured in Cloudflare Pages environment variables.', 500);
+  if (!hasDedicatedWebhookSecret) {
+    return errorJson('CASHFREE_WEBHOOK_SECRET is not configured in Cloudflare Pages environment variables.', 500);
   }
 
   const sigValid = await verifyEdgeCashfreeWebhookSignature(env, rawBody, signature, timestamp);
@@ -110,9 +184,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson('Invalid Cashfree webhook HMAC-SHA256 signature.', 401);
   }
 
+  // Parse a lossless copy for business logic. The ORIGINAL rawBody remains the
+  // only input to HMAC verification and is stored verbatim in the event ledger.
   let body: CashfreeWebhookPayload;
   try {
-    body = JSON.parse(rawBody) as CashfreeWebhookPayload;
+    body = parseCashfreeJsonPreservingLargeIds<CashfreeWebhookPayload>(rawBody);
   } catch {
     return errorJson('Invalid webhook JSON payload.', 400);
   }
@@ -120,31 +196,215 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const eventType = sanitizeText(body.type || body.event || 'UNKNOWN', 80);
   const orderData = body.data?.order;
   const paymentData = body.data?.payment;
+  const refundData = body.data?.refund || body.data?.auto_refund;
+  const isRefundEvent =
+    eventType === 'REFUND_STATUS_WEBHOOK' || eventType === 'AUTO_REFUND_STATUS_WEBHOOK';
 
-  const orderId = sanitizeText(orderData?.order_id || '', 120);
-  const cfPaymentId = sanitizeText(paymentData?.cf_payment_id ? String(paymentData.cf_payment_id) : '', 120);
+  const orderId = sanitizeText(refundData?.order_id || orderData?.order_id || '', 120);
+  const rawPaymentId = paymentData?.cf_payment_id ?? refundData?.cf_payment_id;
+  let cfPaymentId = normalizeCashfreePaymentId(rawPaymentId);
+  if (
+    rawPaymentId !== undefined &&
+    rawPaymentId !== null &&
+    String(rawPaymentId).trim() !== '' &&
+    !cfPaymentId
+  ) {
+    return errorJson('Unsafe Cashfree cf_payment_id; refusing a truncated payment identity.', 400);
+  }
 
-  const eventId = sanitizeText(
-    request.headers.get('x-request-id') ||
-      (cfPaymentId ? `${eventType}:${cfPaymentId}` : `${eventType}:${orderId}:${timestamp}`),
-    140
-  );
+  const merchantRefundId = sanitizeText(refundData?.refund_id || '', 120);
+  const cfRefundId = normalizeCashfreeRefundId(refundData?.cf_refund_id);
+  if (isRefundEvent && !merchantRefundId && !cfRefundId) {
+    return errorJson('Refund webhook did not include a refund identity.', 400);
+  }
+
+  // Stable across gateway retries: never derived from a per-delivery request ID.
+  // Refund events are keyed by refund identity, not payment identity, so multiple
+  // refunds on the same order cannot collapse into one ledger event.
+  const eventId = isRefundEvent
+    ? buildCashfreeRefundWebhookEventId(eventType, merchantRefundId, cfRefundId, orderId)
+    : buildCashfreeWebhookEventId(eventType, orderId, cfPaymentId, timestamp);
+  // Refund events share a cf_payment_id, so dedupe them by refund identity.
+  const webhookLedgerIdentity = isRefundEvent
+    ? cfRefundId || merchantRefundId
+    : cfPaymentId;
+
+  // Flow type follows the persisted payment record, not the event name.
+  let webhookFlowType = 'seller_order';
 
   // Strict idempotency check (safely ignores duplicate Cashfree retries)
   const existingEvent = await env.DB.prepare(
-    'SELECT event_id FROM payment_webhook_events WHERE event_id = ? LIMIT 1'
+    `SELECT event_id FROM payment_webhook_events
+     WHERE event_id = ?
+        OR (provider = 'cashfree' AND event_type = ? AND payment_id_normalized <> '' AND payment_id_normalized = ?)
+     LIMIT 1`
   )
-    .bind(eventId)
+    .bind(eventId, eventType, webhookLedgerIdentity)
     .first();
 
   if (existingEvent) {
     return json({ ok: true, idempotentDuplicate: true, eventId, eventType });
   }
 
-  // Process payment events
-  if (eventType === 'PAYMENT_SUCCESS_WEBHOOK' || eventType === 'ORDER_PAID_WEBHOOK') {
+  // Process refund events separately. A refund webhook must never be treated
+  // as a successful payment, and must never re-provision an entitlement.
+  if (isRefundEvent && refundData) {
+    if (!orderId) {
+      return errorJson('Refund webhook did not include an order_id; no ledger was changed.', 400);
+    }
+
+    const providerStatus = String(refundData.refund_status || '').toUpperCase();
+    const amountInr = Number(refundData.refund_amount || 0);
+    if (!Number.isFinite(amountInr) || amountInr <= 0) {
+      return errorJson('Refund webhook did not include a valid refund amount.', 400);
+    }
+    const refundReason = sanitizeText(
+      (refundData as any).refund_note ||
+        (refundData as any).refund_reason ||
+        'Cashfree refund status update',
+      300
+    );
+
+    const refundRow = merchantRefundId
+      ? await env.DB.prepare(
+          'SELECT id, platform_payment_id, status, amount_inr FROM refunds WHERE razorpay_refund_id = ? LIMIT 1'
+        )
+          .bind(merchantRefundId)
+          .first<{ id: number; platform_payment_id: number | null; status: string; amount_inr: number }>()
+      : null;
+
+    const linkedPayment = await env.DB.prepare(
+      `SELECT id, subscription_id, razorpay_payment_id, status, refund_id
+       FROM platform_payments WHERE razorpay_order_id = ? LIMIT 1`
+    )
+      .bind(`cf_${orderId}`)
+      .first<{
+        id: number;
+        subscription_id: number | null;
+        razorpay_payment_id: string | null;
+        status: string;
+        refund_id: string | null;
+      }>();
+
+    if (linkedPayment || refundRow?.platform_payment_id) {
+      webhookFlowType = 'platform_subscription';
+    }
+
+    const paymentId = Number(linkedPayment?.id || refundRow?.platform_payment_id || 0);
+    const refundFinalized = providerStatus === 'SUCCESS' && paymentId > 0;
+
+    if (refundFinalized) {
+      await finalizeCashfreePlatformRefund(env, {
+        paymentId,
+        orderId,
+        merchantRefundId,
+        cfRefundId,
+        amountInr,
+        reason: refundReason,
+        providerStatus,
+        actorId: 'cashfree_webhook',
+        rawWebhookJson: rawBody,
+      });
+    } else if (['CANCELLED', 'REJECTED', 'ONHOLD'].includes(providerStatus)) {
+      if (merchantRefundId) {
+        await env.DB.prepare(
+          `UPDATE refunds SET status = 'failed', updated_at = datetime('now')
+           WHERE razorpay_refund_id = ? AND status <> 'processed'`
+        )
+          .bind(merchantRefundId)
+          .run();
+      }
+      // A failed refund leaves the original successful payment untouched.
+    } else if (merchantRefundId) {
+      await env.DB.prepare(
+        `UPDATE refunds SET status = 'created', updated_at = datetime('now')
+         WHERE razorpay_refund_id = ? AND status NOT IN ('processed', 'failed')`
+      )
+        .bind(merchantRefundId)
+        .run();
+    }
+
+    // Same durable event ledger as payment webhooks, keyed by refund identity.
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO payment_webhook_events
+        (event_id, provider, event_type, flow_type, reference_id, signature_verified,
+         payment_id_normalized, payload_json, processed_at)
+       VALUES (?, 'cashfree', ?, ?, ?, 1, ?, ?, datetime('now'))`
+    )
+      .bind(
+        eventId,
+        eventType,
+        webhookFlowType,
+        orderId,
+        webhookLedgerIdentity,
+        rawBody
+      )
+      .run();
+
+    await writeAuditLog(env, {
+      actorId: 'cashfree_webhook',
+      actorRole: 'system',
+      action: `cashfree_${eventType.toLowerCase()}`,
+      targetType: 'refunds',
+      targetId: merchantRefundId || cfRefundId || orderId,
+      details: {
+        eventId,
+        eventType,
+        orderId,
+        cfPaymentId,
+        merchantRefundId,
+        cfRefundId,
+        refundAmountInr: amountInr,
+        providerStatus,
+        refundFinalized,
+      },
+    });
+
+    return json({
+      ok: true,
+      eventId,
+      eventType,
+      orderId,
+      cfPaymentId,
+      cfRefundId,
+      merchantRefundId,
+      refundStatus: providerStatus,
+      refundFinalized,
+    });
+  } else if (eventType === 'PAYMENT_SUCCESS_WEBHOOK' || eventType === 'ORDER_PAID_WEBHOOK') {
     if (!orderId) {
       return errorJson('Missing order_id in Cashfree payment webhook payload.', 400);
+    }
+
+    // A success event name is not payment proof. Require an explicit SUCCESS
+    // payment status, or confirm one from the authoritative provider ledger.
+    let hasSuccessfulPayment =
+      String(paymentData?.payment_status || '').toUpperCase() === 'SUCCESS' && Boolean(cfPaymentId);
+    if (!hasSuccessfulPayment) {
+      try {
+        const providerPayments = await fetchEdgeCashfreeOrderPayments(env, orderId);
+        const providerPayment = providerPayments.find(
+          (p) => p.payment_status === 'SUCCESS' && p.cf_payment_id
+        );
+        if (providerPayment) {
+          hasSuccessfulPayment = true;
+          if (!cfPaymentId) cfPaymentId = normalizeCashfreePaymentId(providerPayment.cf_payment_id);
+          if (!cfPaymentId) {
+            return errorJson(
+              'Authoritative provider payment ID is unsafe or truncated; no ledger was marked paid.',
+              400
+            );
+          }
+        }
+      } catch {
+        // Treated as missing evidence below; never mark an unverified payment paid.
+      }
+    }
+    if (!hasSuccessfulPayment) {
+      return errorJson(
+        'Success webhook did not include verified successful payment evidence; no ledger was marked paid.',
+        400
+      );
     }
 
     // 1. Retrieve authoritative records from Preview D1
@@ -166,6 +426,13 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         amount_inr: number;
         notes_json: string;
       }>();
+
+    if (existingPayment?.entity_type === 'platform_package') {
+      // payment_webhook_events.flow_type only accepts platform_subscription,
+      // seller_order or domain_service (migration 0003). Keep the payment's
+      // entity_type unchanged while using the ledger-compatible flow label.
+      webhookFlowType = 'platform_subscription';
+    }
 
     const storeOrder = await env.DB.prepare(
       'SELECT id, website_id, owner_id, order_number, customer_name, customer_email, customer_phone, total_inr, payment_status FROM store_orders WHERE gateway_order_id = ? LIMIT 1'
@@ -193,11 +460,12 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       console.warn(`[Cashfree Webhook] Unmatched order received: ${orderId} (event ${eventId}). Durably recording for investigation.`);
 
       await env.DB.prepare(
-        `INSERT INTO payment_webhook_events
-          (event_id, provider, event_type, flow_type, reference_id, signature_verified, payload_json, processed_at)
-         VALUES (?, 'cashfree', ?, 'seller_order', ?, 1, ?, datetime('now'))`
+        `INSERT OR IGNORE INTO payment_webhook_events
+          (event_id, provider, event_type, flow_type, reference_id, signature_verified,
+           payment_id_normalized, payload_json, processed_at)
+         VALUES (?, 'cashfree', ?, 'seller_order', ?, 1, ?, ?, datetime('now'))`
       )
-        .bind(eventId, eventType, orderId, rawBody)
+        .bind(eventId, eventType, orderId, cfPaymentId, rawBody)
         .run();
 
       await writeAuditLog(env, {
@@ -303,7 +571,15 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     // 4. Update Platform package purchase ledger (if applicable)
 
     if (existingPayment) {
-      if (existingPayment.status !== 'PAID') {
+      const retryPaidProvisioning =
+        existingPayment.status === 'PAID' && retryablePaidProvisioning(existingPayment.notes_json);
+      // REFUNDED is terminal: a delayed success webhook must not re-mark the
+      // payment PAID or re-provision an entitlement after a refund.
+      if (
+        existingPayment.status === 'REFUNDED'
+          ? false
+          : existingPayment.status !== 'PAID' || retryPaidProvisioning
+      ) {
         const paymentMethod = paymentData?.payment_group || 'cashfree_pg';
         const bankRef = paymentData?.bank_reference || null;
         const paymentTime = paymentData?.payment_time || new Date().toISOString();
@@ -313,27 +589,40 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           notes = JSON.parse(existingPayment.notes_json || '{}');
         } catch {}
 
-        notes.orderState = 'ACTIVE';
-        notes.deliveryStatus = 'DELIVERY_READY';
+        notes.orderState = retryPaidProvisioning ? 'PROVISIONING' : 'ACTIVE';
+        notes.deliveryStatus = retryPaidProvisioning ? 'PROVISIONING' : 'DELIVERY_READY';
         notes.gateway = 'cashfree';
         notes.cfPaymentId = cfPaymentId;
         notes.paidViaWebhook = true;
-        notes.deliveredAt = new Date().toISOString();
+        notes.provisioningError = null;
+        if (!retryPaidProvisioning) notes.deliveredAt = new Date().toISOString();
 
-        await env.DB.prepare(
-          `UPDATE cashfree_payments
-           SET status = 'PAID',
-               cf_payment_id = ?,
-               payment_method = ?,
-               bank_reference = ?,
-               payment_time = ?,
-               notes_json = ?,
-               raw_webhook_json = ?,
-               updated_at = datetime('now')
-           WHERE order_id = ?`
-        )
-          .bind(cfPaymentId, paymentMethod, bankRef, paymentTime, JSON.stringify(notes), rawBody, orderId)
-          .run();
+        // Atomic claim: only the delivery that wins this conditional update may
+        // provision entitlements. A concurrent duplicate sees zero changes and
+        // is treated as an idempotent retry instead of a second fulfilment.
+        const paidTransition = retryPaidProvisioning
+          ? { meta: { changes: 1 } }
+          : await env.DB.prepare(
+              `UPDATE cashfree_payments
+               SET status = 'PAID',
+                   cf_payment_id = ?,
+                   payment_method = ?,
+                   bank_reference = ?,
+                   payment_time = ?,
+                   notes_json = ?,
+                   raw_webhook_json = ?,
+                   updated_at = datetime('now')
+               WHERE order_id = ? AND status <> 'PAID'`
+            )
+              .bind(cfPaymentId, paymentMethod, bankRef, paymentTime, JSON.stringify(notes), rawBody, orderId)
+              .run();
+
+        if (paidTransition.meta?.changes === 0) {
+          return json(
+            { ok: true, idempotentDuplicate: true, eventId, eventType, orderId, cfPaymentId },
+            200
+          );
+        }
 
         // Update mirrored platform_payments
         await env.DB.prepare(
@@ -351,63 +640,118 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
         // Provision entitlement BEFORE publishing. A payment never publishes
         // a website until its entitlement has been persisted successfully.
-        if (existingPayment.entity_type === 'platform_package' && existingPayment.website_id) {
-          const planCode = String(existingPayment.reference_id || '').toLowerCase();
-          const isWebsitePackage = (ALLOWED_WEBSITE_PACKAGE_CODES as readonly string[]).includes(planCode);
-          const linkedPayment = await env.DB.prepare(
-            'SELECT id, billing_cycle FROM platform_payments WHERE razorpay_order_id = ? LIMIT 1'
-          )
-            .bind(`cf_${orderId}`)
-            .first<{ id: number; billing_cycle: string }>();
-
-          if (isWebsitePackage) {
-            const provision = await provisionLifetimeEntitlement(env, {
-              websiteId: existingPayment.website_id,
-              ownerId: existingPayment.user_id,
-              planCode,
-              entitlementType:
-                planCode === FREE_START_PLAN_CODE ? 'free_start' : 'one_time_purchase',
-              source: 'cashfree_webhook',
-              sourceReference: cfPaymentId || '',
-              paymentId: linkedPayment?.id,
-            });
-            if (!provision.ok) {
-              console.error('Lifetime entitlement provisioning failed in webhook:', provision.error);
-              throw new Error('Lifetime entitlement provisioning failed for this payment.');
-            }
-          } else {
-            const cycle = linkedPayment?.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
-            const durationExpr = cycle === 'yearly' ? '+365 days' : '+30 days';
-            await env.DB.prepare(
-              `INSERT INTO tenant_subscriptions
-                (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-                 total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-                 current_period_start, current_period_end, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'active', ?, ?, ?, 0, 'cashfree', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+        try {
+          if (existingPayment.entity_type === 'platform_package' && existingPayment.website_id) {
+            const planCode = String(existingPayment.reference_id || '').toLowerCase();
+            const isWebsitePackage = (ALLOWED_WEBSITE_PACKAGE_CODES as readonly string[]).includes(planCode);
+            const linkedPayment = await env.DB.prepare(
+              'SELECT id, billing_cycle FROM platform_payments WHERE razorpay_order_id = ? LIMIT 1'
             )
-              .bind(
-                existingPayment.website_id,
-                existingPayment.user_id,
+              .bind(`cf_${orderId}`)
+              .first<{ id: number; billing_cycle: string }>();
+
+            if (isWebsitePackage) {
+              const provision = await provisionLifetimeEntitlement(env, {
+                websiteId: existingPayment.website_id,
+                ownerId: existingPayment.user_id,
                 planCode,
-                cycle,
-                existingPayment.base_amount_inr,
-                existingPayment.gst_amount_inr,
-                existingPayment.amount_inr,
-                cfPaymentId,
-                durationExpr
+                entitlementType:
+                  planCode === FREE_START_PLAN_CODE ? 'free_start' : 'one_time_purchase',
+                source: 'cashfree_webhook',
+                sourceReference: cfPaymentId || '',
+                paymentId: linkedPayment?.id,
+              });
+              if (!provision.ok) {
+                console.error('Lifetime entitlement provisioning failed in webhook:', provision.error);
+                throw new Error('Lifetime entitlement provisioning failed for this payment.');
+              }
+            } else {
+              const cycle = linkedPayment?.billing_cycle === 'yearly' ? 'yearly' : 'monthly';
+              const durationExpr = cycle === 'yearly' ? '+365 days' : '+30 days';
+              await env.DB.prepare(
+                `INSERT INTO tenant_subscriptions
+                  (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
+                   total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
+                   current_period_start, current_period_end, created_at, updated_at)
+                 SELECT ?, ?, ?, ?, 'active', ?, ?, ?, 0, 'cashfree', ?,
+                        datetime('now'), datetime('now', ?), datetime('now'), datetime('now')
+                 WHERE ? <> ''
+                   AND NOT EXISTS (
+                     SELECT 1 FROM tenant_subscriptions
+                     WHERE gateway_subscription_id = ? AND gateway_subscription_id <> ''
+                   )`
               )
-              .run();
+                .bind(
+                  existingPayment.website_id,
+                  existingPayment.user_id,
+                  planCode,
+                  cycle,
+                  existingPayment.base_amount_inr,
+                  existingPayment.gst_amount_inr,
+                  existingPayment.amount_inr,
+                  cfPaymentId,
+                  durationExpr,
+                  cfPaymentId,
+                  cfPaymentId
+                )
+                .run();
+            }
+
+            const approvalBlocked = await customerApprovalBlockedResponse(
+              env,
+              existingPayment.website_id
+            );
+            if (approvalBlocked) {
+              // Payment is verified and entitlement is active, but newly requested
+              // work still needs customer acceptance before the site goes live.
+              console.warn('Cashfree webhook kept website unpublished pending customer approval.');
+            } else {
+              await env.DB.prepare(
+                `UPDATE customer_website_publications
+                 SET status = 'published',
+                     published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
+                     updated_at = datetime('now')
+                 WHERE website_id = ?`
+              )
+                .bind(existingPayment.website_id)
+                .run();
+            }
           }
 
+          // Clear any previous failure marker so a later retry is not repeated.
+          notes.orderState = 'ACTIVE';
+          notes.deliveryStatus = 'DELIVERY_READY';
+          notes.provisioningError = null;
+          notes.deliveredAt = new Date().toISOString();
           await env.DB.prepare(
-            `UPDATE customer_website_publications
-             SET status = 'published',
-                 published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
-                 updated_at = datetime('now')
-             WHERE website_id = ?`
+            `UPDATE cashfree_payments
+             SET notes_json = ?, updated_at = datetime('now')
+             WHERE order_id = ?`
           )
-            .bind(existingPayment.website_id)
+            .bind(JSON.stringify(notes), orderId)
             .run();
+        } catch (provErr) {
+          const provMessage =
+            provErr instanceof Error ? provErr.message : 'Website provisioning failed.';
+          notes.orderState = 'DELIVERY_FAILED';
+          notes.deliveryStatus = 'DELIVERY_FAILED';
+          notes.provisioningError = provMessage;
+          await env.DB.prepare(
+            `UPDATE cashfree_payments
+             SET notes_json = ?, updated_at = datetime('now')
+             WHERE order_id = ?`
+          )
+            .bind(JSON.stringify(notes), orderId)
+            .run();
+          await writeAuditLog(env, {
+            actorId: 'cashfree_webhook',
+            actorRole: 'system',
+            action: 'cashfree_webhook_provisioning_failed',
+            targetType: 'cashfree_payments',
+            targetId: String(existingPayment.id),
+            details: { error: provMessage, orderId, cfPaymentId },
+          });
+          throw provErr;
         }
       }
     }
@@ -435,11 +779,12 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         `INSERT OR IGNORE INTO cashfree_seller_settlements (
           website_id, owner_id, store_order_id, order_number,
           gross_amount_inr, platform_fee_inr, seller_payable_inr, currency,
-          settlement_status, settlement_mode, notes_json, created_at, updated_at
+          settlement_status, settlement_mode, notes_json, idempotency_key,
+          created_at, updated_at
         ) VALUES (
           ?, ?, ?, ?,
           ?, ?, ?, 'INR',
-          'pending_activation', 'cashfree_split_pending', ?, datetime('now'), datetime('now')
+          'pending_activation', 'cashfree_split_pending', ?, ?, datetime('now'), datetime('now')
         )`
       )
         .bind(
@@ -453,7 +798,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           JSON.stringify({
             cfPaymentId,
             statusNotice: 'Pending Cashfree Split Settlement activation. Net amount recorded for merchant reconciliation.',
-          })
+          }),
+          cashfreeSettlementIdempotencyKey(orderId, cfPaymentId)
         )
         .run();
     }
@@ -526,7 +872,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           tenantBrandName: isStoreOrderPayment ? storeName : undefined,
           verifiedSenderEmail: isStoreOrderPayment ? verifiedTenantSender?.email : undefined,
           verifiedSenderDomain: isStoreOrderPayment ? verifiedTenantSender?.domain : undefined,
-          idempotencyKey: `pay_em_${orderId}_${cfPaymentId}`,
+          idempotencyKey: cashfreeNotificationIdempotencyKey('em', orderId, cfPaymentId),
         });
       } catch (notifyErr) {
         console.error('Failed to dispatch payment confirmed email:', notifyErr);
@@ -559,25 +905,51 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
               `Official Mobile: +91 93610 24823`,
             ].join('\n');
 
+        const paymentTemplate = approvedPaymentTemplate(env);
+        const receiptLink = isStoreOrderPayment
+          ? storeUrl
+          : 'https://vijay-visuals-site.pages.dev/dashboard';
         await sendWhatsAppNotification(env, {
           toPhone: customerPhone,
           messageText: waText,
+          // Business-initiated receipts must use an approved template. A missing
+          // template is recorded as setup_required instead of a free-form send.
+          requireApprovedTemplate: true,
+          templateName: paymentTemplate?.name,
+          templateLanguage: paymentTemplate?.language,
+          templateComponents: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: sanitizeText(customerName, 80) },
+                { type: 'text', text: sanitizeText(formattedPaid, 60) },
+                { type: 'text', text: sanitizeText(storeOrderNumber, 120) },
+                { type: 'text', text: sanitizeText(cfPaymentId, 120) },
+                { type: 'text', text: sanitizeText(receiptLink, 300) },
+              ],
+            },
+          ],
           eventType: isStoreOrderPayment ? 'store_order_payment_confirmed' : 'payment_confirmed',
           websiteId: storeOrder?.website_id || existingPayment?.website_id || null,
-          idempotencyKey: `pay_wa_${orderId}_${cfPaymentId}`,
+          idempotencyKey: cashfreeNotificationIdempotencyKey('wa', orderId, cfPaymentId),
+          auditIdempotencyKey: `${cashfreeNotificationIdempotencyKey('wa', orderId, cfPaymentId)}:setup_required`,
         });
       } catch (notifyErr) {
         console.error('Failed to dispatch payment confirmed WhatsApp:', notifyErr);
       }
     }
   } else if (eventType === 'PAYMENT_FAILED_WEBHOOK' || eventType === 'PAYMENT_USER_DROPPED_WEBHOOK') {
-    // Record failed state
+    if (!orderId) {
+      return errorJson('Failure webhook did not include an order_id; no ledger was changed.', 400);
+    }
+    // Record failed state. A terminal refund is never overwritten by a late
+    // payment-failure callback.
     await env.DB.prepare(
       `UPDATE cashfree_payments
        SET status = 'FAILED',
            raw_webhook_json = ?,
            updated_at = datetime('now')
-       WHERE order_id = ? AND status != 'PAID'`
+       WHERE order_id = ? AND status NOT IN ('PAID', 'REFUNDED')`
     )
       .bind(rawBody, orderId)
       .run();
@@ -586,7 +958,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       `UPDATE platform_payments
        SET status = 'failed',
            updated_at = datetime('now')
-       WHERE razorpay_order_id = ? AND status != 'paid'`
+       WHERE razorpay_order_id = ? AND status NOT IN ('paid', 'refunded')`
     )
       .bind(`cf_${orderId}`)
       .run();
@@ -611,11 +983,12 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   // Record webhook in payment_webhook_events
   await env.DB.prepare(
-    `INSERT INTO payment_webhook_events
-      (event_id, provider, event_type, flow_type, reference_id, signature_verified, payload_json, processed_at)
-     VALUES (?, 'cashfree', ?, 'seller_order', ?, 1, ?, datetime('now'))`
+    `INSERT OR IGNORE INTO payment_webhook_events
+      (event_id, provider, event_type, flow_type, reference_id, signature_verified,
+       payment_id_normalized, payload_json, processed_at)
+     VALUES (?, 'cashfree', ?, ?, ?, 1, ?, ?, datetime('now'))`
   )
-    .bind(eventId, eventType, orderId, rawBody)
+    .bind(eventId, eventType, webhookFlowType, orderId, cfPaymentId, rawBody)
     .run();
 
   await writeAuditLog(env, {

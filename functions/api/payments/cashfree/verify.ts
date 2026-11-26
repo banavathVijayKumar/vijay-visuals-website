@@ -17,13 +17,17 @@ import {
   sanitizeText,
   writeAuditLog,
 } from '../../_shared';
-import { provisionLifetimeEntitlement } from '../../_tenantAccess';
+import {
+  customerApprovalBlockedResponse,
+  provisionLifetimeEntitlement,
+} from '../../_tenantAccess';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from '../platform/create-order';
 import {
   fetchEdgeCashfreeOrder,
   fetchEdgeCashfreeOrderPayments,
   getEdgeCashfreeStatus,
 } from '../_cashfree';
+import { cashfreeSettlementIdempotencyKey, normalizeCashfreePaymentId } from '../_cashfreeIdentity';
 
 interface CashfreePaymentRow {
   id: number;
@@ -62,6 +66,25 @@ function toIntegerPaise(amount: unknown): number {
   const num = Number(amount);
   if (!Number.isFinite(num) || isNaN(num) || num <= 0) return -1;
   return Math.round(num * 100);
+}
+
+/**
+ * A PAID row is normally final, but a payment captured before provisioning
+ * completed must remain recoverable. notes_json is the durable state marker;
+ * no schema change is required.
+ */
+function retryablePaidProvisioning(rawNotes: unknown): boolean {
+  let notes: Record<string, any> = {};
+  try {
+    notes = JSON.parse(String(rawNotes || '{}'));
+  } catch {}
+  const orderState = String(notes.orderState || '').toUpperCase();
+  const deliveryStatus = String(notes.deliveryStatus || '').toUpperCase();
+  return (
+    orderState === 'PROVISIONING' ||
+    orderState === 'DELIVERY_FAILED' ||
+    deliveryStatus === 'DELIVERY_FAILED'
+  );
 }
 
 const SAFE_ORDER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{2,119}$/;
@@ -189,8 +212,30 @@ async function handleVerification(context: PagesContext): Promise<Response> {
     }
   }
 
-  // 2. Idempotent check
-  if (existing.status === 'PAID') {
+  // A refunded payment must never be re-verified as a new successful payment.
+  // Cashfree still reports the original SUCCESS payment, so without this guard
+  // a stale checkout callback could overwrite REFUNDED back to PAID. The guard
+  // runs after ownership checks so refund state is never exposed to a stranger.
+  if (existing.status === 'REFUNDED') {
+    return json({
+      verified: false,
+      paymentCompleted: false,
+      entitlementGranted: false,
+      refunded: true,
+      status: 'REFUNDED',
+      orderId: existing.order_id,
+      cfPaymentId: existing.cf_payment_id,
+      websiteId: existing.website_id,
+      payment: existing,
+      message: 'This payment was refunded. No new entitlement was granted.',
+    });
+  }
+
+  // 2. Idempotent check. A PAID row whose durable notes say provisioning is
+  // incomplete is retried instead of returning a misleading success replay.
+  const retryPaidProvisioning =
+    existing.status === 'PAID' && retryablePaidProvisioning(existing.notes_json);
+  if (existing.status === 'PAID' && !retryPaidProvisioning) {
     let parsedNotes: Record<string, any> = {};
     try {
       parsedNotes = JSON.parse(existing.notes_json || '{}');
@@ -227,11 +272,28 @@ async function handleVerification(context: PagesContext): Promise<Response> {
     );
   }
 
-  const successfulPayment = cfPayments.find((p) => p.payment_status === 'SUCCESS');
-  const isPaid = cfOrder.order_status === 'PAID' || Boolean(successfulPayment);
+  const successfulPayment = cfPayments.find(
+    (p) =>
+      p.payment_status === 'SUCCESS' &&
+      p.cf_payment_id !== undefined &&
+      p.cf_payment_id !== null &&
+      String(p.cf_payment_id).trim() !== ''
+  );
+  // A PAID order status alone is not payment proof. Only a real successful
+  // payment entity may unlock entitlement, and no synthetic ID is ever written.
+  const isPaid = Boolean(successfulPayment);
 
   if (!isPaid) {
-    const statusMap = mapUnpaidStatus(cfOrder.order_status, cfPayments);
+    const statusMap =
+      String(cfOrder.order_status || '').toUpperCase() === 'PAID'
+        ? {
+            providerStatus: 'PAID',
+            cashfreeStatus: 'PENDING' as const,
+            platformStatus: 'created' as const,
+            message:
+              'The gateway order is marked paid, but no successful payment record is available yet. It has not been verified as a completed payment.',
+          }
+        : mapUnpaidStatus(cfOrder.order_status, cfPayments);
 
     // Keep the Cashfree ledger and the mirror platform ledger within their
     // schema CHECK constraints. An unpaid order must remain non-entitling.
@@ -341,9 +403,13 @@ async function handleVerification(context: PagesContext): Promise<Response> {
   }
 
   // 5. Payment is verified PAID and Amounts/Currency Validated! Extract payment metadata
-  const cfPaymentId = successfulPayment
-    ? String(successfulPayment.cf_payment_id)
-    : String(cfOrder.cf_order_id || Date.now());
+  if (!successfulPayment) {
+    return errorJson('No verified successful payment was found.', 400);
+  }
+  const cfPaymentId = normalizeCashfreePaymentId(successfulPayment.cf_payment_id);
+  if (!cfPaymentId) {
+    return errorJson('Unsafe Cashfree payment ID; refusing a truncated payment identity.', 400);
+  }
   const paymentMethod = successfulPayment?.payment_group || 'cashfree_pg';
   const bankRef = successfulPayment?.bank_reference || null;
   const paymentTime = successfulPayment?.payment_time || new Date().toISOString();
@@ -360,29 +426,45 @@ async function handleVerification(context: PagesContext): Promise<Response> {
   notes.gateway = 'cashfree';
   notes.cfPaymentId = cfPaymentId;
 
-  // Update cashfree_payments
-  await env.DB.prepare(
-    `UPDATE cashfree_payments
-     SET status = 'PAID',
-         cf_payment_id = ?,
-         payment_method = ?,
-         bank_reference = ?,
-         payment_time = ?,
-         notes_json = ?,
-         raw_response_json = ?,
-         updated_at = datetime('now')
-     WHERE order_id = ?`
-  )
-    .bind(
-      cfPaymentId,
-      paymentMethod,
-      bankRef,
-      paymentTime,
-      JSON.stringify(notes),
-      JSON.stringify({ cfOrder, cfPayments }),
-      orderId
-    )
-    .run();
+  // Atomic claim: concurrent checkout verifications can both pass the early
+  // idempotency read. Only the delivery that wins this conditional update may
+  // provision entitlements or publish the website.
+  // On a recovery retry the row is already PAID; skip the redundant claim but
+  // still re-run provisioning and write the final durable notes below.
+  const paidTransition = retryPaidProvisioning
+    ? { meta: { changes: 1 } }
+    : await env.DB.prepare(
+        `UPDATE cashfree_payments
+         SET status = 'PAID',
+             cf_payment_id = ?,
+             payment_method = ?,
+             bank_reference = ?,
+             payment_time = ?,
+             notes_json = ?,
+             raw_response_json = ?,
+             updated_at = datetime('now')
+         WHERE order_id = ? AND status <> 'PAID'`
+      )
+        .bind(
+          cfPaymentId,
+          paymentMethod,
+          bankRef,
+          paymentTime,
+          JSON.stringify(notes),
+          JSON.stringify({ cfOrder, cfPayments }),
+          orderId
+        )
+        .run();
+
+  if (paidTransition.meta?.changes === 0) {
+    return json({
+      verified: true,
+      idempotentDuplicate: true,
+      orderId,
+      status: 'PAID',
+      websiteId: existing.website_id,
+    });
+  }
 
   // Update mirrored platform_payments
   await env.DB.prepare(
@@ -416,11 +498,12 @@ async function handleVerification(context: PagesContext): Promise<Response> {
         `INSERT OR IGNORE INTO cashfree_seller_settlements (
           website_id, owner_id, store_order_id, order_number,
           gross_amount_inr, platform_fee_inr, seller_payable_inr, currency,
-          settlement_status, settlement_mode, notes_json, created_at, updated_at
+          settlement_status, settlement_mode, notes_json, idempotency_key,
+          created_at, updated_at
         ) VALUES (
           ?, ?, ?, ?,
           ?, 0, ?, 'INR',
-          'pending_activation', 'cashfree_split_pending', ?, datetime('now'), datetime('now')
+          'pending_activation', 'cashfree_split_pending', ?, ?, datetime('now'), datetime('now')
         )`
       )
         .bind(
@@ -430,7 +513,8 @@ async function handleVerification(context: PagesContext): Promise<Response> {
           storeOrder.order_number,
           storeOrder.total_inr,
           storeOrder.total_inr,
-          JSON.stringify({ cfPaymentId, notice: 'Pending Cashfree Split Settlement activation.' })
+          JSON.stringify({ cfPaymentId, notice: 'Pending Cashfree Split Settlement activation.' }),
+          cashfreeSettlementIdempotencyKey(orderId, cfPaymentId)
         )
         .run();
 
@@ -536,7 +620,13 @@ async function handleVerification(context: PagesContext): Promise<Response> {
             (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
              total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
              current_period_start, current_period_end, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'active', ?, ?, ?, 0, 'cashfree', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
+           SELECT ?, ?, ?, ?, 'active', ?, ?, ?, 0, 'cashfree', ?,
+                  datetime('now'), datetime('now', ?), datetime('now'), datetime('now')
+           WHERE ? <> ''
+             AND NOT EXISTS (
+               SELECT 1 FROM tenant_subscriptions
+               WHERE gateway_subscription_id = ? AND gateway_subscription_id <> ''
+             )`
         )
           .bind(
             targetWebsiteId,
@@ -547,7 +637,9 @@ async function handleVerification(context: PagesContext): Promise<Response> {
             existing.gst_amount_inr,
             existing.amount_inr,
             cfPaymentId,
-            durationExpr
+            durationExpr,
+            cfPaymentId,
+            cfPaymentId
           )
           .run();
         subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
@@ -557,6 +649,8 @@ async function handleVerification(context: PagesContext): Promise<Response> {
         if (!isWebsitePackage && !authUser.isSuperAdmin) {
           throw new Error('Cannot publish website with a non-website subscription tier.');
         }
+        const approvalBlocked = await customerApprovalBlockedResponse(env, targetWebsiteId);
+        if (approvalBlocked) return approvalBlocked;
         await env.DB.prepare(
           `UPDATE customer_website_publications
            SET status = 'published',
@@ -626,12 +720,14 @@ async function handleVerification(context: PagesContext): Promise<Response> {
   // Webhook event idempotency record
   await env.DB.prepare(
     `INSERT OR IGNORE INTO payment_webhook_events
-      (event_id, provider, event_type, flow_type, reference_id, signature_verified, payload_json, processed_at)
-     VALUES (?, 'cashfree', 'payment.verified_checkout', 'platform_package', ?, 1, ?, datetime('now'))`
+      (event_id, provider, event_type, flow_type, reference_id, signature_verified,
+       payment_id_normalized, payload_json, processed_at)
+     VALUES (?, 'cashfree', 'payment.verified_checkout', 'platform_subscription', ?, 1, ?, ?, datetime('now'))`
   )
     .bind(
       `checkout:${cfPaymentId}`,
       orderId,
+      cfPaymentId,
       JSON.stringify({ cashfreePaymentId: existing.id, orderId, cfPaymentId, amountInr: existing.amount_inr })
     )
     .run();

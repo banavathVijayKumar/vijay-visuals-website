@@ -75,7 +75,7 @@ const RESERVE_AI_CREDIT_SQL = `
     FROM tenant_ai_usage
     WHERE (website_id = ? OR (tenant_rowid IS NOT NULL AND tenant_rowid = ?))
       AND billing_period = ?
-      AND (status = 'success' OR (status = 'reserved' AND created_at >= datetime('now', '-2 minutes')))
+      AND (status = 'success' OR status = 'reserved')
   ) + ? <= COALESCE((
     SELECT CASE WHEN sp.monthly_ai_credits > 0 THEN sp.monthly_ai_credits END
     FROM tenant_subscriptions ts
@@ -93,22 +93,6 @@ function countD1Changes(result: { meta?: { changes?: number }; changes?: number 
   if (Number.isFinite(metaChanges)) return metaChanges;
   const directChanges = Number(result?.changes);
   return Number.isFinite(directChanges) ? directChanges : 0;
-}
-
-async function expireStaleAiReservations(db: any): Promise<void> {
-  try {
-    await db
-      .prepare(
-        `UPDATE tenant_ai_usage
-         SET status = 'failed', credits_deducted = 0,
-             error_message = 'Reservation timed out or aborted'
-         WHERE status = 'reserved' AND created_at < datetime('now', '-2 minutes')`
-      )
-      .run();
-  } catch {
-    // The authoritative conditional INSERT below fails closed if the ledger
-    // table or required columns are unavailable.
-  }
 }
 
 async function reservationWasStored(
@@ -251,23 +235,16 @@ export async function getTenantAiQuota(
       }
     } catch {}
 
-    // 2. Query used credits for the current billing period
+    // 2. Query used credits for the current billing period. Active reservations
+    // are always counted so a long-running provider call cannot release its
+    // allowance before it finishes.
     try {
-      // Auto-expire stale reservations older than 2 minutes (e.g. from timeouts or worker aborts)
-      try {
-        await env.DB.prepare(
-          `UPDATE tenant_ai_usage
-           SET status = 'failed', credits_deducted = 0, error_message = 'Reservation timed out or aborted'
-           WHERE status = 'reserved' AND created_at < datetime('now', '-2 minutes')`
-        ).run();
-      } catch {}
-
       const usedRow = await env.DB.prepare(
         `SELECT COALESCE(SUM(credits_deducted), 0) AS total_used
          FROM tenant_ai_usage
          WHERE (website_id = ? OR (tenant_rowid IS NOT NULL AND tenant_rowid = ?))
            AND billing_period = ?
-           AND (status = 'success' OR (status = 'reserved' AND created_at >= datetime('now', '-2 minutes')))`
+           AND (status = 'success' OR status = 'reserved')`
       )
         .bind(websiteId, tenantRowId || -1, billingPeriod)
         .first<{ total_used: number }>();
@@ -344,23 +321,11 @@ export async function executeWithAiCreditDeduction(
   const idempotencyKey = `${idempotencyScope}\u001f${requestId}`;
 
   if (!env.DB) {
-    // If running in an environment without D1 binding, execute directly
-    const output = await params.executeAiCall();
-    return {
-      output,
-      creditsUsed: creditsNeeded,
-      creditsRemaining: 100,
-      isDuplicate: false,
-      quota: {
-        websiteId: params.websiteId,
-        planCode: 'fallback',
-        allowance: 100,
-        used: 1,
-        remaining: 99,
-        billingPeriod,
-        isExhausted: false,
-      },
-    };
+    // Never execute a provider call without the authoritative D1 ledger.
+    const error = new Error('AI usage ledger is unavailable.');
+    (error as any).status = 503;
+    (error as any).code = 'AI_LEDGER_UNAVAILABLE';
+    throw error;
   }
 
   await ensureAiUsageTable(env.DB);
@@ -406,7 +371,6 @@ export async function executeWithAiCreditDeduction(
   // The quota subquery is evaluated inside the INSERT, so no application-level
   // SELECT result is used to authorize the reservation. A rejected write means
   // no reservation, no provider call, and no charge.
-  await expireStaleAiReservations(env.DB);
   const fallbackAllowance = getPackageMonthlyAiCredits(params.fallbackPlanTier);
   const usageRecordId = `usage_${Date.now()}_${randomHex(6)}`;
   let reservationResult: { meta?: { changes?: number }; changes?: number } | undefined;

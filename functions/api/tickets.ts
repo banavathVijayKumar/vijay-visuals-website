@@ -5,16 +5,25 @@
 // Strict Tenant Isolation & Audit Logging.
 // ============================================================================
 
+import { validateIndiaWhatsAppNumber } from '../../shared/indiaWhatsapp';
 import { requireUser } from './_auth';
+import { dispatchEnquiryWhatsAppWorkflow } from './_enquiryWorkflow';
 import {
   PagesContext,
+  checkRateLimit,
+  getClientIp,
   handleOptions,
   jsonResponse,
   parseJsonBody,
+  rateLimitResponse,
   sanitizeText,
   writeAuditLog,
 } from './_shared';
-import { isMissingTableError, requireTenantOwnerAccess } from './_tenantAccess';
+import {
+  isMissingTableError,
+  requireTenantOwnerAccess,
+  validateAttachmentUrl,
+} from './_tenantAccess';
 
 export const SUPPORT_CATEGORIES = [
   'design_changes',
@@ -43,6 +52,15 @@ export const TICKET_STATUSES = [
 ] as const;
 
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
+
+/** Deterministic short fingerprint used only for enquiry notification dedupe. */
+function stableFingerprint(input: string): string {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) + hash + input.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(36);
+}
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -143,15 +161,28 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   if (!env.DB) return jsonResponse({ error: 'Support storage is not configured.' }, 503);
 
+  const rateLimit = await checkRateLimit(
+    env,
+    `ticket_create:${auth.user.id}:${getClientIp(request)}`,
+    10,
+    600
+  );
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, 'Too many support tickets. Please try again later.');
+  }
+
   const body = await parseJsonBody<{
     subject?: string;
     message?: string;
+    customerName?: string;
     category?: string;
     priority?: string;
+    customerPhone?: string;
     websiteId?: string;
     tenantId?: string | number;
     attachments?: string[];
     attachmentUrl?: string;
+    whatsappOptIn?: boolean;
   }>(request);
   if (!body) return jsonResponse({ error: 'Invalid JSON request payload.' }, 400);
 
@@ -189,15 +220,33 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return jsonResponse({ error: 'Subject and message are required.' }, 400);
   }
 
+  // StudioLanding project inquiries use the same India +91 validation rules as
+  // tenant quote enquiries. An invalid number is rejected, never repaired.
+  const whatsappOptIn = body.whatsappOptIn === true;
+  const rawContactPhone = sanitizeText(body.customerPhone, 32);
+  let normalizedWhatsappPhone = '';
+  if (rawContactPhone) {
+    const phoneCheck = validateIndiaWhatsAppNumber(rawContactPhone);
+    if (!phoneCheck.ok) {
+      return jsonResponse({ error: phoneCheck.error || 'Invalid WhatsApp phone number.' }, 400);
+    }
+    normalizedWhatsappPhone = phoneCheck.value!.e164;
+  } else if (whatsappOptIn) {
+    return jsonResponse(
+      { error: 'A valid Indian WhatsApp number is required when opting in for a WhatsApp reply.' },
+      400
+    );
+  }
+
   const attachments: string[] = [];
   if (Array.isArray(body.attachments)) {
     for (const a of body.attachments) {
-      if (typeof a === 'string' && a.trim()) {
-        attachments.push(sanitizeText(a.trim(), 500));
-      }
+      const safeUrl = validateAttachmentUrl(a, 500);
+      if (safeUrl) attachments.push(safeUrl);
     }
   } else if (body.attachmentUrl) {
-    attachments.push(sanitizeText(body.attachmentUrl, 500));
+    const safeUrl = validateAttachmentUrl(body.attachmentUrl, 500);
+    if (safeUrl) attachments.push(safeUrl);
   }
 
   try {
@@ -226,6 +275,23 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     const newId = Number(res?.meta?.last_row_id || 0);
     const ticketNumber = `TKT-${String(newId).padStart(4, '0')}`;
 
+    // The ticket is now persisted. Only then may the WhatsApp workflow run.
+    // A 10-minute content fingerprint prevents duplicate notifications from
+    // repeated form submissions without changing ticket persistence.
+    const whatsapp = normalizedWhatsappPhone
+      ? await dispatchEnquiryWhatsAppWorkflow(env, {
+          websiteId: resolvedWebsiteId || null,
+          toPhone: normalizedWhatsappPhone,
+          customerName: sanitizeText(body.customerName || '', 120) || auth.user.fullName || auth.user.email,
+          requirement: message,
+          source: 'support_inquiry',
+          recordId: `${Math.floor(Date.now() / 600000)}-${stableFingerprint(
+            `${normalizedWhatsappPhone}|${subject}|${message}|${auth.user.id}`
+          )}`,
+          whatsappOptIn,
+        })
+      : null;
+
     await writeAuditLog(env, {
       actorId: auth.user.id,
       actorRole: auth.user.platformRole,
@@ -249,6 +315,15 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           messages: [initialMessage],
           createdAt: new Date().toISOString(),
         },
+        ...(whatsapp
+          ? {
+              whatsapp: {
+                status: whatsapp.status,
+                notice: whatsapp.notice,
+                idempotencyKey: whatsapp.idempotencyKey,
+              },
+            }
+          : {}),
       },
       201
     );
@@ -317,9 +392,8 @@ export async function onRequestPatch(context: PagesContext): Promise<Response> {
     const attachments: string[] = [];
     if (Array.isArray(body.attachments)) {
       for (const a of body.attachments) {
-        if (typeof a === 'string' && a.trim()) {
-          attachments.push(sanitizeText(a.trim(), 500));
-        }
+        const safeUrl = validateAttachmentUrl(a, 500);
+        if (safeUrl) attachments.push(safeUrl);
       }
     }
 

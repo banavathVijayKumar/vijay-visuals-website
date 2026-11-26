@@ -111,16 +111,19 @@ async function runSuite() {
   const secretsLeaked =
     statusString.includes(mockEnv.CASHFREE_CLIENT_SECRET!) ||
     (mockEnv.CASHFREE_WEBHOOK_SECRET && statusString.includes(mockEnv.CASHFREE_WEBHOOK_SECRET));
+  const webhookConfiguredCorrect =
+    cfStatus.webhookConfigured === Boolean(mockEnv.CASHFREE_WEBHOOK_SECRET);
 
   recordResult({
     id: 1,
     name: 'Cashfree Environment Extraction & Non-Secret Exposure Check',
-    status: cfStatus.configured && !secretsLeaked ? 'PASS' : 'FAIL',
-    evidence: `Mode: ${cfStatus.mode}, Configured: ${cfStatus.configured}, API Version: ${cfStatus.apiVersion}. Secret leaked in response: ${secretsLeaked}`,
+    status: cfStatus.configured && !secretsLeaked && webhookConfiguredCorrect ? 'PASS' : 'FAIL',
+    evidence: `Mode: ${cfStatus.mode}, Configured: ${cfStatus.configured}, API Version: ${cfStatus.apiVersion}, Dedicated webhook secret tracked only: ${webhookConfiguredCorrect}. Secret leaked in response: ${secretsLeaked}`,
     details: {
       mode: cfStatus.mode,
       configured: cfStatus.configured,
       webhookConfigured: cfStatus.webhookConfigured,
+      webhookConfiguredCorrect,
       apiVersion: cfStatus.apiVersion,
     },
   });
@@ -214,12 +217,33 @@ async function runSuite() {
     '1577836800' // Year 2020 timestamp (older than 10 minutes)
   ));
 
+  // Client secret must never be accepted as a webhook signing secret.
+  const clientSecretOnlyEnv: CloudflareEnv = {
+    ...mockEnv,
+    CASHFREE_CLIENT_SECRET: testSecret,
+    CASHFREE_WEBHOOK_SECRET: '',
+  };
+  const clientSecretFallbackRejected = !(await verifyEdgeCashfreeWebhookSignature(
+    clientSecretOnlyEnv,
+    rawBody,
+    validSignature,
+    timestamp
+  ));
+
   recordResult({
     id: 3,
     name: 'Cashfree Webhook HMAC-SHA256 Base64 Signature & Expiry Check',
-    status: validAccepted && invalidRejected && expiredRejected ? 'PASS' : 'FAIL',
-    evidence: `Valid signature: ${validAccepted}, Tampered signature rejected: ${invalidRejected}, Replay/Expired timestamp (>10m) rejected: ${expiredRejected}.`,
-    details: { validAccepted, invalidRejected, expiredRejected },
+    status:
+      validAccepted && invalidRejected && expiredRejected && clientSecretFallbackRejected
+        ? 'PASS'
+        : 'FAIL',
+    evidence: `Valid signature: ${validAccepted}, Tampered signature rejected: ${invalidRejected}, Replay/Expired timestamp (>10m) rejected: ${expiredRejected}, Client-secret fallback rejected: ${clientSecretFallbackRejected}.`,
+    details: {
+      validAccepted,
+      invalidRejected,
+      expiredRejected,
+      clientSecretFallbackRejected,
+    },
   });
 
   // --------------------------------------------------------------------------

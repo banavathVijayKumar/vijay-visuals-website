@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import { apiFetch } from './lib/api';
 import { CurrencyCode, GLOBAL_CURRENCIES, Lang, SUPPORTED_LANGUAGES } from './data/content';
 import { AppView, OrderRecord, PlatformAnnouncementRecord, PlatformPlanRecord, TenantRecord } from './types/platform';
+import { applyPlatformMetadata } from './lib/platformMetadata';
+import { getStorefrontSlug } from '../shared/seo';
 import { Navbar } from './components/Navbar';
 import { StudioLanding } from './components/StudioLanding';
 import { WebsiteBuilder } from './components/WebsiteBuilder';
@@ -41,8 +43,18 @@ function resolveInitialCurrency(): CurrencyCode {
   return 'INR';
 }
 
+function appendLangParam(url: string, lang: Lang): string {
+  const [path, query = ''] = url.split('?');
+  const params = new URLSearchParams(query);
+  if (lang === 'en') params.delete('lang');
+  else params.set('lang', lang);
+  const serialized = params.toString();
+  return `${path}${serialized ? `?${serialized}` : ''}`;
+}
+
 function parseRouteFromPath(): { view: AppView; slug: string | null } {
   const pathname = window.location.pathname || '/';
+  if (pathname === '/' || pathname === '') return { view: 'studio', slug: null };
   if (pathname.startsWith('/proposal/')) {
     const token = decodeURIComponent(pathname.slice('/proposal/'.length).split('/')[0] || '').trim();
     if (token) return { view: 'proposal', slug: token };
@@ -51,20 +63,17 @@ function parseRouteFromPath(): { view: AppView; slug: string | null } {
     const token = decodeURIComponent(pathname.slice('/proposals/'.length).split('/')[0] || '').trim();
     if (token) return { view: 'proposal', slug: token };
   }
-  if (pathname.startsWith('/site/')) {
-    const slug = decodeURIComponent(pathname.slice('/site/'.length).split('/')[0] || '').trim().toLowerCase();
-    if (slug) return { view: 'storefront', slug };
-  }
-  if (pathname.startsWith('/sites/')) {
-    const slug = decodeURIComponent(pathname.slice('/sites/'.length).split('/')[0] || '').trim().toLowerCase();
-    if (slug) return { view: 'storefront', slug };
+  const storefrontSlug = getStorefrontSlug(pathname);
+  if (storefrontSlug) return { view: 'storefront', slug: storefrontSlug };
+  if (pathname.startsWith('/site/') || pathname.startsWith('/sites/')) {
+    return { view: 'storefront', slug: null };
   }
   if (pathname.startsWith('/demo')) return { view: 'demo', slug: null };
   if (pathname.startsWith('/builder')) return { view: 'builder', slug: null };
   if (pathname.startsWith('/marketplace')) return { view: 'marketplace', slug: null };
   if (pathname.startsWith('/dashboards')) return { view: 'dashboards', slug: null };
   if (pathname.startsWith('/ai')) return { view: 'ai', slug: null };
-  return { view: 'studio', slug: null };
+  return { view: 'not-found', slug: null };
 }
 
 function getEdgeTenantSlug(): string | null {
@@ -108,6 +117,18 @@ function PlatformShell() {
     setToast(msg);
   }, []);
 
+  const changeLanguage = useCallback((next: Lang) => {
+    setLang(next);
+    try {
+      const url = new URL(window.location.href);
+      if (next === 'en') url.searchParams.delete('lang');
+      else url.searchParams.set('lang', next);
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+      // Language preference still applies to this session.
+    }
+  }, []);
+
   // Persist language & sync <html lang dir> including RTL support for Urdu
   useEffect(() => {
     const meta = SUPPORTED_LANGUAGES.find((l) => l.code === lang) || SUPPORTED_LANGUAGES[0];
@@ -117,6 +138,14 @@ function PlatformShell() {
       window.localStorage.setItem('vv_lang', lang);
     } catch {}
   }, [lang]);
+
+  // Keep browser head metadata aligned with edge-rendered metadata on language
+  // and SPA view transitions. Tenant hosts own their metadata separately.
+  useEffect(() => {
+    if (isPublicTenantHost || activeView === 'storefront') return;
+    const hasExplicitLang = new URLSearchParams(window.location.search).has('lang');
+    return applyPlatformMetadata(document, window.location.pathname, lang, hasExplicitLang);
+  }, [lang, activeView, isPublicTenantHost]);
 
   useEffect(() => {
     try {
@@ -240,20 +269,23 @@ function PlatformShell() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  const navigateTo = useCallback((view: AppView, slug: string | null = null) => {
-    setActiveView(view);
-    setActiveSlug(slug);
-    const nextUrl =
-      view === 'storefront' && slug
-        ? `/site/${slug}`
-        : view === 'proposal' && slug
-          ? `/proposal/${slug}`
-          : view === 'studio'
-            ? '/'
-            : `/${view}`;
-    window.history.pushState({}, '', nextUrl);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  const navigateTo = useCallback(
+    (view: AppView, slug: string | null = null) => {
+      setActiveView(view);
+      setActiveSlug(slug);
+      const route =
+        view === 'storefront' && slug
+          ? `/site/${slug}`
+          : view === 'proposal' && slug
+            ? `/proposal/${slug}`
+            : view === 'studio'
+              ? '/'
+              : `/${view}`;
+      window.history.pushState({}, '', appendLangParam(route, lang));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [lang]
+  );
 
   // Handle Cashfree Hosted Checkout Return & Auto-Verification
   useEffect(() => {
@@ -302,7 +334,21 @@ function PlatformShell() {
         .then((res) => {
           if (Array.isArray(res.productIds)) setWishlistIds(res.productIds);
         })
-        .catch(() => {});
+        .catch((err) => {
+          // D1 migration/storage errors are returned as 503. Do not leave the
+          // optimistic UI/local cache claiming a change that was not persisted.
+          setWishlistIds((prev) => {
+            const reverted = prev.includes(productId)
+              ? prev.filter((id) => id !== productId)
+              : [...prev, productId];
+            try {
+              window.localStorage.setItem('vv_wishlist_ids', JSON.stringify(reverted));
+            } catch {}
+            return reverted;
+          });
+          const message = err instanceof Error ? err.message : 'Wishlist is temporarily unavailable.';
+          showToast(`Wishlist update failed. ${message}`);
+        });
     }
   };
 
@@ -334,7 +380,7 @@ function PlatformShell() {
         </div>
       )}
 
-      {activeView !== 'proposal' && !isPublicTenantHost && (
+      {activeView !== 'proposal' && activeView !== 'storefront' && !isPublicTenantHost && (
         <>
           <Navbar activeView={activeView} onNavigate={(v) => navigateTo(v)} lang={lang} />
 
@@ -351,7 +397,7 @@ function PlatformShell() {
                   <select
                     aria-label="Select platform language"
                     value={lang}
-                    onChange={(e) => setLang(e.target.value as Lang)}
+                    onChange={(e) => changeLanguage(e.target.value as Lang)}
                     className="rounded border border-[#252534] bg-[#0E0E15] px-2 py-1 text-[11px] sm:text-xs text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none max-w-[150px] sm:max-w-none"
                   >
                     {SUPPORTED_LANGUAGES.map((l) => (
@@ -383,7 +429,7 @@ function PlatformShell() {
         </>
       )}
 
-      {announcements.length > 0 && !isPublicTenantHost && (
+      {announcements.length > 0 && activeView !== 'storefront' && !isPublicTenantHost && (
         <div className="border-b border-[#D4AF37]/25 bg-[#12100A] px-6 py-2 text-center text-xs text-[#F2DC9B]">
           <strong className="mr-2">{announcements[0].title}:</strong>
           <span>{announcements[0].message}</span>
@@ -396,7 +442,7 @@ function PlatformShell() {
             <StudioLanding
               mode={activeView}
               lang={lang}
-              onChangeLang={setLang}
+              onChangeLang={changeLanguage}
               currency={currency}
               fxRates={fxRates}
               fxSource={fxSource}
@@ -455,12 +501,13 @@ function PlatformShell() {
           </ErrorBoundary>
         )}
 
-        {activeView === 'storefront' && !activeSlug && (
+        {(activeView === 'storefront' && !activeSlug) || activeView === 'not-found' ? (
           <NotFoundView
+            publicHost={isPublicTenantHost}
             onGoHome={() => navigateTo('studio')}
             onGoMarketplace={() => navigateTo('marketplace')}
           />
-        )}
+        ) : null}
 
         {activeView === 'dashboards' && (
           <ErrorBoundary sectionName="Dashboards Hub">

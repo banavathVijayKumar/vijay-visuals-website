@@ -496,11 +496,11 @@ export const TEMPLATES_DATA: BusinessTemplate[] = [
     name_te: 'ఎలివేట్ మీడియా డిజిటల్ మార్కెటింగ్',
     name_hi: 'एलीवेट मीडिया डिजिटल मार्केटिंग एवं एसईओ',
     category: 'Digital Marketing Agency',
-    description: 'Social media management, Google Ads ROI campaigns, Local SEO ranking, conversion funnels and live performance analytics dashboard.',
+    description: 'Social media content planning, Google Ads campaign setup guidance, local SEO hygiene checks, conversion funnel reviews and reporting dashboards built from verified business data.',
     badge: 'Growth Pro',
     accent_color: '#512DA8',
     preview_bg: 'from-purple-950/70 to-indigo-950/40',
-    features: ['Free Website SEO Audit Generator', 'ROI Ad Spend Calculator', 'Monthly Retainer Plans', 'Live Client Campaign Dashboard'],
+    features: ['Manual Metadata & Schema Checker', 'Ad Spend Planning Worksheet', 'Quoted Monthly Service Plans', 'Business-Owned Metrics Dashboard'],
     demo_slug: 'elevate-marketing',
   },
   // 35. Custom Business Template

@@ -58,7 +58,7 @@ console.error = (...args: unknown[]) => {
 };
 
 createRoot(document.getElementById('root')!).render(
-  <ErrorBoundary fallbackTitle="Vijay Visuals Platform Recovery">
+  <ErrorBoundary fallbackTitle="This site is temporarily unavailable">
     <App />
   </ErrorBoundary>
 );

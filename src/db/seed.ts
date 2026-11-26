@@ -31,7 +31,7 @@ export async function ensurePlatformSeeded() {
         aiCreditsIncluded: 100,
         storageGb: 5,
         featuresJson: JSON.stringify([
-          'Mobile-responsive business website across 16 industry templates',
+          'Mobile-responsive business website across 16 broad industry groups and 36 ready-to-customize templates',
           'Temporary preview subdomain (/site/your-brand) + custom domain DNS wizard',
           'Contact, WhatsApp enquiry, Call & Quote Request lead forms',
           'Technical SEO essentials (meta tags, sitemap.xml, robots.txt, JSON-LD)',

@@ -34,12 +34,22 @@ export interface D1Database {
   exec?(query: string): Promise<unknown>;
 }
 
+/** Strict, length-bounded email validation shared by OTP and reset endpoints. */
+export function isValidEmailAddress(raw: unknown): boolean {
+  if (typeof raw !== 'string') return false;
+  const value = raw.trim();
+  if (value.length === 0 || value.length > 254) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
+}
+
 export interface CloudflareEnv {
   DB?: D1Database;
   VITE_SUPABASE_URL?: string;
   VITE_SUPABASE_ANON_KEY?: string;
   SUPABASE_URL?: string;
   SUPABASE_ANON_KEY?: string;
+  /** Server-only Preview provisioning credential. Never expose to browser code. */
+  SUPABASE_SERVICE_ROLE_KEY?: string;
   AI_PROVIDER?: 'gemini' | 'claude';
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
@@ -47,6 +57,8 @@ export interface CloudflareEnv {
   CLAUDE_MODEL?: string;
   ANTHROPIC_API_KEY?: string;
   APP_URL?: string;
+  /** Comma-separated exact browser origins allowed for cross-origin API calls. */
+  ALLOWED_CORS_ORIGINS?: string;
   /** Comma-separated exact application origins allowed for password reset callbacks. */
   PASSWORD_RESET_ALLOWED_ORIGINS?: string;
   CUSTOM_DOMAIN_CNAME_TARGET?: string;
@@ -79,6 +91,15 @@ export interface CloudflareEnv {
   RESEND_WEBHOOK_SECRET?: string;
   WHATSAPP_CLOUD_API_TOKEN?: string;
   WHATSAPP_PHONE_NUMBER_ID?: string;
+  /** Explicitly configured, Meta-approved template used for enquiry notifications. */
+  WHATSAPP_ENQUIRY_TEMPLATE_NAME?: string;
+  /** Explicitly configured language code for the approved enquiry template. */
+  WHATSAPP_ENQUIRY_TEMPLATE_LANGUAGE?: string;
+  /** Required platform desk publication for anonymous StudioLanding enquiries. */
+  PLATFORM_ENQUIRY_TENANT_SLUG?: string;
+  /** Approved Meta template for business-initiated Cashfree payment receipts. */
+  WHATSAPP_PAYMENT_TEMPLATE_NAME?: string;
+  WHATSAPP_PAYMENT_TEMPLATE_LANGUAGE?: string;
   /** Meta app secret used to verify X-Hub-Signature-256 on WhatsApp webhook POSTs. */
   WHATSAPP_APP_SECRET?: string;
   /** Verify token configured in the Meta App Dashboard for WhatsApp webhook GET challenges. */
@@ -105,12 +126,121 @@ export interface PagesContext<P extends Record<string, string> = Record<string, 
 
 export const DEFAULT_CNAME_TARGET = 'vijay-visuals-site.pages.dev';
 
+/**
+ * Exact browser origins allowed to make cross-origin API calls.
+ * Pages-to-Pages requests are same-origin and do not require CORS headers.
+ * Never derive this from an arbitrary request Origin.
+ */
+export const DEFAULT_ALLOWED_CORS_ORIGINS: readonly string[] = [
+  'https://vijay-visuals-site.pages.dev',
+  'http://localhost:5173',
+  'http://localhost:4173',
+];
+
+export const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+/**
+ * Returns the exact CORS allowlist. Pages-to-Pages calls are same-origin and do
+ * not need CORS; only explicitly configured browser origins are reflected.
+ */
+export function getAllowedCorsOrigins(env?: CloudflareEnv): string[] {
+  const configured = [
+    ...DEFAULT_ALLOWED_CORS_ORIGINS,
+    ...(env?.ALLOWED_CORS_ORIGINS || '').split(','),
+    env?.APP_URL || '',
+  ];
+  const origins = new Set<string>();
+  for (const value of configured) {
+    const trimmed = String(value || '').trim().replace(/\/+$/, '');
+    if (!trimmed || trimmed === 'null') continue;
+    try {
+      origins.add(new URL(trimmed).origin);
+    } catch {
+      // Ignore malformed configuration instead of broadening the allowlist.
+    }
+  }
+  return [...origins];
+}
+
+export function isAllowedCorsOrigin(origin: string | null | undefined, env?: CloudflareEnv): boolean {
+  if (!origin || origin === 'null') return false;
+  let normalized: string;
+  try {
+    normalized = new URL(origin).origin;
+  } catch {
+    return false;
+  }
+  return getAllowedCorsOrigins(env).includes(normalized);
+}
+
+/**
+ * Normalizes every /api/* response: only an exact allowlisted Origin is
+ * reflected, and any upstream/platform wildcard is removed first. This also
+ * covers Pages-generated responses such as 404/405, which otherwise emit
+ * `Access-Control-Allow-Origin: *`.
+ */
+export function applyCorsHeaders(request: Request, response: Response, env?: CloudflareEnv): Response {
+  const origin = request.headers.get('Origin');
+  const headers = new Headers(response.headers);
+  headers.delete('Access-Control-Allow-Origin');
+  headers.delete('Access-Control-Allow-Credentials');
+
+  const vary = headers
+    .get('Vary')
+    ?.split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean) || [];
+  if (!vary.includes('origin')) vary.push('origin');
+  headers.set('Vary', vary.join(', '));
+
+  if (isAllowedCorsOrigin(origin, env)) {
+    headers.set('Access-Control-Allow-Origin', String(origin));
+    headers.set('Access-Control-Allow-Methods', CORS_HEADERS['Access-Control-Allow-Methods']);
+    headers.set('Access-Control-Allow-Headers', CORS_HEADERS['Access-Control-Allow-Headers']);
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/**
+ * Restrictive but application-compatible CSP. Allows only the external origins
+ * actually used by the platform (fonts, Cashfree SDK/API, Supabase and Maps)
+ * while keeping tenant-owned images on arbitrary HTTPS hosts.
+ */
+export const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' https://sdk.cashfree.com https://maps.googleapis.com https://maps.gstatic.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data: blob: https:",
+  "connect-src 'self' https://sdk.cashfree.com https://api.cashfree.com https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com",
+  "worker-src 'self' blob:",
+  "frame-src 'self' https://sdk.cashfree.com https://maps.google.com",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+  'upgrade-insecure-requests',
+].join('; ');
+
 export const SECURITY_HEADERS: Record<string, string> = {
+  'Content-Security-Policy': CONTENT_SECURITY_POLICY,
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'SAMEORIGIN',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(self)',
   'Cache-Control': 'no-store',
 };
+
+/** Matches the Express JSON limit so edge and legacy runtimes stay compatible. */
+export const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024;
 
 export function json(data: unknown, status = 200, extraHeaders?: Record<string, string>): Response {
   return new Response(JSON.stringify(data), {
@@ -155,9 +285,29 @@ export function escapeHtml(input: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export async function parseJsonBody<T = Record<string, unknown>>(request: Request): Promise<T | null> {
+/** Reads a request body with both declared and actual byte limits. */
+export async function readBoundedText(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES
+): Promise<string | null> {
   try {
+    const declaredLength = Number(request.headers.get('content-length') || '0');
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return null;
     const text = await request.text();
+    if (new TextEncoder().encode(text).byteLength > maxBytes) return null;
+    return text;
+  } catch {
+    return null;
+  }
+}
+
+export async function parseJsonBody<T = Record<string, unknown>>(
+  request: Request,
+  maxBytes = MAX_JSON_BODY_BYTES
+): Promise<T | null> {
+  const text = await readBoundedText(request, maxBytes);
+  if (text === null) return null;
+  try {
     if (!text.trim()) return {} as T;
     const parsed = JSON.parse(text);
     if (parsed && typeof parsed === 'object') return parsed as T;
@@ -279,54 +429,143 @@ export function getClientIp(request: Request): string {
   );
 }
 
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  retryAfterSeconds: number;
+  /** True when the durable limiter could not be evaluated. Callers must fail closed. */
+  unavailable?: boolean;
+}
+
+function rateLimitUnavailable(): RateLimitResult {
+  return { allowed: false, remaining: 0, retryAfterSeconds: 0, unavailable: true };
+}
+
 export async function checkRateLimit(
   env: CloudflareEnv,
   scopeKey: string,
   limit: number,
   windowSeconds: number
-): Promise<{ allowed: boolean; remaining: number; retryAfterSeconds: number }> {
+): Promise<RateLimitResult> {
   if (!env.DB) {
-    return { allowed: true, remaining: limit, retryAfterSeconds: 0 };
+    return rateLimitUnavailable();
   }
   const nowSec = Math.floor(Date.now() / 1000);
   const windowStart = Math.floor(nowSec / windowSeconds) * windowSeconds;
   const retryAfterSeconds = Math.max(1, windowStart + windowSeconds - nowSec);
 
   try {
-    const existing = await env.DB.prepare(
-      'SELECT window_start, hit_count FROM api_rate_limits WHERE rate_key = ?'
+    // Atomic increment: only an active window that has allowance is advanced.
+    // Concurrent callers cannot both read the same stale count and over-issue.
+    const bumped = await env.DB.prepare(
+      `UPDATE api_rate_limits
+       SET hit_count = hit_count + 1, updated_at = datetime('now')
+       WHERE rate_key = ? AND window_start = ? AND hit_count < ?`
     )
-      .bind(scopeKey)
-      .first<{ window_start: number; hit_count: number }>();
+      .bind(scopeKey, windowStart, limit)
+      .run();
 
-    if (!existing || existing.window_start !== windowStart) {
-      await env.DB.prepare(
-        `INSERT INTO api_rate_limits (rate_key, window_start, hit_count, updated_at)
-         VALUES (?, ?, 1, datetime('now'))
-         ON CONFLICT(rate_key) DO UPDATE SET window_start = excluded.window_start, hit_count = 1, updated_at = datetime('now')`
+    if ((bumped.meta?.changes || 0) > 0) {
+      const current = await env.DB.prepare(
+        'SELECT hit_count FROM api_rate_limits WHERE rate_key = ? AND window_start = ?'
       )
         .bind(scopeKey, windowStart)
-        .run();
+        .first<{ hit_count: number }>();
+      const used = Math.max(1, Number(current?.hit_count || 1));
+      return { allowed: true, remaining: Math.max(0, limit - used), retryAfterSeconds };
+    }
+
+    // First request in this window: INSERT OR IGNORE is an atomic claim.
+    const inserted = await env.DB.prepare(
+      `INSERT OR IGNORE INTO api_rate_limits (rate_key, window_start, hit_count, updated_at)
+       VALUES (?, ?, 1, datetime('now'))`
+    )
+      .bind(scopeKey, windowStart)
+      .run();
+
+    if ((inserted.meta?.changes || 0) > 0) {
       return { allowed: true, remaining: Math.max(0, limit - 1), retryAfterSeconds };
     }
 
-    if (existing.hit_count >= limit) {
-      return { allowed: false, remaining: 0, retryAfterSeconds };
-    }
-
-    const nextCount = existing.hit_count + 1;
-    await env.DB.prepare(
-      `UPDATE api_rate_limits SET hit_count = ?, updated_at = datetime('now') WHERE rate_key = ?`
+    // Another concurrent caller created the row between our first bump and the
+    // INSERT. Retry the atomic increment so both legitimate first hits count.
+    const bumpedAfterInsert = await env.DB.prepare(
+      `UPDATE api_rate_limits
+       SET hit_count = hit_count + 1, updated_at = datetime('now')
+       WHERE rate_key = ? AND window_start = ? AND hit_count < ?`
     )
-      .bind(nextCount, scopeKey)
+      .bind(scopeKey, windowStart, limit)
       .run();
 
-    return { allowed: true, remaining: Math.max(0, limit - nextCount), retryAfterSeconds };
+    if ((bumpedAfterInsert.meta?.changes || 0) > 0) {
+      const current = await env.DB.prepare(
+        'SELECT hit_count FROM api_rate_limits WHERE rate_key = ? AND window_start = ?'
+      )
+        .bind(scopeKey, windowStart)
+        .first<{ hit_count: number }>();
+      const used = Math.max(1, Number(current?.hit_count || 1));
+      return { allowed: true, remaining: Math.max(0, limit - used), retryAfterSeconds };
+    }
+
+    // A stale window can be reset atomically. An active window at its limit
+    // matches none of these writes and is therefore blocked.
+    const reset = await env.DB.prepare(
+      `UPDATE api_rate_limits
+       SET window_start = ?, hit_count = 1, updated_at = datetime('now')
+       WHERE rate_key = ? AND window_start < ?`
+    )
+      .bind(windowStart, scopeKey, windowStart)
+      .run();
+
+    if ((reset.meta?.changes || 0) > 0) {
+      return { allowed: true, remaining: Math.max(0, limit - 1), retryAfterSeconds };
+    }
+
+    return { allowed: false, remaining: 0, retryAfterSeconds };
   } catch {
-    return { allowed: true, remaining: limit, retryAfterSeconds: 0 };
+    return rateLimitUnavailable();
   }
 }
 
+/** Standard fail-closed response for callers of checkRateLimit(). */
+export function rateLimitResponse(rl: RateLimitResult, message: string): Response {
+  if (rl.unavailable) {
+    return jsonResponse(
+      {
+        error: 'Rate limiting is temporarily unavailable. Please try again later.',
+        code: 'RATE_LIMIT_UNAVAILABLE',
+      },
+      503
+    );
+  }
+  const headers: Record<string, string> = {};
+  if (rl.retryAfterSeconds > 0) headers['Retry-After'] = String(rl.retryAfterSeconds);
+  return jsonResponse({ error: message, code: 'RATE_LIMIT_EXCEEDED' }, 429, headers);
+}
+
+const AUDIT_REDACTED_KEYS = /(_|-)?(authorization|cookie|password|passphrase|secret|token|otp|apikey|api_key|private_key|client_secret|webhook_signature|session)/i;
+
+function redactAuditValue(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') return value.slice(0, 500);
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (depth >= 4) return '[truncated]';
+  if (Array.isArray(value)) return value.slice(0, 25).map((item) => redactAuditValue(item, depth + 1));
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = AUDIT_REDACTED_KEYS.test(key) ? '[redacted]' : redactAuditValue(item, depth + 1);
+    }
+    return out;
+  }
+  return '[unserializable]';
+}
+
+/**
+ * Audit writes stay non-fatal, but failures are now observable in edge logs.
+ * Only safe metadata is logged; detail values and error messages are never
+ * forwarded to the console because they may contain provider responses.
+ */
 export async function writeAuditLog(
   env: CloudflareEnv,
   entry: {
@@ -337,8 +576,15 @@ export async function writeAuditLog(
     targetId: string;
     details?: Record<string, unknown>;
   }
-): Promise<void> {
-  if (!env.DB) return;
+): Promise<boolean> {
+  if (!env.DB) {
+    console.warn('Audit log write skipped', {
+      action: sanitizeText(entry.action, 80),
+      targetType: sanitizeText(entry.targetType, 80),
+      reason: 'db_unavailable',
+    });
+    return false;
+  }
   try {
     await env.DB.prepare(
       `INSERT INTO vv_audit_log (id, actor_user_id, action, entity_type, entity_id, metadata_json, created_at)
@@ -350,11 +596,20 @@ export async function writeAuditLog(
         entry.action,
         entry.targetType,
         entry.targetId,
-        JSON.stringify({ ...(entry.details || {}), actorRole: entry.actorRole })
+        JSON.stringify({
+          ...(redactAuditValue(entry.details || {}) as Record<string, unknown>),
+          actorRole: entry.actorRole,
+        })
       )
       .run();
-  } catch {
-    // Non-fatal if legacy vv_audit_log schema columns differ
+    return true;
+  } catch (err) {
+    console.warn('Audit log write failed', {
+      action: sanitizeText(entry.action, 80),
+      targetType: sanitizeText(entry.targetType, 80),
+      errorType: err instanceof Error ? err.name : 'unknown',
+    });
+    return false;
   }
 }
 
@@ -384,41 +639,12 @@ export function getNotificationChannelStatus(env: CloudflareEnv): {
 // PRESERVED EXISTING GITHUB AI / MARKETPLACE / SITES EDGE HELPERS
 // ============================================================================
 
-export interface TenantUsage {
-  requestsCount: number;
-  dailyLimit: number;
-  lastReset: string;
-}
-
-export const edgeUsageStore: Record<string, TenantUsage> = {
-  'default-tenant': { requestsCount: 0, dailyLimit: 50, lastReset: new Date().toISOString() },
-};
-
-export function checkAndIncrementQuota(tenantId = 'default-tenant') {
-  const today = new Date().toISOString().slice(0, 10);
-  if (!edgeUsageStore[tenantId]) {
-    edgeUsageStore[tenantId] = { requestsCount: 0, dailyLimit: 50, lastReset: today };
-  }
-  const tenant = edgeUsageStore[tenantId];
-  if (!tenant.lastReset.startsWith(today)) {
-    tenant.requestsCount = 0;
-    tenant.lastReset = today;
-  }
-  if (tenant.requestsCount >= tenant.dailyLimit) {
-    return { allowed: false, remaining: 0, limit: tenant.dailyLimit };
-  }
-  tenant.requestsCount += 1;
-  return { allowed: true, remaining: tenant.dailyLimit - tenant.requestsCount, limit: tenant.dailyLimit };
-}
-
 export function jsonResponse(data: any, status = 200, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      ...CORS_HEADERS,
       ...SECURITY_HEADERS,
       ...extraHeaders,
     },
@@ -429,9 +655,7 @@ export function handleOptions(): Response {
   return new Response(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      ...CORS_HEADERS,
       'Access-Control-Max-Age': '86400',
     },
   });

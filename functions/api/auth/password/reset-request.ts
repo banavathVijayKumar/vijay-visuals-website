@@ -8,7 +8,15 @@
 // - Always returns a generic response to prevent account enumeration
 // ============================================================================
 
-import { PagesContext, handleOptions, json, parseJsonBody, sanitizeText } from '../../_shared';
+import {
+  PagesContext,
+  checkRateLimit,
+  handleOptions,
+  json,
+  parseJsonBody,
+  rateLimitResponse,
+  sanitizeText,
+} from '../../_shared';
 import {
   PasswordResetRateLimitUnavailableError,
   authorizePasswordResetRequest,
@@ -87,6 +95,14 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         },
         503
       );
+    }
+
+    // Per-IP throttle complements the per-email limiter so one caller cannot
+    // target many distinct mailboxes. Fail closed via the shared helper.
+    const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '';
+    const ipLimit = await checkRateLimit(env, `password_reset_ip:${clientIp || 'unknown'}`, 20, 3600);
+    if (!ipLimit.allowed) {
+      return rateLimitResponse(ipLimit, 'Too many password reset requests. Please try again later.');
     }
 
     let rateLimit;
