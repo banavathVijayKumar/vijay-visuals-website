@@ -75,8 +75,14 @@ export interface CloudflareEnv {
   SENDGRID_API_KEY?: string;
   /** Comma-separated provider-verified domains eligible for tenant sender identities. */
   RESEND_VERIFIED_SENDER_DOMAINS?: string;
+  /** Resend/Svix webhook signing secret (whsec_...) used to verify raw-body signatures. */
+  RESEND_WEBHOOK_SECRET?: string;
   WHATSAPP_CLOUD_API_TOKEN?: string;
   WHATSAPP_PHONE_NUMBER_ID?: string;
+  /** Meta app secret used to verify X-Hub-Signature-256 on WhatsApp webhook POSTs. */
+  WHATSAPP_APP_SECRET?: string;
+  /** Verify token configured in the Meta App Dashboard for WhatsApp webhook GET challenges. */
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN?: string;
   SMS_PROVIDER_API_KEY?: string;
   DOMAIN_REGISTRAR_PROVIDER?: string;
   DOMAIN_REGISTRAR_API_KEY?: string;

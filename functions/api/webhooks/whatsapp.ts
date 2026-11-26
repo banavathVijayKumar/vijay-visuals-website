@@ -1,10 +1,24 @@
 // ============================================================================
 // VIJAY VISUALS — META WHATSAPP BUSINESS WEBHOOK HANDLER (CLOUDFLARE PAGES EDGE)
 // Handles GET verification challenge and POST delivery receipt updates.
-// Updates D1 `notification_logs` with verified delivery timestamps.
+// POST authenticity is verified with X-Hub-Signature-256 (HMAC-SHA256 over the
+// exact raw body using the Meta app secret). D1 `notification_logs` is only
+// touched after verification succeeds.
 // ============================================================================
 
-import { PagesContext, handleOptions, jsonResponse } from '../_shared';
+import {
+  PagesContext,
+  handleOptions,
+  jsonResponse,
+  hmacSha256Hex,
+  safeEqual,
+} from '../_shared';
+
+const SIGNATURE_PREFIX = 'sha256=';
+
+function errorResponse(message: string, status: number): Response {
+  return jsonResponse({ error: message }, status);
+}
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -12,35 +26,67 @@ export async function onRequestOptions(): Promise<Response> {
 
 /**
  * GET /api/webhooks/whatsapp — Meta Webhook Verification
+ * Only WHATSAPP_WEBHOOK_VERIFY_TOKEN is accepted. No hardcoded or Cloud API
+ * token fallback is permitted.
  */
 export async function onRequestGet(context: PagesContext): Promise<Response> {
   const { request, env } = context;
-  const url = new URL(request.url);
+  const configuredToken = (env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '').trim();
+  if (!configuredToken) {
+    return new Response('Forbidden', { status: 403 });
+  }
 
+  const url = new URL(request.url);
   const mode = url.searchParams.get('hub.mode');
   const token = url.searchParams.get('hub.verify_token');
   const challenge = url.searchParams.get('hub.challenge');
 
-  const expectedToken = (env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || env.WHATSAPP_CLOUD_API_TOKEN || 'vijay_visuals_wa_verify').trim();
-
-  if (mode === 'subscribe' && token === expectedToken) {
-    return new Response(challenge || '', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+  if (mode !== 'subscribe' || !token || !safeEqual(token, configuredToken)) {
+    return new Response('Forbidden', { status: 403 });
+  }
+  if (!challenge) {
+    return new Response('Missing hub.challenge', { status: 400 });
   }
 
-  return new Response('Forbidden', { status: 403 });
+  return new Response(challenge, {
+    status: 200,
+    headers: { 'Content-Type': 'text/plain' },
+  });
 }
 
 /**
  * POST /api/webhooks/whatsapp — Delivery Status Updates
+ * Verifies Meta's official X-Hub-Signature-256 before parsing or writing.
  */
 export async function onRequestPost(context: PagesContext): Promise<Response> {
   const { request, env } = context;
 
+  const appSecret = (env.WHATSAPP_APP_SECRET || '').trim();
+  if (!appSecret) {
+    return errorResponse('WhatsApp app secret is not configured.', 500);
+  }
+
+  const signatureHeader = (request.headers.get('x-hub-signature-256') || '').trim();
+  if (!signatureHeader.toLowerCase().startsWith(SIGNATURE_PREFIX)) {
+    return errorResponse('Missing or malformed X-Hub-Signature-256 header.', 401);
+  }
+  const providedSignature = signatureHeader.slice(SIGNATURE_PREFIX.length).trim();
+  if (!providedSignature) {
+    return errorResponse('Missing X-Hub-Signature-256 value.', 401);
+  }
+
+  // Meta signs the exact raw JSON body; never re-stringify before verifying.
+  const rawBody = await request.text();
+  const expectedSignature = await hmacSha256Hex(appSecret, rawBody);
+  if (!safeEqual(providedSignature.toLowerCase(), expectedSignature)) {
+    return errorResponse('Invalid WhatsApp webhook signature.', 401);
+  }
+
   let body: any;
   try {
-    body = await request.json();
+    body = JSON.parse(rawBody);
   } catch {
-    return new Response('Invalid JSON', { status: 400 });
+    return errorResponse('Invalid webhook JSON payload.', 400);
   }
 
   if (env.DB && body?.entry) {
