@@ -13,6 +13,33 @@ import {
 } from '../../../_tenantAccess';
 import { mapPublicationToTenant } from '../../../_tenantMapper';
 import { getTenantAiQuota } from '../../../_aiCredits';
+import {
+  hasExplicitOwnerApproval,
+  isDeliveryPartnerApprovalUnverifiable,
+} from '../../../delivery/_autoAssignment';
+import {
+  hasDurableOwnerApproval,
+  readRiderState,
+} from '../../../delivery/_riderState';
+import {
+  getDeliveryCommissionPct,
+  getRiderDeliveryCountsByPartner,
+  getRiderEarningsByPartner,
+} from '../../../delivery/_riderEarnings';
+
+function parsePermission(raw: unknown, prefix: string): string {
+  const text = String(raw || '');
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      const hit = parsed.find((item) => typeof item === 'string' && item.startsWith(prefix));
+      if (hit) return String(hit).slice(prefix.length);
+    }
+  } catch {
+    // Fall back to plain text below.
+  }
+  return text || '';
+}
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -195,9 +222,13 @@ export async function onRequestGet(
   }
 
   // 4. Staff & Delivery Partners from tenant_memberships
+  const earningsByPartner = await getRiderEarningsByPartner(env);
+  const deliveryCountsByPartner = await getRiderDeliveryCountsByPartner(env);
+  const riderCommissionPct = await getDeliveryCommissionPct(env, String(row.website_id || ''));
+  let deliveryExpenseInr = 0;
   try {
     const memRes = await env.DB!.prepare(
-      `SELECT id, full_name, email, role, status
+      `SELECT id, full_name, email, role, status, permissions_json, invited_by
        FROM tenant_memberships
        WHERE website_id = ?
        ORDER BY id DESC LIMIT 100`
@@ -206,16 +237,32 @@ export async function onRequestGet(
       .all<Record<string, any>>();
     for (const m of memRes.results || []) {
       if (m.role === 'delivery_partner') {
+        const partnerId = Number(m.id);
+        const partnerKey = `${String(row.website_id || '')}|${partnerId}`;
+        const pendingPayoutInr = earningsByPartner.get(partnerKey) || 0;
+        deliveryExpenseInr += pendingPayoutInr;
+        const riderState = readRiderState(m.permissions_json);
+        const approvalUnverifiable =
+          !hasDurableOwnerApproval(m) &&
+          isDeliveryPartnerApprovalUnverifiable(m) &&
+          !(await hasExplicitOwnerApproval(env, partnerId));
+
         deliveryPartners.push({
-          id: Number(m.id),
+          id: partnerId,
           tenantId: tenantRowId,
           userId: null,
           name: String(m.full_name || m.email || 'Delivery Partner'),
-          phone: '',
-          vehicleType: 'Standard',
-          available: m.status === 'active',
-          totalDeliveries: 0,
-          totalEarnings: 0,
+          phone: parsePermission(m.permissions_json, 'phone:'),
+          vehicleType: parsePermission(m.permissions_json, 'vehicleType:') || 'Standard',
+          status: String(m.status || ''),
+          deliveryApproval: riderState.deliveryApproval,
+          availability: riderState.availability,
+          available: riderState.availability === 'online',
+          totalDeliveries: deliveryCountsByPartner.get(partnerKey) || 0,
+          totalEarnings: pendingPayoutInr,
+          pendingPayoutInr,
+          commissionPct: riderCommissionPct,
+          approvalUnverifiable,
         });
       } else {
         staff.push({
@@ -305,6 +352,11 @@ export async function onRequestGet(
       inactiveProductsCount: products.filter((p) => !p.active).length,
       lowStockCount,
       activeDeliveries,
+      // Abstract delivery expense recorded after verified deliveries. No
+      // payout is deducted until a real Cashfree Payouts integration exists.
+      deliveryExpenseInr,
+      deliveryPayoutDueInr: deliveryExpenseInr,
+      deliveryRateCardPct: riderCommissionPct,
       salesTrend,
       recentActivities,
     },

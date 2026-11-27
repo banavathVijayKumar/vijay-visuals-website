@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
-  Headphones,
   Play,
   ShieldCheck,
   Sparkles,
@@ -266,15 +265,6 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
               </p>
             </div>
 
-            {/* 3D Golden Satin Ribbon Banner: "Creative Solutions for a Digital World" */}
-            <div className="relative my-3 flex w-full justify-center px-2 sm:my-4">
-              <div className="gold-ribbon-3d max-w-full rounded-sm px-4 py-1.5 shadow-xl sm:px-10 sm:py-2">
-                <p className="font-sans-clean font-black text-center text-[11px] leading-tight text-[#090D17] uppercase tracking-[0.12em] drop-shadow-sm sm:text-sm sm:tracking-[0.24em] md:text-base">
-                  Creative Solutions for a Digital World
-                </p>
-              </div>
-            </div>
-
             {/* Subtitle: "YOUR BUSINESS · YOUR WEBSITE · YOUR IDENTITY" */}
             <p className="text-[11px] sm:text-xs md:text-sm font-bold text-white/95 uppercase tracking-[0.2em] sm:tracking-[0.26em] my-2 drop-shadow-[0_1px_4px_rgba(0,0,0,0.8)]">
               YOUR BUSINESS &nbsp;·&nbsp; YOUR WEBSITE &nbsp;·&nbsp; YOUR IDENTITY
@@ -319,7 +309,7 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
         {/* ============================================================ */}
         <div className="mt-8 sm:mt-12 pt-4 relative z-20 w-full">
           <div className="bg-[#070B18]/90 backdrop-blur-md border border-[#D4AF37]/30 rounded-2xl md:rounded-full py-3.5 px-4 sm:px-8 shadow-2xl">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4 items-center justify-between">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 items-center justify-between">
               
               {/* 1. Premium Quality */}
               <div className="flex items-center justify-center gap-2 text-center sm:text-left">
@@ -337,15 +327,7 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
                 </span>
               </div>
 
-              {/* 3. 24/7 Support */}
-              <div className="flex items-center justify-center gap-2 text-center sm:text-left">
-                <Headphones className="w-4 h-4 text-[#ECC86A] shrink-0 drop-shadow-[0_0_8px_#D4AF37]" />
-                <span className="text-[11px] sm:text-xs font-semibold text-white/90 whitespace-nowrap">
-                  24/7 Support
-                </span>
-              </div>
-
-              {/* 4. Trusted Service */}
+              {/* 3. Trusted Service */}
               <div className="flex items-center justify-center gap-2 text-center sm:text-left">
                 <ShieldCheck className="w-4 h-4 text-[#ECC86A] shrink-0 drop-shadow-[0_0_8px_#D4AF37]" />
                 <span className="text-[11px] sm:text-xs font-semibold text-white/90 whitespace-nowrap">
@@ -353,8 +335,8 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
                 </span>
               </div>
 
-              {/* 5. Client Satisfaction */}
-              <div className="col-span-2 sm:col-span-1 flex items-center justify-center gap-2 text-center sm:text-left">
+              {/* 4. Client Satisfaction */}
+              <div className="flex items-center justify-center gap-2 text-center sm:text-left">
                 <Star className="w-4 h-4 text-[#ECC86A] fill-current shrink-0 drop-shadow-[0_0_8px_#D4AF37]" />
                 <span className="text-[11px] sm:text-xs font-semibold text-white/90 whitespace-nowrap">
                   Client Satisfaction

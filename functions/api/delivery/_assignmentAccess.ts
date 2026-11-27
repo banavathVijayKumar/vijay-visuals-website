@@ -9,6 +9,7 @@
 
 import type { AuthenticatedUser } from '../_auth';
 import type { CloudflareEnv } from '../_shared';
+import { hasDurableOwnerApproval } from './_riderState';
 
 export interface AssignedDeliveryAccess {
   authorized: boolean;
@@ -57,10 +58,13 @@ export async function checkAssignedDeliveryAccess(
     return denied();
   }
 
+  // The assignment row is the only source of the rider who actually owns this
+  // delivery — including for owner/admin callers who complete secure POD.
+  const assignedPartnerId = assignment ? Number(assignment.delivery_partner_user_id) || null : null;
   const result: AssignedDeliveryAccess = {
     authorized: false,
     isOwnerOrAdmin: false,
-    partnerId: null,
+    partnerId: assignedPartnerId,
     assignmentId: assignment ? Number(assignment.id) || null : null,
     assignment,
   };
@@ -84,16 +88,20 @@ export async function checkAssignedDeliveryAccess(
 
   try {
     const partner = await env.DB.prepare(
-      `SELECT id FROM tenant_memberships
-       WHERE website_id = ? AND role = 'delivery_partner' AND status = 'active'
+      `SELECT id, permissions_json, status, role
+       FROM tenant_memberships
+       WHERE website_id = ? AND role = 'delivery_partner'
          AND (user_id = ? OR user_id = ? OR email = ?)
        LIMIT 1`
     )
       .bind(websiteId, user.id, user.authSubject, user.email)
-      .first<{ id?: number }>();
+      .first<{ id?: number; permissions_json?: string; status?: string; role?: string }>();
 
     const partnerId = Number(partner?.id) || null;
     if (!partnerId || !assignment) return denied();
+    if (!hasDurableOwnerApproval({ ...partner, status: partner?.status, permissions_json: partner?.permissions_json })) {
+      return denied();
+    }
     if (String(assignment.delivery_partner_user_id) !== String(partnerId)) return denied();
 
     return { ...result, authorized: true, partnerId };

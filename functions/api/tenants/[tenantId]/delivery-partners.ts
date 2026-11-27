@@ -3,14 +3,23 @@
 // Ported from server.ts (Express) to Cloudflare Pages + D1.
 // D1 has no delivery_partners table; tenant_memberships (migration 0003) is the
 // authoritative rider store used by /api/delivery/portal and /api/me.
-// Tenant owners/managers add riders; any authenticated user may self-register
-// with linkCurrentUser, matching the Express behavior.
+// Tenant owners/managers add riders as active members. Any authenticated user
+// may self-register with linkCurrentUser, but that creates a PENDING membership
+// (status='invited'); a tenant owner/super admin must approve it before the
+// rider gains delivery portal access.
 // ============================================================================
 
 import { requireUser } from '../../_auth';
-import { PagesContext, errorJson, jsonResponse, parseJsonBody } from '../../_shared';
+import {
+  PagesContext,
+  errorJson,
+  jsonResponse,
+  parseJsonBody,
+  writeAuditLog,
+} from '../../_shared';
 import { findPublicationByIdentifier, requireTenantOwnerAccess } from '../../_tenantAccess';
 import type { PublicationRow } from '../../_tenantMapper';
+import { readRiderState, withRiderState } from '../../delivery/_riderState';
 
 interface MembershipRow {
   id: number;
@@ -91,19 +100,28 @@ export async function onRequestPost(
     ? auth.user.id || auth.user.authSubject
     : `rider:${websiteId}:${phone}`;
   const email = linkCurrentUser ? auth.user.email || '' : '';
-  const permissionsJson = JSON.stringify([
-    `phone:${phone}`,
-    `vehicleType:${vehicleType}`,
-    `linkCurrentUser:${linkCurrentUser ? 'true' : 'false'}`,
-  ]);
+  const permissionsJson = withRiderState(
+    [
+      `phone:${phone}`,
+      `vehicleType:${vehicleType}`,
+      `linkCurrentUser:${linkCurrentUser ? 'true' : 'false'}`,
+    ],
+    {
+      // Owner-added riders are approved at creation; self-registration stays
+      // pending until a tenant owner records approval. Everyone starts offline.
+      deliveryApproval: linkCurrentUser ? 'pending' : 'owner_added',
+      availability: 'offline',
+    }
+  );
+  const membershipStatus = linkCurrentUser ? 'invited' : 'active';
 
   try {
     await env.DB.prepare(
       `INSERT OR IGNORE INTO tenant_memberships
         (website_id, user_id, email, full_name, role, status, permissions_json, invited_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'delivery_partner', 'active', ?, ?, datetime('now'), datetime('now'))`
+       VALUES (?, ?, ?, ?, 'delivery_partner', ?, ?, ?, datetime('now'), datetime('now'))`
     )
-      .bind(websiteId, userId, email, name, permissionsJson, auth.user.id)
+      .bind(websiteId, userId, email, name, membershipStatus, permissionsJson, auth.user.id)
       .run();
 
     const created = await env.DB.prepare(
@@ -116,8 +134,8 @@ export async function onRequestPost(
     if (!created) return errorJson('Failed to register delivery partner.', 500);
 
     // The canonical vv_users.role is intentionally unchanged. Delivery access
-    // is derived from the tenant_memberships/delivery partner record, so a
-    // self-link must not globally promote a customer account.
+    // is derived from an ACTIVE tenant_memberships/delivery partner record, so
+    // a self-link must not globally promote a customer account.
 
     return jsonResponse(
       {
@@ -128,7 +146,10 @@ export async function onRequestPost(
           name: String(created.full_name || name),
           phone: parsePermission(created.permissions_json, 'phone:') || phone,
           vehicleType: parsePermission(created.permissions_json, 'vehicleType:') || vehicleType,
-          available: created.status === 'active',
+          status: String(created.status || membershipStatus),
+          approvalPending: readRiderState(created.permissions_json).deliveryApproval === 'pending',
+          availability: readRiderState(created.permissions_json).availability,
+          available: readRiderState(created.permissions_json).availability === 'online',
           totalDeliveries: 0,
           totalEarnings: 0,
         },
@@ -137,5 +158,104 @@ export async function onRequestPost(
     );
   } catch {
     return errorJson('Failed to register delivery partner.', 500);
+  }
+}
+
+// ============================================================================
+// PATCH /api/tenants/:tenantId/delivery-partners — Approve / suspend a rider.
+// Tenant owners/managers (or super admins) are the only callers allowed to
+// activate a self-registered membership. Riders can never self-approve.
+// ============================================================================
+
+export async function onRequestPatch(
+  context: PagesContext<{ tenantId: string }>
+): Promise<Response> {
+  const { request, env, params } = context;
+  const auth = await requireUser(request, env);
+  if (!auth.ok) return auth.response;
+  if (!env.DB) return errorJson('Database binding is not configured.', 503);
+
+  const body = await parseJsonBody<{ partnerId?: unknown; approved?: unknown }>(request);
+  const partnerId = Number(body?.partnerId);
+  const approved = body?.approved;
+
+  if (!Number.isInteger(partnerId) || partnerId <= 0 || typeof approved !== 'boolean') {
+    return errorJson('Invalid delivery partner approval payload.', 400);
+  }
+
+  const access = await requireTenantOwnerAccess(env, auth.user, params.tenantId || '', [
+    'business_owner',
+    'business_manager',
+  ]);
+  if (!access.ok) return access.response;
+
+  const nextStatus = approved ? 'active' : 'suspended';
+  try {
+    const current = await env.DB.prepare(
+      `SELECT id, permissions_json, status, role
+       FROM tenant_memberships
+       WHERE id = ? AND website_id = ? AND role = 'delivery_partner'
+       LIMIT 1`
+    )
+      .bind(partnerId, access.row.website_id)
+      .first<MembershipRow>();
+
+    if (
+      !current?.id ||
+      (approved && !['active', 'invited'].includes(String(current.status))) ||
+      (!approved && String(current.status) !== 'active')
+    ) {
+      return errorJson('Delivery partner not found for this website.', 404);
+    }
+
+    // The approval marker is written in the SAME membership UPDATE as status.
+    // Eligibility helpers read this marker, never vv_audit_log.
+    const nextPermissionsJson = withRiderState(current.permissions_json, {
+      deliveryApproval: approved ? 'owner_approved' : 'revoked',
+      availability: approved ? undefined : 'offline',
+    });
+    const observedPermissionsJson = String(current.permissions_json || '');
+    const result = await env.DB.prepare(
+      `UPDATE tenant_memberships
+       SET status = ?, permissions_json = ?, updated_at = datetime('now')
+       WHERE id = ? AND website_id = ? AND role = 'delivery_partner'
+         AND permissions_json = ?`
+    )
+      .bind(
+        nextStatus,
+        nextPermissionsJson,
+        partnerId,
+        access.row.website_id,
+        observedPermissionsJson
+      )
+      .run();
+
+    if (!result.meta?.changes) {
+      return errorJson(
+        'Delivery partner approval changed concurrently. Reload and retry.',
+        409
+      );
+    }
+
+    // Audit is optional secondary evidence only; the durable marker above is
+    // what actually controls eligibility.
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: auth.user.platformRole,
+      action: approved ? 'delivery_partner_approved' : 'delivery_partner_suspended',
+      targetType: 'tenant_membership',
+      targetId: String(partnerId),
+      details: { websiteId: access.row.website_id, approved },
+    });
+
+    return jsonResponse({
+      success: true,
+      partnerId,
+      status: nextStatus,
+      deliveryApproval: readRiderState(nextPermissionsJson).deliveryApproval,
+      availability: readRiderState(nextPermissionsJson).availability,
+    });
+  } catch {
+    return errorJson('Failed to update delivery partner approval.', 500);
   }
 }

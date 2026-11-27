@@ -28,6 +28,7 @@ import {
   validateSlugFormat,
 } from './_tenantAccess';
 import { PublicationRow, mapPublicationToTenant } from './_tenantMapper';
+import { sanitizeDemoDraftForStorage } from './_demoDraft';
 import { FREE_START_PLAN_CODE } from './_planTiers';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from './plans';
 import { getEdgeCashfreeStatus } from './payments/_cashfree';
@@ -205,6 +206,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       ? galleryItems.map((g) => g.url)
       : validateGalleryImages(body.galleryImages);
   const enabledModules = validateEnabledModules(body.enabledModules);
+  const demoBuilderDraft = sanitizeDemoDraftForStorage(body.demoBuilderDraft);
 
   const websitePayload: Record<string, unknown> = {
     businessName: name,
@@ -246,6 +248,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     socialLinks,
     sectionOrder,
     customPages,
+    ...(demoBuilderDraft ? { demoBuilderDraft } : {}),
     planTier,
     pwaEnabled: Boolean(body.pwaEnabled && planTier !== 'website_only'),
     pwaAppName: sanitizeText(body.pwaAppName, 100) || name,

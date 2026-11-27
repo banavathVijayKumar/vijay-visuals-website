@@ -20,6 +20,7 @@ import { BackToTop } from './components/BackToTop';
 import { PWAUpdatePrompt } from './components/PWAUpdatePrompt';
 import { AuthModal } from './components/auth/AuthModal';
 import { InteractiveDemoHub } from './components/InteractiveDemoHub';
+import { DemoBusinessBuilder } from './components/DemoBusinessBuilder';
 import { CustomerProposalView } from './components/CustomerProposalView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { NotFoundView } from './components/NotFoundView';
@@ -71,6 +72,7 @@ function parseRouteFromPath(): { view: AppView; slug: string | null } {
   if (pathname.startsWith('/site/') || pathname.startsWith('/sites/')) {
     return { view: 'storefront', slug: null };
   }
+  if (pathname.startsWith('/demo-builder')) return { view: 'demo-builder', slug: null };
   if (pathname.startsWith('/demo')) return { view: 'demo', slug: null };
   if (pathname.startsWith('/builder')) return { view: 'builder', slug: null };
   if (pathname.startsWith('/marketplace')) return { view: 'marketplace', slug: null };
@@ -470,6 +472,15 @@ function PlatformShell() {
                 setBuilderTenantId(tId ?? null);
                 navigateTo('builder');
               }}
+              onNotify={showToast}
+            />
+          </ErrorBoundary>
+        )}
+
+        {activeView === 'demo-builder' && (
+          <ErrorBoundary sectionName="Demo Business Builder">
+            <DemoBusinessBuilder
+              onOpenProposal={(token) => navigateTo('proposal', token)}
               onNotify={showToast}
             />
           </ErrorBoundary>

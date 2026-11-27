@@ -1,4 +1,5 @@
 import type { PlanTier } from '@/functions/api/_planTiers';
+import type { DemoBusinessDraft } from '../data/demoBuilder';
 
 export interface UserProfile {
   id: number;
@@ -80,6 +81,7 @@ export interface TenantRecord {
   };
   sectionOrder?: string[];
   customPages?: Array<{ slug: string; title: string; content: string }>;
+  demoBuilderDraft?: DemoBusinessDraft;
   published: boolean;
   status?: string;
   planTier: PlanTier;
@@ -241,6 +243,17 @@ export interface OrderRecord {
   createdAt: string;
 }
 
+export interface DeliveryEtaEstimate {
+  estimated: true;
+  nonGuaranteed: true;
+  noLiveTraffic: true;
+  minMinutes: number;
+  maxMinutes: number;
+  delayed: boolean;
+  mapsConfigured: boolean;
+  basis: string[];
+}
+
 export interface DeliveryPartnerRecord {
   id: number;
   tenantId: number;
@@ -248,9 +261,17 @@ export interface DeliveryPartnerRecord {
   name: string;
   phone: string;
   vehicleType: string;
+  /** tenant_memberships.status: active, invited (pending approval), or suspended. */
+  status?: string;
   available: boolean;
   totalDeliveries: number;
   totalEarnings: number;
+  /** Posted earnings with no provider-confirmed payout yet. */
+  pendingPayoutInr?: number;
+  /** Legacy active row that lacks distinct owner-approval evidence. */
+  approvalUnverifiable?: boolean;
+  /** Tenant-commission rate used for posted rider earnings. */
+  commissionPct?: number;
 }
 
 export interface StaffMemberRecord {
@@ -585,4 +606,4 @@ export interface CartItem {
   variant: string;
 }
 
-export type AppView = 'studio' | 'builder' | 'marketplace' | 'storefront' | 'dashboards' | 'ai' | 'demo' | 'proposal' | 'not-found';
+export type AppView = 'studio' | 'builder' | 'demo-builder' | 'marketplace' | 'storefront' | 'dashboards' | 'ai' | 'demo' | 'proposal' | 'not-found';

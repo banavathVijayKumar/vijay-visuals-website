@@ -17,6 +17,9 @@ import {
   requireTenantOwnerAccess,
 } from '../../_tenantAccess';
 import { dispatchLifecycleNotification } from '../../_lifecycleNotifications';
+import { maskContactForLog, maskPersonName } from '../../_pii';
+import { isBackwardDeliveryTransition } from '../../delivery/_deliveryStatus';
+import { hasDurableOwnerApproval } from '../../delivery/_riderState';
 
 const UI_TO_DB_ORDER_STATUS: Record<string, string> = {
   placed: 'placed',
@@ -25,7 +28,6 @@ const UI_TO_DB_ORDER_STATUS: Record<string, string> = {
   ready_for_pickup: 'packed',
   packed: 'packed',
   out_for_delivery: 'out_for_delivery',
-  delivered: 'delivered',
   cancelled: 'cancelled',
   return_requested: 'return_requested',
   returned: 'returned',
@@ -114,16 +116,19 @@ export async function onRequestPatch(
         return jsonResponse({ error: 'Invalid delivery partner.' }, 400);
       }
       const member = await env.DB.prepare(
-        `SELECT id, full_name, email, status
+        `SELECT id, full_name, email, status, permissions_json, role
          FROM tenant_memberships
          WHERE id = ? AND website_id = ? AND role = 'delivery_partner' AND status = 'active'
          LIMIT 1`
       )
         .bind(parsedPartnerId, String(existing.website_id))
-        .first<{ id?: number; full_name?: string; email?: string }>();
-      if (!member) {
+        .first<{ id?: number; full_name?: string; email?: string; status?: string; permissions_json?: string }>();
+      if (!member || !hasDurableOwnerApproval(member)) {
         return jsonResponse(
-          { error: 'The selected delivery partner is not active for this website.' },
+          {
+            error:
+              'The selected delivery partner is not an approved, active rider for this website.',
+          },
           403
         );
       }
@@ -149,6 +154,17 @@ export async function onRequestPatch(
 
   if (body.rejectionReason) {
     nextReturnReason = body.rejectionReason;
+  }
+
+  if (String(requestedStatus || '') === 'delivered') {
+    return jsonResponse(
+      {
+        error: 'Delivered status can only be recorded through secure proof of delivery.',
+        code: 'SECURE_POD_REQUIRED',
+        replacement: '/api/delivery/orders/:id/secure-pod',
+      },
+      410
+    );
   }
 
   const nextOrderStatus = requestedStatus
@@ -197,15 +213,68 @@ export async function onRequestPatch(
     );
   }
 
+  const currentOrderStatus = String(existing.order_status || '');
+  if (currentOrderStatus === 'delivered') {
+    return jsonResponse(
+      {
+        error: 'Delivered orders are immutable. Contact support for a return.',
+        code: 'DELIVERY_ALREADY_CLOSED',
+      },
+      410
+    );
+  }
+  if (isBackwardDeliveryTransition(currentOrderStatus, nextOrderStatus)) {
+    return jsonResponse(
+      {
+        error: `Cannot move delivery backwards from "${currentOrderStatus}" to "${nextOrderStatus}".`,
+        code: 'DELIVERY_STATE_CHANGED',
+      },
+      409
+    );
+  }
+
   // CRITICAL SECURITY ENFORCEMENT: Financial immutability
   // total_inr, subtotal_inr, gst_inr, discount_inr, items_json CANNOT be modified.
-  await env.DB.prepare(
+  const orderWrite = await env.DB.prepare(
     `UPDATE store_orders
      SET order_status = ?, payment_status = ?, return_reason = ?, updated_at = datetime('now')
-     WHERE id = ? AND website_id = ?`
+     WHERE id = ? AND website_id = ? AND order_status = ?
+       AND order_status NOT IN ('delivered', 'returned')`
   )
-    .bind(nextOrderStatus, nextPaymentStatus, nextReturnReason, orderId, existing.website_id)
+    .bind(
+      nextOrderStatus,
+      nextPaymentStatus,
+      nextReturnReason,
+      orderId,
+      existing.website_id,
+      currentOrderStatus
+    )
     .run();
+  if (!orderWrite.meta?.changes) {
+    return jsonResponse(
+      {
+        error: 'Order state changed concurrently. Reload and retry.',
+        code: 'DELIVERY_STATE_CHANGED',
+      },
+      409
+    );
+  }
+
+  // GPS is consent-based and transit-only: clear coordinates as soon as the
+  // order is no longer deliverable.
+  if (['cancelled', 'returned', 'return_requested'].includes(nextOrderStatus)) {
+    try {
+      await env.DB.prepare(
+        `UPDATE delivery_assignments
+         SET last_lat = NULL, last_lng = NULL, updated_at = datetime('now')
+         WHERE order_id = ? AND website_id = ?`
+      )
+        .bind(orderId, String(existing.website_id))
+        .run();
+    } catch {
+      // Assignment table is optional; the order write above remains authoritative.
+    }
+  }
 
   // INVENTORY SAFETY: Idempotent stock restoration on order cancellation or rejection
   const RESTORABLE_ORDER_STATUSES = ['placed', 'confirmed', 'preparing', 'packed', 'ready_for_pickup'];
@@ -276,7 +345,8 @@ export async function onRequestPatch(
            cod_amount_inr = excluded.cod_amount_inr,
            last_lat = NULL,
            last_lng = NULL,
-           updated_at = datetime('now')`
+           updated_at = datetime('now')
+         WHERE delivery_assignments.status NOT IN ('delivered', 'returned')`
       )
         .bind(
           String(existing.website_id),
@@ -321,7 +391,9 @@ export async function onRequestPatch(
     subject: `Order #${orderId} — ${ownerEventType}`,
     message: `Order #${orderId} is now ${nextOrderStatus}.`,
     recipientUserId: String(existing.customer_user_id || '') || null,
-    recipientContact: String(existing.customer_email || existing.customer_phone || ''),
+    recipientContact: maskContactForLog(
+      String(existing.customer_email || existing.customer_phone || '')
+    ),
   });
 
   if (deliveryPartnerId !== undefined && deliveryPartnerId !== null) {
@@ -329,7 +401,7 @@ export async function onRequestPatch(
       websiteId: String(existing.website_id),
       eventType: 'order_assigned',
       subject: `Delivery assignment #${orderId}`,
-      message: `Order #${orderId} assigned to ${deliveryPartnerName || 'delivery partner'}.`,
+      message: `Order #${orderId} assigned to ${maskPersonName(deliveryPartnerName || 'delivery partner')}.`,
       recipientUserId: String(deliveryPartnerId),
     });
   }

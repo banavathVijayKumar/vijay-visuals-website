@@ -15,6 +15,7 @@ import {
   sanitizeText,
 } from '../../_shared';
 import { isMissingTableError, mapOrderRowToUi } from '../../_tenantAccess';
+import { estimateEtaForOrder } from '../../delivery/_etaEstimate';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -225,6 +226,7 @@ export async function onRequestGet(
       tenantName: sanitizeText(pub?.business_name || '', 80) || 'Store',
       tenantPhone,
       deliveryPartner: null,
+      eta: await estimateEtaForOrder(env, order),
       verificationRequiredForFullPii: !isAuthorized,
     });
   } catch (err) {

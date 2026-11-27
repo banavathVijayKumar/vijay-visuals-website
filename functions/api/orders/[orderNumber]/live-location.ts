@@ -15,6 +15,7 @@ import {
   sanitizeText,
 } from '../../_shared';
 import { isFreshLocation } from '../../delivery/_locationState';
+import { estimateEtaForOrder } from '../../delivery/_etaEstimate';
 
 // `packed` is the D1 representation of the ready_for_pickup milestone
 // (store_orders.order_status CHECK), so both labels are accepted here.
@@ -230,6 +231,7 @@ export async function onRequestGet(
     pollingAllowed: true,
     recommendedPollIntervalMs: 20000,
     mapsConfigured,
+    eta: await estimateEtaForOrder(env, order),
     latestPing,
     lastKnownPing,
     stale,

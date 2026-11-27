@@ -167,10 +167,10 @@ class MockD1 {
               return { results: [] };
             }
           },
-          async run(): Promise<{ success: boolean }> {
+          async run(): Promise<{ success: boolean; meta: { changes: number } }> {
             const stmt = db.prepare(sql);
-            stmt.run(...params);
-            return { success: true };
+            const info = stmt.run(...params);
+            return { success: true, meta: { changes: Number(info.changes || 0) } };
           },
         };
       },
@@ -192,10 +192,10 @@ class MockD1 {
           return { results: [] };
         }
       },
-      async run(): Promise<{ success: boolean }> {
+      async run(): Promise<{ success: boolean; meta: { changes: number } }> {
         const stmt = db.prepare(sql);
-        stmt.run();
-        return { success: true };
+        const info = stmt.run();
+        return { success: true, meta: { changes: Number(info.changes || 0) } };
       },
     };
   }

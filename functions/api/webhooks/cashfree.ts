@@ -52,6 +52,7 @@ import {
   normalizeCashfreeRefundId,
   parseCashfreeJsonPreservingLargeIds,
 } from '../payments/_cashfreeIdentity';
+import { autoAssignPaidOrder } from '../delivery/_autoAssignment';
 
 function toIntegerPaise(amount: unknown): number {
   if (typeof amount === 'string' && amount.trim() === '') return -1;
@@ -847,6 +848,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           cashfreeSettlementIdempotencyKey(orderId, cfPaymentId)
         )
         .run();
+
+      // Paid storefront order automation. The unique order_id constraint and
+      // OR IGNORE insert make repeated webhook/verify calls safe.
+      await autoAssignPaidOrder(env, Number(storeOrder.id));
     }
 
     // 6. Verified payment notifications. Storefront orders and platform package

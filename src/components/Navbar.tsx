@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ExternalLink, LogOut, Menu, Sparkles, User, X, ArrowRight } from 'lucide-react';
+import { ExternalLink, LogOut, Menu, Sparkles, User, X, ArrowRight } from 'lucide-react';
 import { AppView } from '../types/platform';
 import { getI18n, Lang } from '../data/content';
 import { useAuth } from '../hooks/useAuth';
@@ -15,7 +15,6 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) => {
   const { profile, signInWithGoogle, logout, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [servicesDropdownOpen, setServicesDropdownOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -69,7 +68,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
 
   const scrollToSection = (id: string) => {
     setMobileOpen(false);
-    setServicesDropdownOpen(false);
     setAccountMenuOpen(false);
 
     if (activeView !== 'studio') {
@@ -91,7 +89,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
   const handleNavigateView = (view: AppView) => {
     onNavigate(view);
     setMobileOpen(false);
-    setServicesDropdownOpen(false);
     setAccountMenuOpen(false);
   };
 
@@ -106,14 +103,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
   };
 
   const viewHref = (view: AppView) => (view === 'studio' ? '/' : `/${view}`);
-
-  const servicesList = [
-    { name: 'Website Design & Dev', desc: 'Custom storefronts & business portals' },
-    { name: 'Video Editing & Cinema', desc: '4K color grading, VFX & sound design' },
-    { name: 'Photo Editing & Retouch', desc: 'Commercial studio product & model polish' },
-    { name: 'Graphic Design & Branding', desc: 'Logos, 3D typography & visual identities' },
-    { name: 'Digital Growth Solutions', desc: 'SEO, multi-currency & AI automation' },
-  ];
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#1E1E28]/80 bg-[#060810]/95 backdrop-blur-md w-full">
@@ -141,9 +130,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
             <span className="font-luxury font-black text-sm sm:text-base tracking-[0.14em] bg-gradient-to-r from-[#FFF3C7] via-[#ECC86A] to-[#C29729] bg-clip-text text-transparent leading-none drop-shadow-sm">
               VIJAY VISUALS
             </span>
-            <span className="hidden text-[9px] sm:block sm:text-[10px] text-[#A5A5BA] tracking-tight font-medium mt-1 truncate">
-              Creative Solutions for a Digital World
-            </span>
           </div>
         </a>
 
@@ -169,46 +155,14 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
             About
           </a>
 
-          {/* Services with Dropdown */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setServicesDropdownOpen((prev) => !prev)}
-              onMouseEnter={() => setServicesDropdownOpen(true)}
-              className="inline-flex min-h-11 items-center gap-1 px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
-            >
-              <span>Services</span>
-              <ChevronDown className="w-3 h-3 text-[#D4AF37] opacity-80" />
-            </button>
-
-            {servicesDropdownOpen && (
-              <div
-                onMouseLeave={() => setServicesDropdownOpen(false)}
-                className="absolute left-0 mt-1 w-64 rounded-xl border border-[#2D2D3E] bg-[#0C0F1A]/95 backdrop-blur-md p-2 shadow-2xl z-50 animate-fadeIn"
-              >
-                <div className="px-3 py-1.5 border-b border-[#1E1E2C] mb-1">
-                  <span className="text-[10px] font-bold text-[#D4AF37] uppercase tracking-wider">
-                    Our Creative Craft
-                  </span>
-                </div>
-                {servicesList.map((srv, idx) => (
-                  <a
-                    key={idx}
-                    href="/#services"
-                    onClick={(event) => handleSectionClick(event, 'services')}
-                    className="w-full block text-left px-3 py-2 rounded-lg hover:bg-[#161B2E] transition-colors group"
-                  >
-                    <p className="text-xs font-semibold text-white group-hover:text-[#ECC86A]">
-                      {srv.name}
-                    </p>
-                    <p className="text-[10px] text-[#8E8EA2] group-hover:text-[#B6B6C8]">
-                      {srv.desc}
-                    </p>
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Direct link to the five-card Our Platform section */}
+          <a
+            href="/#services"
+            onClick={(event) => handleSectionClick(event, 'services')}
+            className="inline-flex min-h-11 items-center px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
+          >
+            Our Platform
+          </a>
 
           <a
             href="/#portfolio"
@@ -224,6 +178,18 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
             className="inline-flex min-h-11 items-center px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
             Packages
+          </a>
+
+          <a
+            href={viewHref('demo-builder')}
+            onClick={(event) => handleViewClick(event, 'demo-builder')}
+            className={`inline-flex min-h-11 items-center px-3 py-1.5 rounded-full transition-all ${
+              activeView === 'demo-builder'
+                ? 'bg-[#251E10]/90 text-[#ECC86A] border border-[#D4AF37]/60 font-semibold'
+                : 'hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Demo Business
           </a>
 
           <a
@@ -385,10 +351,17 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
             </button>
             <button
               type="button"
+              onClick={() => handleNavigateView('demo-builder')}
+              className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3.5 text-xs font-semibold text-[#ECC86A] bg-[#221B0F] border border-[#D4AF37]/40"
+            >
+              Demo Business
+            </button>
+            <button
+              type="button"
               onClick={() => scrollToSection('services')}
               className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3.5 text-xs font-medium text-[#C4C4D4] bg-[#111522] border border-[#222A3D]"
             >
-              Services
+              Our Platform
             </button>
             <button
               type="button"
@@ -465,6 +438,16 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
             <p className="text-[10px] font-bold text-[#8A8A9E] uppercase tracking-wider px-3 pb-1">
               Platform Features &amp; Tools
             </p>
+            <a
+              href={viewHref('demo-builder')}
+              onClick={(event) => handleViewClick(event, 'demo-builder')}
+              className="w-full flex items-center justify-between min-h-11 py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+            >
+              <span>Demo Business Builder</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40">
+                New
+              </span>
+            </a>
             <a
               href={viewHref('demo')}
               onClick={(event) => handleViewClick(event, 'demo')}

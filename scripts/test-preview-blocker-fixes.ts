@@ -144,7 +144,11 @@ await it('advertised features and SEO checker labels are truthful', () => {
   }
   assert.match(templates, /Manual Metadata & Schema Checker/);
   assert.equal(content.includes('9 structured AI modes grounded strictly in your verified store metrics'), false);
-  assert.match(content, /no invented prices or offers/);
+  // The old AI-automation service card was intentionally replaced by the
+  // five-card Our Platform section; assert the new truthful positioning.
+  assert.match(content, /OUR PLATFORM/);
+  assert.match(content, /Connecting Customers, Local Businesses & Delivery Partners in One Smart Platform\./);
+  assert.equal(content.includes('AI Automation Center & 12-Language Content Studio'), false);
   assert.equal(growthHub.includes('Free Technical SEO Audit'), false);
   assert.match(growthHub, /Manual SEO Metadata Checker/);
   assert.match(growthHub, /does not crawl live URLs/);

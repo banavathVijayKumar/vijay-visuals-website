@@ -12,6 +12,9 @@
 /demo                         /index.html  200
 /demo/                        /index.html  200
 /demo/*                       /index.html  200
+/demo-builder                 /index.html  200
+/demo-builder/                /index.html  200
+/demo-builder/*               /index.html  200
 /ai                           /index.html  200
 /ai/*                         /index.html  200
 /dashboards                   /index.html  200

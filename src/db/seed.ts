@@ -281,7 +281,7 @@ export async function ensurePlatformSeeded() {
         storageGb: 0,
         featuresJson: JSON.stringify([
           '2,500 monthly Gemini AI automation credits',
-          '24/7 AI Customer Support Chatbot grounded in store catalog',
+          'AI-assisted customer replies grounded in store catalog',
           'AI Product Descriptions (English & Telugu), Marketing Captions & Sales Forecasts',
           'Automated workflow builder with approval gates & audit logs',
         ]),

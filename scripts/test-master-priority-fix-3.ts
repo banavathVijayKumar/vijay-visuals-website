@@ -112,6 +112,10 @@ class MockD1Statement {
 
     // Query store_orders
     if (normalized.includes('from store_orders')) {
+      if (normalized.includes('where id = ?')) {
+        const orderId = Number(this.params[0]);
+        return { results: this.db.orders.filter((o) => Number(o.id) === orderId) as T[] };
+      }
       const websiteId = this.params[0];
       const found = websiteId ? this.db.orders.filter((o) => o.website_id === websiteId) : this.db.orders;
       if (normalized.includes('count(*)')) {
@@ -140,8 +144,41 @@ class MockD1Statement {
       return { results: found as T[] };
     }
 
+    // Query delivery assignments (assignment-scoped authorization)
+    if (normalized.includes('from delivery_assignments')) {
+      const orderId = Number(this.params[0]);
+      const websiteId = String(this.params[1] || '');
+      const found = this.db.assignments.filter(
+        (a) => Number(a.order_id) === orderId && String(a.website_id) === websiteId
+      );
+      return { results: found as T[] };
+    }
+
     // Query tenant_memberships
     if (normalized.includes('from tenant_memberships')) {
+      if (
+        (normalized.includes('where id = ?') || normalized.includes('where website_id = ?')) &&
+        normalized.includes("role = 'delivery_partner'") &&
+        normalized.includes("status = 'active'") &&
+        normalized.includes('user_id = ?')
+      ) {
+        const scope = String(this.params[0] ?? '');
+        const userId = String(this.params[1] ?? '');
+        const authSubject = String(this.params[2] ?? '');
+        const email = String(this.params[3] ?? '');
+        const found = this.db.memberships.filter(
+          (m) =>
+            m.role === 'delivery_partner' &&
+            m.status === 'active' &&
+            (String(m.id) === scope || m.website_id === scope) &&
+            (m.user_id === userId || m.user_id === authSubject || m.email === email)
+        );
+        return { results: found as T[] };
+      }
+      if (normalized.includes('where id = ?') && !normalized.includes('user_id = ?')) {
+        const membershipId = Number(this.params[0]);
+        return { results: this.db.memberships.filter((m) => Number(m.id) === membershipId) as T[] };
+      }
       if (normalized.includes('tm.role = \'delivery_partner\'') || normalized.includes('where tm.role =')) {
         const userId = this.params[0];
         const email = this.params[2];
@@ -314,6 +351,7 @@ class MockD1Database {
   public products: any[] = [];
   public appointments: any[] = [];
   public memberships: any[] = [];
+  public assignments: any[] = [];
   public leads: any[] = [];
   public finances: any[] = [];
   public warehouses: any[] = [];
@@ -512,6 +550,20 @@ async function runTests() {
       email: 'ramu@delivery.com',
       role: 'delivery_partner',
       status: 'active',
+      permissions_json: JSON.stringify(['deliveryApproval:owner_approved', 'availability:online']),
+    },
+  ];
+
+  db.assignments = [
+    {
+      id: 1,
+      website_id: 'web_royal_feast',
+      order_id: 2,
+      delivery_partner_user_id: 10,
+      status: 'assigned',
+      last_lat: null,
+      last_lng: null,
+      updated_at: new Date().toISOString(),
     },
   ];
 
@@ -629,7 +681,7 @@ async function runTests() {
         name: 'Auto WhatsApp Invoice',
         triggerType: 'order_delivered',
         conditionText: 'payment_status = paid',
-        actionType: 'send_whatsapp_invoice',
+        actionType: 'manual_invoice_review',
         requiresApproval: true,
         scheduleCron: 'realtime',
       }),
@@ -647,7 +699,7 @@ async function runTests() {
         Authorization: `Bearer ${tenantOwnerToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ enabled: false }),
+      body: JSON.stringify({ enabled: true }),
     });
     const toggleRes = await workflowTogglePatch({ request: toggleReq, env, params: { id: String(wfId) }, next: async () => new Response() });
     assert(toggleRes.status === 200, 'Toggle workflow returns HTTP 200');
@@ -915,21 +967,11 @@ async function runTests() {
     const stRes = await deliveryStatusPatch({ request: stReq, env, params: { id: '2' }, next: async () => new Response() });
     assert(stRes.status === 200, 'Update delivery order status returns HTTP 200');
 
-    // D. PATCH Proof of Delivery (POD)
-    const podReq = new Request('https://master.vijay-visuals-site.pages.dev/api/delivery/orders/2/pod', {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${driverToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        recipientName: 'Priya Reddy',
-        podCode: 'POD-1002',
-        codCollected: true,
-      }),
-    });
-    const podRes = await deliveryPodPatch({ request: podReq, env, params: { id: '2' }, next: async () => new Response() });
-    assert(podRes.status === 200, 'Record POD returns HTTP 200');
+    // D. Legacy POD is retired; delivery completion requires /secure-pod.
+    const podRes = await deliveryPodPatch();
+    assert(podRes.status === 410, 'Legacy POD returns HTTP 410 Gone');
+    const podBody = (await podRes.json()) as Record<string, any>;
+    assert(podBody.code === 'SECURE_POD_REQUIRED', 'Legacy POD points to secure POD');
   }
 
   // TEST 14: Customer Consent & Privacy Data Export

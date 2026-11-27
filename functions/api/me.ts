@@ -13,6 +13,7 @@ import {
   sanitizeText,
 } from './_shared';
 import { PublicationRow, mapPublicationToTenant } from './_tenantMapper';
+import { hasDurableOwnerApproval, readRiderState } from './delivery/_riderState';
 
 function mapRoleToUi(
   role: string,
@@ -51,6 +52,10 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   const ownedTenants: Array<Record<string, unknown>> = [];
   const deliveryProfiles: Array<Record<string, unknown>> = [];
+  // Server-computed delivery portal eligibility. Never inferred from the
+  // client-visible profile role: only an active delivery-partner membership
+  // (or unchanged super-admin access) can enable the delivery workspace.
+  let deliveryEligible = auth.user.isSuperAdmin;
   let savedAddresses: string[] = [];
   let savedPhone = '';
 
@@ -141,7 +146,8 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     // Load delivery partner profiles if user is assigned as delivery partner
     try {
       const delivRes = await env.DB.prepare(
-        `SELECT tm.id, tm.website_id, tm.role, tm.status, cwp.business_name, cwp.public_slug
+        `SELECT tm.id, tm.website_id, tm.role, tm.status, tm.permissions_json,
+                cwp.business_name, cwp.public_slug
          FROM tenant_memberships tm
          LEFT JOIN customer_website_publications cwp ON tm.website_id = cwp.website_id
          WHERE tm.role = 'delivery_partner' AND tm.status = 'active'
@@ -154,11 +160,16 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
           website_id: string;
           role: string;
           status: string;
+          permissions_json: string;
           business_name: string | null;
           public_slug: string | null;
         }>();
 
       for (const d of delivRes.results || []) {
+        // No new membership column is required: the durable marker lives in
+        // permissions_json. Legacy active self-registrations are not eligible.
+        if (!hasDurableOwnerApproval(d)) continue;
+        const riderState = readRiderState(d.permissions_json);
         deliveryProfiles.push({
           id: d.id,
           websiteId: d.website_id,
@@ -166,11 +177,17 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
           slug: d.public_slug,
           status: d.status,
           role: d.role,
+          deliveryApproval: riderState.deliveryApproval,
+          availability: riderState.availability,
         });
       }
     } catch {
       // Optional table not yet migrated
     }
+
+    // The query above already filters to status='active'; invited and
+    // suspended memberships therefore fail closed here.
+    if (deliveryProfiles.length > 0) deliveryEligible = true;
 
     // Load saved addresses & phone from optional customer_addresses table
     try {
@@ -204,6 +221,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     },
     ownedTenants,
     deliveryProfiles,
+    deliveryEligible,
   });
 }
 

@@ -1,5 +1,9 @@
 // ============================================================================
 // PATCH /api/delivery/partners/:id/availability — Toggle Partner Online Status
+//
+// Online/offline is durable rider state inside permissions_json. It never
+// writes membership status: offline keeps an active approved membership and
+// assignment authority, while only auto-assignment and ETA exclude the rider.
 // ============================================================================
 
 import { requireUser } from '../../../_auth';
@@ -9,6 +13,11 @@ import {
   jsonResponse,
   parseJsonBody,
 } from '../../../_shared';
+import {
+  hasDurableOwnerApproval,
+  readRiderState,
+  withRiderState,
+} from '../../_riderState';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -26,34 +35,70 @@ export async function onRequestPatch(
   }
 
   const partnerId = Number(params.id);
-  if (!Number.isFinite(partnerId) || partnerId <= 0) {
+  if (!Number.isInteger(partnerId) || partnerId <= 0) {
     return jsonResponse({ error: 'Invalid partner ID.' }, 400);
   }
 
   const body = await parseJsonBody<{ available?: boolean }>(request);
-  const nextStatus = body?.available ? 'active' : 'suspended';
+  const availability = body?.available === true ? 'online' : 'offline';
 
   try {
-    const result = auth.user.isSuperAdmin
-      ? await env.DB.prepare(
-          `UPDATE tenant_memberships SET status = ? WHERE id = ? AND role = 'delivery_partner'`
-        )
-          .bind(nextStatus, partnerId)
-          .run()
-      : await env.DB.prepare(
-          `UPDATE tenant_memberships SET status = ?
-           WHERE id = ? AND role = 'delivery_partner'
-             AND (user_id = ? OR user_id = ? OR email = ?)`
-        )
-          .bind(nextStatus, partnerId, auth.user.id, auth.user.authSubject, auth.user.email)
-          .run();
+    const current = await env.DB.prepare(
+      `SELECT id, website_id, role, status, permissions_json, user_id, email
+       FROM tenant_memberships
+       WHERE id = ? AND role = 'delivery_partner'
+       LIMIT 1`
+    )
+      .bind(partnerId)
+      .first<Record<string, any>>();
 
-    if (!auth.user.isSuperAdmin && result.meta?.changes === 0) {
+    if (!current?.id) {
       return jsonResponse({ error: 'Delivery partner profile not found.' }, 404);
     }
 
-    return jsonResponse({ success: true, available: body?.available ?? true });
-  } catch (err) {
+    if (!auth.user.isSuperAdmin) {
+      const isSelf =
+        String(current.user_id || '') === auth.user.id ||
+        String(current.user_id || '') === auth.user.authSubject ||
+        String(current.email || '').toLowerCase() === String(auth.user.email || '').toLowerCase();
+      if (!isSelf) {
+        return jsonResponse({ error: 'You can only change your own availability.' }, 403);
+      }
+    }
+
+    // Durable approval, not membership status, gates going online. Suspended or
+    // unapproved riders stay blocked; an approved rider needs no reapproval.
+    if (!hasDurableOwnerApproval(current)) {
+      return jsonResponse(
+        { error: 'Owner approval is required before going online.' },
+        403
+      );
+    }
+
+    const observedPermissionsJson = String(current.permissions_json || '');
+    const nextPermissionsJson = withRiderState(observedPermissionsJson, { availability });
+    const result = await env.DB.prepare(
+      `UPDATE tenant_memberships
+       SET permissions_json = ?, updated_at = datetime('now')
+       WHERE id = ? AND role = 'delivery_partner' AND permissions_json = ?`
+    )
+      .bind(nextPermissionsJson, partnerId, observedPermissionsJson)
+      .run();
+
+    if (!result.meta?.changes) {
+      return jsonResponse(
+        { error: 'Availability changed concurrently. Reload and retry.' },
+        409
+      );
+    }
+
+    return jsonResponse({
+      success: true,
+      availability,
+      available: availability === 'online',
+      deliveryApproval: readRiderState(nextPermissionsJson).deliveryApproval,
+    });
+  } catch {
     return jsonResponse({ error: 'Failed to update partner availability.' }, 500);
   }
 }

@@ -7,6 +7,7 @@
 
 import { getPackageMonthlyAiCredits } from './_aiCredits';
 import { PLAN_TIER_SET, type PlanTier } from './_planTiers';
+import { sanitizeDemoDraftForStorage, type SanitizedDemoDraft } from './_demoDraft';
 
 export interface PublicationRow {
   rowid?: number | null;
@@ -116,6 +117,7 @@ export interface MappedTenantRecord {
   };
   sectionOrder: string[];
   customPages: Array<{ slug: string; title: string; content: string }>;
+  demoBuilderDraft?: SanitizedDemoDraft;
   published: boolean;
   planTier: PlanTier;
   pwaEnabled: boolean;
@@ -434,6 +436,8 @@ export function mapPublicationToTenant(
         .slice(0, 10)
     : [];
 
+  const demoBuilderDraft = sanitizeDemoDraftForStorage(parsed.demoBuilderDraft);
+
   return {
     id: rowId,
     websiteId: row.website_id,
@@ -497,6 +501,7 @@ export function mapPublicationToTenant(
     socialLinks,
     sectionOrder,
     customPages,
+    ...(demoBuilderDraft ? { demoBuilderDraft } : {}),
     published: row.status === 'published',
     planTier,
     pwaEnabled: parsed.pwaEnabled === true,

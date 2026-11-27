@@ -185,7 +185,7 @@ await test('configured providers are reported but still not contacted', async ()
   assert.equal(externalCalls, 0);
 });
 
-await test('dashboard tabs are derived from role and ownership', () => {
+await test('dashboard tabs are derived from server-verified eligibility', () => {
   const asSet = (tabs: DashboardRoleTab[]) => new Set(tabs);
   assert.deepEqual(getAllowedDashboardTabs('customer', 0), ['customer']);
 
@@ -194,10 +194,13 @@ await test('dashboard tabs are derived from role and ownership', () => {
   assert.equal(owner.has('delivery'), false);
   assert.equal(owner.has('super_admin'), false);
 
-  const rider = asSet(getAllowedDashboardTabs('delivery_partner', 0));
-  assert.equal(rider.has('delivery'), true);
-  assert.equal(rider.has('owner'), false);
-  assert.equal(rider.has('super_admin'), false);
+  const unapprovedRider = asSet(getAllowedDashboardTabs('delivery_partner', 0, false));
+  assert.equal(unapprovedRider.has('delivery'), false);
+
+  const approvedRider = asSet(getAllowedDashboardTabs('customer', 0, true));
+  assert.equal(approvedRider.has('delivery'), true);
+  assert.equal(approvedRider.has('owner'), false);
+  assert.equal(approvedRider.has('super_admin'), false);
 
   const admin = asSet(getAllowedDashboardTabs('super_admin', 0));
   for (const tab of ['owner', 'delivery', 'customer', 'super_admin'] as DashboardRoleTab[]) {
@@ -214,7 +217,7 @@ await test('dashboard tabs are derived from role and ownership', () => {
 
 await test('source guards prevent hidden-tab and notification-wiring regressions', () => {
   const hub = read('src/components/DashboardsHub.tsx');
-  assert.match(hub, /getAllowedDashboardTabs\(profile\?\.role, ownedTenants\.length\)/);
+  assert.match(hub, /getAllowedDashboardTabs\(profile\?\.role, ownedTenants\.length, deliveryEligible\)/);
   for (const tab of ['owner', 'delivery', 'customer', 'super_admin']) {
     assert.match(hub, new RegExp(`canViewTab\\('${tab}'\\)`));
   }
@@ -234,10 +237,15 @@ await test('source guards prevent hidden-tab and notification-wiring regressions
     'functions/api/orders.ts',
     'functions/api/owner/orders/[id].ts',
     'functions/api/delivery/orders/[id]/status.ts',
-    'functions/api/delivery/orders/[id]/pod.ts',
+    'functions/api/delivery/orders/[id]/secure-pod.ts',
   ]) {
     assert.match(read(file), /dispatchLifecycleNotification/);
   }
+
+  const legacyPod = read('functions/api/delivery/orders/[id]/pod.ts');
+  assert.match(legacyPod, /SECURE_POD_REQUIRED/);
+  assert.match(legacyPod, /410/);
+  assert.doesNotMatch(legacyPod, /dispatchLifecycleNotification/);
 });
 
 globalThis.fetch = originalFetch;

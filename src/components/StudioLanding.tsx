@@ -1,12 +1,15 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ArrowRight,
+  BarChart3,
+  Building2,
   Check,
   CreditCard,
   ExternalLink,
   Eye,
   Globe,
   Instagram,
+  LayoutDashboard,
   Loader2,
   Mail,
   MessageCircle,
@@ -15,6 +18,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  ShoppingBag,
   Sparkles,
   Truck,
   X,
@@ -30,8 +34,9 @@ import {
   formatMoneyFromInr,
   getI18n,
   Lang,
+  PLATFORM_SECTION,
+  PLATFORM_SERVICES_DATA,
   PORTFOLIO_DATA,
-  SERVICES_DATA,
   SUPPORTED_LANGUAGES,
   TEMPLATE_CATEGORY_COUNT,
   TEMPLATE_COUNT,
@@ -46,6 +51,7 @@ import { VijayVisualsLogo } from './VijayVisualsLogo';
 import { PWAInstallButton } from './PWAControls';
 import { GlobalGrowthHub } from './GlobalGrowthHub';
 import { CinematicHero } from './CinematicHero';
+import { VideoShowcaseSection } from './VideoShowcaseSection';
 import heroStudioImg from '../assets/images/hero_vijay_studio_1795055804014.jpg';
 import fashionStoreImg from '../assets/images/store_fashion_royal_1795055802960.jpg';
 import electronicsStoreImg from '../assets/images/store_electronics_audio_1795055804216.jpg';
@@ -55,6 +61,14 @@ const PORTFOLIO_IMAGE_MAP: Record<string, string> = {
   'deccan-couture': fashionStoreImg,
   'nocturne-audio': electronicsStoreImg,
   'nizam-kitchen': diningStoreImg,
+};
+
+const PLATFORM_ICONS: Record<string, typeof Truck> = {
+  'online-shopping': ShoppingBag,
+  'business-management': LayoutDashboard,
+  'delivery-tracking': Truck,
+  'multi-store-commerce': Building2,
+  'growth-insights': BarChart3,
 };
 
 interface StudioLandingProps {
@@ -531,7 +545,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       {/* Grounded Studio Core Capabilities Row */}
       <section className="py-8 border-b border-[#1C1C26] bg-[#070913]">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
             <div>
               <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">{TEMPLATE_COUNT} Templates</p>
               <p className="text-xs text-[#8E8EA2] mt-1">
@@ -541,10 +555,6 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
             <div>
               <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">Custom Web Design</p>
               <p className="text-xs text-[#8E8EA2] mt-1">Responsive storefronts, custom domains &amp; PWAs</p>
-            </div>
-            <div>
-              <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">Cinematic Media</p>
-              <p className="text-xs text-[#8E8EA2] mt-1">Professional video editing, photography &amp; branding</p>
             </div>
             <div>
               <p className="font-luxury text-xl sm:text-2xl font-semibold text-white">4 Role Portals</p>
@@ -619,41 +629,71 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
         </div>
       </section>
 
-      {/* Core Platform Capabilities (01-04 Editorial List) */}
-      <section id="services" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-24">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="max-w-2xl mb-12">
-            <p className="text-xs font-medium text-[#D4AF37] mb-2">Platform Architecture & Studio Services</p>
-            <h2 className="font-luxury text-2xl md:text-4xl font-bold text-white text-balance">
-              Everything Required to Run an Independent Online Business
+      {/* Our Platform — exactly five connected-commerce capability cards */}
+      <section
+        id="services"
+        aria-labelledby="our-platform-title"
+        className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-24"
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="max-w-3xl mb-10 md:mb-12">
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-[#D4AF37] mb-3">
+              VIJAY VISUALS Platform
+            </p>
+            <h2
+              id="our-platform-title"
+              className="font-luxury text-3xl md:text-4xl font-bold tracking-wide text-white text-balance"
+            >
+              {PLATFORM_SECTION.title}
             </h2>
+            <p className="mt-3 text-base md:text-lg font-medium leading-relaxed text-[#ECC86A]">
+              {PLATFORM_SECTION.subtitle}
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-[#A3A3B5]">
+              {PLATFORM_SECTION.description}
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {SERVICES_DATA.map((service) => (
-              <div
-                key={service.id}
-                className="rounded-xl border border-[#20202C] bg-[#0D0D13] p-6 space-y-4"
-              >
-                <div className="flex items-baseline justify-between gap-4">
-                  <h3 className="font-luxury text-xl font-semibold text-white">
-                    {service.number}. {service.title}
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {PLATFORM_SERVICES_DATA.map((service, index) => {
+              const Icon = PLATFORM_ICONS[service.id] ?? ShoppingBag;
+              return (
+                <article
+                  key={service.id}
+                  className="group relative flex flex-col rounded-2xl border border-[#242432] bg-gradient-to-b from-[#101018] to-[#0B0B11] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition-all duration-300 hover:-translate-y-1 hover:border-[#D4AF37]/60 hover:shadow-[0_16px_40px_rgba(0,0,0,0.4)]"
+                >
+                  <div className="mb-5 flex items-start justify-between gap-4">
+                    <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/10 text-[#ECC86A] transition-colors group-hover:bg-[#D4AF37]/20">
+                      <Icon className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <span className="font-mono text-[11px] tracking-[0.2em] text-[#737387]">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+                  </div>
+                  <h3 className="font-luxury text-lg md:text-xl font-semibold leading-snug text-white">
+                    {service.title}
                   </h3>
-                </div>
-                <p className="text-sm text-[#A2A2B4] leading-relaxed">{service.shortDescription}</p>
-                <ul className="space-y-2 pt-2 border-t border-[#1B1B26] text-xs text-[#CFCFDA]">
-                  {service.deliverables.map((d) => (
-                    <li key={d} className="flex items-start gap-2">
-                      <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0 mt-0.5" />
-                      <span>{d}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+                  <p className="mt-3 text-sm leading-relaxed text-[#A9A9BA]">{service.description}</p>
+                  <ul className="mt-5 space-y-2 border-t border-[#222230] pt-4">
+                    {service.highlights.map((highlight) => (
+                      <li
+                        key={highlight}
+                        className="flex items-start gap-2.5 text-xs leading-relaxed text-[#D5D5E0]"
+                      >
+                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#D4AF37]" aria-hidden="true" />
+                        <span>{highlight}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              );
+            })}
           </div>
         </div>
       </section>
+
+      {/* Official VIJAY VISUALS promotional demo showcase */}
+      <VideoShowcaseSection lang={lang} onChangeLang={onChangeLang} onNavigate={onNavigate} />
 
       {/* Live Multi-Tenant Business Marketplace */}
       {renderMarketplaceSection()}

@@ -35,6 +35,7 @@ import {
   mapPublicationToTenant,
 } from '../_tenantMapper';
 import { getEdgeCashfreeStatus } from '../payments/_cashfree';
+import { sanitizeDemoDraftForStorage } from '../_demoDraft';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{3,8}$/;
@@ -567,6 +568,11 @@ export async function onRequestPatch(
       .slice(0, 10);
   }
 
+  if (body.demoBuilderDraft !== undefined) {
+    const safeDraft = sanitizeDemoDraftForStorage(body.demoBuilderDraft);
+    if (safeDraft) current.demoBuilderDraft = safeDraft;
+  }
+
   // Server-side subscription entitlement verification (never trust frontend planTier or published flags)
   const entitlement = await checkTenantSubscriptionEntitlement(
     env,
@@ -609,6 +615,12 @@ export async function onRequestPatch(
   }
   if (body.deliveryFee !== undefined) {
     current.deliveryFee = Math.max(0, Math.min(10000, Math.round(Number(body.deliveryFee || 0))));
+  }
+  if (body.deliveryCommissionPct !== undefined) {
+    const pct = Number(body.deliveryCommissionPct || 0);
+    current.deliveryCommissionPct = Number.isFinite(pct)
+      ? Math.max(0, Math.min(100, Math.round(pct)))
+      : 0;
   }
   if (typeof body.codEnabled === 'boolean') current.codEnabled = body.codEnabled;
   if (typeof body.upiId === 'string') current.upiId = sanitizeText(body.upiId, 120);

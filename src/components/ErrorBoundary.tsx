@@ -4,7 +4,7 @@
 // - Provides section-level and application-level isolation.
 // - Renders a branded recovery UI with Retry and Return Home actions.
 // - Exposes ZERO stack traces, secrets, API keys, or database queries to users.
-// - Displays official agency support contact: +91 9381362201 / vk66278@gmail.com.
+// - Displays official platform support contact: +91 9381362201 / vk66278@gmail.com.
 // ============================================================================
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
@@ -152,7 +152,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             </button>
           </div>
 
-          {/* Official agency support is shown only on platform-owned pages. */}
+          {/* Official platform support is shown only on platform-owned pages. */}
           {!whiteLabel && (
             <div className="border-t border-[#202030] pt-4 mt-4 text-[11px] text-[#8E8EA2] space-y-2">
               <div className="font-semibold text-white">Need immediate technical assistance?</div>

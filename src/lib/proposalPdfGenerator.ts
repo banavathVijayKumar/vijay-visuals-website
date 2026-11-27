@@ -1,6 +1,6 @@
 // ============================================================================
 // VIJAY VISUALS — LUXURY GOLD & MATTE BLACK PROPOSAL PDF GENERATOR
-// Produces an international digital agency 9-page A4 print-ready proposal
+// Produces an international platform 9-page A4 print-ready proposal
 // with Deep Matte Black, Metallic Gold, device mockups, feature tables,
 // and honest transparent cost explanations.
 // ============================================================================
@@ -761,7 +761,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
       </div>
 
       <div style="background: rgba(234, 179, 8, 0.05); border: 1px solid rgba(234, 179, 8, 0.25); border-radius: 8px; padding: 12px; font-size: 9px; color: #E8D390; line-height: 1.5;">
-        <strong>Honest Digital Agency Ethics:</strong> Vijay Visuals establishes rock-solid technical SEO and search-engine compliance. We do <em>not</em> make fake or deceptive guarantees of "#1 Google Ranking in 7 days" or "guaranteed ₹10 Lakh sales", which are unethical and technically impossible for any agency to guarantee. Your growth comes from genuine business quality paired with elite digital presentation.
+        <strong>Honest Platform Ethics:</strong> Vijay Visuals establishes rock-solid technical SEO and search-engine compliance. We do <em>not</em> make fake or deceptive guarantees of "#1 Google Ranking in 7 days" or "guaranteed ₹10 Lakh sales", which are unethical and technically impossible for any platform to guarantee. Your growth comes from genuine business quality paired with elite digital presentation.
       </div>
     </div>
 

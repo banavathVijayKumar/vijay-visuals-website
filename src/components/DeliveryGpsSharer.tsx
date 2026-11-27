@@ -25,8 +25,16 @@ export const DeliveryGpsSharer: React.FC<DeliveryGpsSharerProps> = ({
 
   const watchIdRef = useRef<number | null>(null);
   const lastCoordsRef = useRef<{ lat: number; lng: number; sentAt: number } | null>(null);
+  const sharingRef = useRef(false);
 
-  const inTransit = orderStatus === 'ready_for_pickup' || orderStatus === 'out_for_delivery';
+  const inTransit =
+    orderStatus === 'ready_for_pickup' ||
+    orderStatus === 'packed' ||
+    orderStatus === 'out_for_delivery';
+
+  useEffect(() => {
+    sharingRef.current = sharing;
+  }, [sharing]);
 
   const clearWatcher = useCallback(() => {
     if (watchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
@@ -64,10 +72,14 @@ export const DeliveryGpsSharer: React.FC<DeliveryGpsSharerProps> = ({
     }
   }, [inTransit, sharing, stopSharing]);
 
-  // Clean up on unmount
+  // Clean up on unmount. Stopping the local watcher is not enough: the server
+  // row must also be cleared or the customer may keep seeing stale live GPS.
   useEffect(() => {
-    return () => clearWatcher();
-  }, [clearWatcher]);
+    return () => {
+      clearWatcher();
+      if (sharingRef.current) clearServerLocation();
+    };
+  }, [clearWatcher, clearServerLocation]);
 
   const startWatch = useCallback(() => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -136,6 +148,9 @@ export const DeliveryGpsSharer: React.FC<DeliveryGpsSharerProps> = ({
     const onVisibility = () => {
       if (document.hidden) {
         clearWatcher();
+        // Background pause must also clear server coordinates, otherwise the
+        // customer can keep seeing the last ping after the watcher has stopped.
+        clearServerLocation();
         setPausedByBackground(true);
         setStatusNote('Paused GPS automatically while app is in background (battery protection).');
       } else {
@@ -148,8 +163,9 @@ export const DeliveryGpsSharer: React.FC<DeliveryGpsSharerProps> = ({
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       clearWatcher();
+      if (sharingRef.current) clearServerLocation();
     };
-  }, [sharing, startWatch, clearWatcher]);
+  }, [sharing, startWatch, clearWatcher, clearServerLocation]);
 
   if (!inTransit) {
     return null;

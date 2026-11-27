@@ -75,6 +75,8 @@ import { CustomerLogoCustomizer } from './CustomerLogoCustomizer';
 import { CustomerWebsiteEditor } from './CustomerWebsiteEditor';
 import { BusinessLocationsManager } from './BusinessLocationsManager';
 import { DeliveryGpsSharer } from './DeliveryGpsSharer';
+import { DeliveryPickupScanner } from './DeliveryPickupScanner';
+import { DeliverySecurePod } from './DeliverySecurePod';
 import { DomainManagementCenter } from './DomainManagementCenter';
 import { AdminDomainManagement } from './AdminDomainManagement';
 import { OwnerReviewsManager } from './OwnerReviewsManager';
@@ -232,13 +234,13 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   onGoAiCenter,
   onNotify,
 }) => {
-  const { profile, ownedTenants, openAuthModal, refreshProfile } = useAuth();
+  const { profile, ownedTenants, deliveryEligible, openAuthModal, refreshProfile } = useAuth();
   const [roleTab, setRoleTab] = useState<RoleTab>('owner');
 
-  // Tabs are derived from the authenticated profile, not from client state.
+  // Tabs are derived from server-verified auth state, not from client state.
   const allowedTabs = useMemo(
-    () => getAllowedDashboardTabs(profile?.role, ownedTenants.length),
-    [profile?.role, ownedTenants.length]
+    () => getAllowedDashboardTabs(profile?.role, ownedTenants.length, deliveryEligible),
+    [profile?.role, ownedTenants.length, deliveryEligible]
   );
   const canViewTab = useCallback(
     (tab: RoleTab) => canViewDashboardTab(allowedTabs, tab),
@@ -288,6 +290,9 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       inactiveProductsCount?: number;
       lowStockCount: number;
       activeDeliveries: number;
+      deliveryExpenseInr?: number;
+      deliveryPayoutDueInr?: number;
+      deliveryRateCardPct?: number;
       salesTrend?: Array<{ date: string; revenue: number; orders: number }>;
       recentActivities?: Array<{ id: string; action: string; description: string; timestamp: string }>;
     };
@@ -350,6 +355,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     codEnabled: boolean;
     upiId: string;
     deliveryFee: number;
+    deliveryCommissionPct: number;
     businessHours: string;
     deliveryInfo: string;
     returnPolicy: string;
@@ -380,6 +386,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
   // --- CUSTOMER DASHBOARD STATE ---
   const [customerOrders, setCustomerOrders] = useState<OrderRecord[]>([]);
+  const [deliveryOtps, setDeliveryOtps] = useState<Record<number, string>>({});
   const [customerTickets, setCustomerTickets] = useState<SupportTicketRecord[]>([]);
   const [customerAppointments, setCustomerAppointments] = useState<AppointmentRecord[]>([]);
   const [profileName, setProfileName] = useState('');
@@ -472,17 +479,17 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       } catch {
         setSavedAddresses([]);
       }
-      if (profile.role === 'customer' && ownedTenants.length === 0) {
-        setRoleTab((prev) => (prev === 'owner' ? 'customer' : prev));
-      } else if (profile.role === 'delivery_partner') {
+      if (deliveryEligible && profile.role !== 'super_admin') {
         setRoleTab((prev) => (prev === 'owner' ? 'delivery' : prev));
+      } else if (profile.role === 'customer' && ownedTenants.length === 0) {
+        setRoleTab((prev) => (prev === 'owner' ? 'customer' : prev));
       } else if (profile.role === 'super_admin' && !selectedTenantId && ownedTenants[0]) {
         setSelectedTenantId(ownedTenants[0].id);
       } else if (ownedTenants[0] && !selectedTenantId) {
         setSelectedTenantId(ownedTenants[0].id);
       }
     }
-  }, [profile, ownedTenants, selectedTenantId]);
+  }, [profile, ownedTenants, deliveryEligible, selectedTenantId]);
 
   // Never leave a hidden workspace selected if the session role changes.
   useEffect(() => {
@@ -512,6 +519,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
           codEnabled: data.tenant.codEnabled !== false,
           upiId: data.tenant.upiId || '',
           deliveryFee: Number(data.tenant.deliveryFee || 0),
+          deliveryCommissionPct: Number(data.tenant.deliveryCommissionPct || 0),
           businessHours: data.tenant.businessHours || '',
           deliveryInfo: data.tenant.deliveryInfo || '',
           returnPolicy: data.tenant.returnPolicy || '',
@@ -1147,6 +1155,20 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     }
   };
 
+  const handleUpdateOwnerRiderApproval = async (partnerId: number, approved: boolean) => {
+    if (!selectedTenantId) return;
+    try {
+      await apiFetch(`/api/tenants/${selectedTenantId}/delivery-partners`, {
+        method: 'PATCH',
+        body: JSON.stringify({ partnerId, approved }),
+      });
+      await loadOwnerOverview(selectedTenantId);
+      onNotify(approved ? 'Delivery partner approved.' : 'Delivery partner suspended.');
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Unable to update delivery partner.');
+    }
+  };
+
   // --- PLATFORM PACKAGE RENEWAL & CHECKOUT ---
   const handleRenewPackage = async (selectedPlanCode?: string, selectedPlanName?: string) => {
     if (!profile) return;
@@ -1269,7 +1291,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
       });
       await refreshProfile();
       await loadDeliveryPortal();
-      onNotify('Registered as an active delivery partner.');
+      onNotify('Delivery partner registration submitted. Wait for owner approval.');
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Registration failed.');
     }
@@ -1761,9 +1783,15 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                                         className="rounded border border-[#2A2A38] bg-[#09090D] px-2 py-1 text-xs text-white"
                                       >
                                         <option value="">Unassigned</option>
-                                        {ownerData.deliveryPartners.map((dp) => (
+                                        {ownerData.deliveryPartners
+                                          .filter((dp) =>
+                                            ['owner_approved', 'owner_added'].includes(
+                                              String((dp as any).deliveryApproval || '')
+                                            )
+                                          )
+                                          .map((dp) => (
                                           <option key={dp.id} value={dp.id}>
-                                            {dp.name} ({dp.available ? 'Available' : 'Busy'})
+                                            {dp.name} ({(dp as any).availability === 'online' ? 'Online' : 'Offline'})
                                           </option>
                                         ))}
                                       </select>
@@ -2586,6 +2614,17 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                             className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 font-mono-tabular text-white"
                           />
                         </div>
+                        <div>
+                          <label className="block text-[#9D9DB0] mb-1">Rider Earnings Commission (%)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={settingsDraft.deliveryCommissionPct}
+                            onChange={(e) => setSettingsDraft({ ...settingsDraft, deliveryCommissionPct: Number(e.target.value) })}
+                            className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 font-mono-tabular text-white"
+                          />
+                        </div>
                         <div className="flex items-end pb-2">
                           <label className="inline-flex items-center gap-2 text-white cursor-pointer">
                             <input
@@ -2788,6 +2827,11 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                           <Truck className="w-4 h-4 text-[#D4AF37]" />
                           <span>Delivery Fleet ({ownerData.deliveryPartners.length})</span>
                         </h3>
+                        <p className="text-[11px] text-[#8E8EA2]">
+                          Delivery expenses ₹{(ownerData.stats.deliveryExpenseInr || 0).toLocaleString('en-IN')} ·
+                          Payouts due ₹{(ownerData.stats.deliveryPayoutDueInr || 0).toLocaleString('en-IN')} ·
+                          Rate card {(ownerData.stats.deliveryRateCardPct || 0)}% of verified order value
+                        </p>
                         <form onSubmit={handleAddOwnerRider} className="space-y-2.5">
                           <input
                             type="text"
@@ -2820,20 +2864,47 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                         </form>
                         <div className="divide-y divide-[#1D1D28] text-xs">
                           {ownerData.deliveryPartners.map((dp) => (
-                            <div key={dp.id} className="py-2.5 flex items-center justify-between">
+                            <div key={dp.id} className="py-2.5 flex items-center justify-between gap-3">
                               <div>
                                 <p className="text-white font-medium">{dp.name}</p>
                                 <p className="text-[#8E8EA2]">
                                   {dp.phone} · {dp.vehicleType}
                                 </p>
+                                <p className="font-mono-tabular text-[#ECC86A]">
+                                  {dp.totalDeliveries} trips · ₹{dp.totalEarnings.toLocaleString('en-IN')} earned
+                                </p>
+                                <p className="font-mono-tabular text-[#A3A3B5]">
+                                  Pending payout ₹{(dp.pendingPayoutInr || 0).toLocaleString('en-IN')}
+                                </p>
                               </div>
-                              <div className="text-right font-mono-tabular">
-                                <p className={dp.available ? 'text-emerald-400' : 'text-[#8E8EA2]'}>
-                                  {dp.available ? 'Available' : 'Offline'}
+                              <div className="text-right space-y-1">
+                                <p className={dp.status === 'active' ? 'text-emerald-400' : 'text-amber-400'}>
+                                  {dp.status === 'active'
+                                    ? `Approved · ${(dp as any).availability === 'online' ? 'Online' : 'Offline'}`
+                                    : dp.status === 'invited'
+                                      ? 'Pending approval'
+                                      : 'Suspended'}
                                 </p>
-                                <p className="text-[#ECC86A]">
-                                  {dp.totalDeliveries} trips · ₹{dp.totalEarnings.toLocaleString('en-IN')}
-                                </p>
+                                {dp.approvalUnverifiable && dp.status === 'active' && (
+                                  <p className="text-[11px] text-amber-400">Owner review required</p>
+                                )}
+                                {dp.status !== 'active' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleUpdateOwnerRiderApproval(dp.id, true)}
+                                    className="px-2 py-1 rounded border border-[#2C2C3C] text-[11px] text-white"
+                                  >
+                                    Approve
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleUpdateOwnerRiderApproval(dp.id, false)}
+                                    className="px-2 py-1 rounded border border-[#2C2C3C] text-[11px] text-[#A3A3B5]"
+                                  >
+                                    Suspend
+                                  </button>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -3035,32 +3106,56 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                     <p className="text-xs text-[#8E8EA2]">You are not registered as a delivery partner yet. Register on the right to start receiving deliveries.</p>
                   ) : (
                     <div className="space-y-3">
-                      {deliveryData.partners.map((p) => (
+                      {deliveryData.partners.map((p) => {
+                        const approval = String((p as any).deliveryApproval || 'pending');
+                        const approved = approval === 'owner_approved' || approval === 'owner_added';
+                        const online = (p as any).availability === 'online';
+                        return (
                         <div key={p.id} className="rounded-lg border border-[#222230] bg-[#09090D] p-3.5 flex items-center justify-between text-xs">
                           <div>
                             <p className="text-white font-semibold">{p.name}</p>
                             <p className="text-[#8E8EA2]">{p.vehicleType} · {p.phone}</p>
+                            <p className={approved ? 'text-emerald-400' : 'text-amber-400'}>
+                              {approval === 'owner_approved'
+                                ? 'Owner approved'
+                                : approval === 'owner_added'
+                                  ? 'Owner added'
+                                  : approval === 'revoked'
+                                    ? 'Approval revoked'
+                                    : 'Pending owner approval'}
+                            </p>
+                            <p className="text-[#8E8EA2]">
+                              Status: {p.status === 'active' ? 'Active' : p.status === 'invited' ? 'Invited' : 'Suspended'} · Availability: {online ? 'Online' : 'Offline'}
+                            </p>
                             <p className="font-mono-tabular text-[#ECC86A] mt-1">
                               {p.totalDeliveries} completed · ₹{p.totalEarnings.toLocaleString('en-IN')} earned
                             </p>
+                            <p className="font-mono-tabular text-[#A3A3B5]">
+                              Pending payout ₹{(p.pendingPayoutInr || 0).toLocaleString('en-IN')} · Rate card {(p.commissionPct || 0)}%
+                            </p>
+                            {!approved && (
+                              <p className="text-[11px] text-amber-400">Awaiting owner approval for automatic assignments</p>
+                            )}
                           </div>
                           <button
                             type="button"
+                            disabled={!approved || p.status !== 'active'}
                             onClick={async () => {
                               await apiFetch(`/api/delivery/partners/${p.id}/availability`, {
                                 method: 'PATCH',
-                                body: JSON.stringify({ available: !p.available }),
+                                body: JSON.stringify({ available: !online }),
                               });
                               await loadDeliveryPortal();
                             }}
-                            className={`px-3 py-1.5 rounded-md font-semibold ${
-                              p.available ? 'bg-emerald-600 text-white' : 'border border-[#2C2C3C] text-[#A3A3B5]'
+                            className={`px-3 py-1.5 rounded-md font-semibold disabled:opacity-40 ${
+                              online ? 'bg-emerald-600 text-white' : 'border border-[#2C2C3C] text-[#A3A3B5]'
                             }`}
                           >
-                            {p.available ? 'Online / Available' : 'Offline'}
+                            {online ? 'Online / Available' : 'Offline'}
                           </button>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -3107,7 +3202,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   </span>
                 </div>
                 {deliveryData.assignedOrders.length === 0 ? (
-                  <p className="p-8 text-center text-xs text-[#8E8EA2]">No deliveries assigned yet. Business owners assign orders from the Owner Dashboard.</p>
+                  <p className="p-8 text-center text-xs text-[#8E8EA2]">No deliveries assigned yet. Paid orders are assigned automatically when an approved rider is available; owners can also assign manually.</p>
                 ) : (
                   <div className="divide-y divide-[#1D1D28]">
                     {deliveryData.assignedOrders.map((ord) => (
@@ -3125,8 +3220,26 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                             <p className="text-[11px] text-[#A8A8BC] mt-1 whitespace-pre-wrap">{ord.notes}</p>
                           )}
                         </div>
+                        <div className="w-full space-y-2.5">
+                          <DeliveryPickupScanner
+                            orderId={ord.id}
+                            itemsJson={ord.itemsJson}
+                            tenantId={String(ord.tenantId)}
+                            onNotify={onNotify}
+                          />
+                          {ord.status !== 'delivered' && (
+                            <DeliverySecurePod
+                              orderId={ord.id}
+                              orderNumber={ord.orderNumber}
+                              recipientName={ord.customerName}
+                              codCollected={ord.paymentMethod === 'cod'}
+                              onComplete={loadDeliveryPortal}
+                              onNotify={onNotify}
+                            />
+                          )}
+                        </div>
                         <div className="flex flex-wrap gap-2">
-                          {['ready_for_pickup', 'out_for_delivery', 'delivered'].map((st) => (
+                          {['accepted', 'ready_for_pickup', 'out_for_delivery', 'returned'].map((st) => (
                             <button
                               key={st}
                               type="button"
@@ -3147,29 +3260,6 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                               {st.replace(/_/g, ' ')}
                             </button>
                           ))}
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await apiFetch(`/api/delivery/orders/${ord.id}/pod`, {
-                                method: 'PATCH',
-                                body: JSON.stringify({
-                                  recipientName: ord.customerName,
-                                  podCode: `POD-${ord.orderNumber.slice(-4)}`,
-                                  codCollected: ord.paymentMethod === 'cod',
-                                  status: 'delivered',
-                                }),
-                              });
-                              await loadDeliveryPortal();
-                              onNotify(
-                                ord.paymentMethod === 'cod'
-                                  ? `Proof of Delivery & COD ₹${ord.total} collection recorded.`
-                                  : 'Proof of Delivery recorded.'
-                              );
-                            }}
-                            className="px-3 py-1.5 rounded bg-emerald-600/90 text-white text-xs font-semibold hover:bg-emerald-500"
-                          >
-                            {ord.paymentMethod === 'cod' ? 'Confirm POD & COD Collected' : 'Record POD'}
-                          </button>
                         </div>
                         <div className="w-full">
                           <DeliveryGpsSharer
@@ -3756,6 +3846,28 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                           >
                             Invoice
                           </button>
+                          {['accepted', 'confirmed', 'preparing', 'ready_for_pickup', 'packed', 'out_for_delivery'].includes(ord.status) && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const data = await apiFetch<{ otp: string; deliveryCodeLabel?: string }>(
+                                    `/api/customer/delivery-otp?orderId=${ord.id}`
+                                  );
+                                  setDeliveryOtps((prev) => ({ ...prev, [ord.id]: data.otp }));
+                                  onNotify(
+                                    data.deliveryCodeLabel ||
+                                      'In-app delivery code generated. Share it only with your assigned rider; no SMS or email was sent.'
+                                  );
+                                } catch (err: any) {
+                                  onNotify(err?.message || 'Unable to generate a delivery code.');
+                                }
+                              }}
+                              className="px-3 py-1.5 rounded border border-emerald-500/40 text-emerald-300"
+                            >
+                              {deliveryOtps[ord.id] ? `Code: ${deliveryOtps[ord.id]}` : 'Get Delivery Code'}
+                            </button>
+                          )}
                           {['confirmed', 'preparing'].includes(ord.status) && (
                             <button
                               type="button"

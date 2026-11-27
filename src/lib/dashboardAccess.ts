@@ -5,10 +5,16 @@
 
 export type DashboardRoleTab = 'owner' | 'delivery' | 'customer' | 'super_admin';
 
-/** Roles emitted by useAuth.mapSupabaseRoleToPlatformRole. */
+/**
+ * @param role Role emitted by useAuth.mapSupabaseRoleToPlatformRole.
+ * @param ownedTenantCount Number of server-verified owned websites.
+ * @param deliveryEligible Server-computed from an active tenant_memberships row
+ *   with role='delivery_partner'. The client never infers this from role alone.
+ */
 export function getAllowedDashboardTabs(
   role: string | null | undefined,
-  ownedTenantCount: number
+  ownedTenantCount: number,
+  deliveryEligible: boolean = false
 ): DashboardRoleTab[] {
   const normalized = String(role || 'customer').trim().toLowerCase();
   const tabs: DashboardRoleTab[] = ['customer'];
@@ -16,7 +22,7 @@ export function getAllowedDashboardTabs(
   // A user who owns at least one published website can open the owner
   // workspace even when their global profile role is still "customer".
   const canOwn = normalized === 'business_owner' || normalized === 'super_admin' || ownedTenantCount > 0;
-  const canDeliver = normalized === 'delivery_partner' || normalized === 'super_admin';
+  const canDeliver = deliveryEligible || normalized === 'super_admin';
 
   if (canOwn) tabs.push('owner');
   if (canDeliver) tabs.push('delivery');

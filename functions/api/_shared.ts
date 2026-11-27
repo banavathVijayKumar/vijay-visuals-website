@@ -5,6 +5,8 @@
 // 100% Web-Standard Edge Runtime (NO Node.js Express, NO Node fs/dns/tls).
 // ============================================================================
 
+import { redactPiiText } from './_pii';
+
 export interface D1Meta {
   changes?: number;
   last_row_id?: number;
@@ -543,11 +545,15 @@ export function rateLimitResponse(rl: RateLimitResult, message: string): Respons
   return jsonResponse({ error: message, code: 'RATE_LIMIT_EXCEEDED' }, 429, headers);
 }
 
-const AUDIT_REDACTED_KEYS = /(_|-)?(authorization|cookie|password|passphrase|secret|token|otp|apikey|api_key|private_key|client_secret|webhook_signature|session)/i;
+// Sensitive key names AND value-level patterns are redacted. Delivery audits
+// previously stored recipientName/podCode verbatim; both are now blocked here
+// so old callers cannot leak PII even before they are updated.
+const AUDIT_REDACTED_KEYS =
+  /(_|-)?(authorization|cookie|password|passphrase|secret|token|otp|apikey|api_key|private_key|client_secret|webhook_signature|session)|(^|_|-)(customer|recipient|rider)?_?(name|email|phone|mobile|address|fullname|emailaddress)|(^|_|-)(podcode|podreference|proofofdelivery|photo|image|latitude|longitude|lat|lng|coordinates|location)/i;
 
 function redactAuditValue(value: unknown, depth = 0): unknown {
   if (value === null || value === undefined) return value;
-  if (typeof value === 'string') return value.slice(0, 500);
+  if (typeof value === 'string') return redactPiiText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return value;
   if (depth >= 4) return '[truncated]';
   if (Array.isArray(value)) return value.slice(0, 25).map((item) => redactAuditValue(item, depth + 1));

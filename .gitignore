@@ -12,5 +12,6 @@ coverage/
 firebase-applet-config.json
 .backup_pre_implementation/
 *.sql
+!cloudflare/d1/migrations/*.sql
 scratch/
 

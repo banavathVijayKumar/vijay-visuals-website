@@ -21,7 +21,16 @@
     "test:cashfree-security": "node scripts/test-cashfree-security.cjs",
     "test:cashfree-architecture": "tsx scripts/test-cashfree-only-architecture.ts",
     "test:sandbox-payment": "tsx scripts/test-sandbox-payment-flow.ts",
-    "test:preview-targeted-fixes": "tsx scripts/test-preview-targeted-fixes.ts"
+    "test:preview-targeted-fixes": "tsx scripts/test-preview-targeted-fixes.ts",
+    "test:delivery-eligibility": "tsx scripts/test-delivery-partner-eligibility.ts",
+    "test:delivery-automation": "tsx scripts/test-delivery-automation.ts",
+    "test:delivery-scanner": "tsx scripts/test-delivery-scanner.ts",
+    "test:delivery-otp-photo": "tsx scripts/test-delivery-otp-photo.ts",
+    "test:delivery-payouts-design": "tsx scripts/test-delivery-payouts-design.ts",
+    "test:delivery-eta": "tsx scripts/test-delivery-eta.ts",
+    "test:video-showcase": "tsx scripts/test-video-showcase.ts",
+    "test:our-platform": "tsx scripts/test-our-platform-section.ts",
+    "subtitles:generate": "tsx scripts/generate-video-subtitles.ts"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",

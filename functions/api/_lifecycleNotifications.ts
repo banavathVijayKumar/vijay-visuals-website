@@ -10,6 +10,7 @@
 
 import { CloudflareEnv, getNotificationChannelStatus, sanitizeText } from './_shared';
 import { redactSensitiveLogText } from './_email';
+import { maskContactForLog, redactPiiText } from './_pii';
 
 export const LIFECYCLE_NOTIFICATION_EVENTS = new Set([
   'new_order_owner_alert',
@@ -22,6 +23,8 @@ export const LIFECYCLE_NOTIFICATION_EVENTS = new Set([
   'order_returned',
   'order_cancelled',
   'proof_of_delivery_recorded',
+  'delivery_exception',
+  'rider_earnings_posted',
 ]);
 
 export interface LifecycleNotificationInput {
@@ -59,9 +62,19 @@ export async function dispatchLifecycleNotification(
     (channel) => readiness[channel] === 'configured'
   );
 
-  const subject = redactSensitiveLogText(sanitizeText(input.subject || eventType, 160));
-  const message = redactSensitiveLogText(sanitizeText(input.message, 1500));
-  const recipientContact = sanitizeText(input.recipientContact || '', 140);
+  // notification_logs is durable: never persist a raw customer email/phone or
+  // a name/POD reference interpolated into a subject/message. Only masked
+  // display forms and non-sensitive operational metadata are stored.
+  const piiValues = [input.recipientContact];
+  const subject = redactPiiText(
+    redactSensitiveLogText(sanitizeText(input.subject || eventType, 160)),
+    { values: piiValues }
+  );
+  const message = redactPiiText(
+    redactSensitiveLogText(sanitizeText(input.message, 1500)),
+    { values: piiValues }
+  );
+  const recipientContact = maskContactForLog(sanitizeText(input.recipientContact || '', 140));
 
   const detailParts = [
     'External delivery is not enabled for this deployment; in-app record only.',

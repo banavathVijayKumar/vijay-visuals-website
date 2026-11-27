@@ -3,7 +3,12 @@ import { APIProvider, AdvancedMarker, Map as GoogleMap, Pin } from '@vis.gl/reac
 import { ExternalLink, MapPin, Navigation, Package, Printer, RefreshCw, Search, Truck, X } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { buildDirectionsUrl, fetchMapsConfig, MapsClientConfig } from '../lib/mapsClient';
-import { DeliveryLocationPingRecord, DeliveryPartnerRecord, OrderRecord } from '../types/platform';
+import {
+  DeliveryEtaEstimate,
+  DeliveryLocationPingRecord,
+  DeliveryPartnerRecord,
+  OrderRecord,
+} from '../types/platform';
 
 interface OrderTrackerModalProps {
   open: boolean;
@@ -17,6 +22,7 @@ interface LiveLocationResponse {
   pollingAllowed: boolean;
   recommendedPollIntervalMs: number;
   mapsConfigured?: boolean;
+  eta?: DeliveryEtaEstimate;
   latestPing: DeliveryLocationPingRecord | null;
   lastKnownPing?: DeliveryLocationPingRecord | null;
   stale?: boolean;
@@ -30,7 +36,7 @@ interface LiveLocationResponse {
   message: string;
 }
 
-const STEPS = ['confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery', 'delivered'];
+const STEPS = ['confirmed', 'preparing', 'packed', 'ready_for_pickup', 'out_for_delivery', 'delivered'];
 
 export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   open,
@@ -46,6 +52,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
     tenantName: string;
     tenantPhone: string;
     deliveryPartner: DeliveryPartnerRecord | null;
+    eta?: DeliveryEtaEstimate;
   } | null>(null);
   const [liveLoc, setLiveLoc] = useState<LiveLocationResponse | null>(null);
   const [mapsConfig, setMapsConfig] = useState<MapsClientConfig | null>(null);
@@ -81,8 +88,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   useEffect(() => {
     if (!open || !result) return;
     const ordNum = result.order.orderNumber;
-    const inTransit =
-      result.order.status === 'ready_for_pickup' || result.order.status === 'out_for_delivery';
+    const inTransit = ['packed', 'ready_for_pickup', 'out_for_delivery'].includes(
+      result.order.status
+    );
 
     fetchLiveLocation(ordNum);
     if (!inTransit) return;
@@ -114,6 +122,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
         tenantName: string;
         tenantPhone: string;
         deliveryPartner: DeliveryPartnerRecord | null;
+        eta?: DeliveryEtaEstimate;
       }>(`/api/orders/track/${encodeURIComponent(orderNumber.trim())}${verificationQuery()}`);
       setResult(data);
     } catch (err) {
@@ -211,6 +220,21 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
               })}
             </div>
 
+            {result.eta && (
+              <div className="rounded-lg border border-[#D4AF37]/30 bg-[#12100A] px-4 py-3 text-xs text-[#F2DC9B]">
+                <p className="font-semibold">
+                  Estimated delivery: {result.eta.minMinutes}–{result.eta.maxMinutes} min
+                  <span className="ml-1 font-normal text-[#C9B57A]">(not guaranteed)</span>
+                </p>
+                <p className="mt-1 text-[11px] text-[#B6A470]">
+                  {result.eta.delayed
+                    ? 'This order is running later than the initial estimate.'
+                    : 'Based on order stage, item mix, quantity and rider availability.'}
+                  {' '}No live-traffic routing is claimed.
+                </p>
+              </div>
+            )}
+
             <div className="rounded-lg border border-[#222230] bg-[#0A0A0F] p-4 text-xs space-y-1.5">
               <div className="flex justify-between">
                 <span className="text-[#8E8EA0]">Customer</span>
@@ -274,7 +298,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                   </div>
                 </div>
 
-                {mapsConfig?.configured && mapsConfig.apiKey && mapCenter ? (
+                {(mapsConfig?.configured || liveLoc?.mapsConfigured) && mapsConfig?.apiKey && mapCenter ? (
                   <div className="h-[220px] w-full">
                     <APIProvider apiKey={mapsConfig.apiKey} language="en" region="IN">
                       <GoogleMap

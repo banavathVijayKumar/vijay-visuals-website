@@ -16,6 +16,13 @@ import {
   sanitizeText,
 } from '../_shared';
 import { assertProductQuota } from '../_tenantAccess';
+import {
+  isBackwardAssignmentTransition,
+  isBackwardDeliveryTransition,
+  toAssignmentStatus,
+  toDbOrderStatus,
+} from '../delivery/_deliveryStatus';
+import { hasDurableOwnerApproval } from '../delivery/_riderState';
 import { createEdgeCashfreeRefund } from '../payments/_cashfree';
 import { buildCashfreeRefundIdentity } from '../payments/_cashfreeIdentity';
 
@@ -552,15 +559,38 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     if (order.order_status === 'cancelled') {
       return errorJson('Order is already cancelled.', 409);
     }
+    if (order.order_status === 'delivered') {
+      return errorJson(
+        'Delivered orders cannot be changed here. Only verified secure proof of delivery completes an order.',
+        410
+      );
+    }
 
     const isPreShipment = ['placed', 'confirmed', 'packed'].includes(order.order_status);
     const nextOrderStatus = isPreShipment ? 'cancelled' : 'return_requested';
 
-    await env.DB.prepare(
-      `UPDATE store_orders SET order_status = ?, updated_at = datetime('now') WHERE id = ?`
+    const cancelWrite = await env.DB.prepare(
+      `UPDATE store_orders SET order_status = ?, updated_at = datetime('now')
+       WHERE id = ? AND order_status = ? AND order_status NOT IN ('delivered', 'returned')`
     )
-      .bind(nextOrderStatus, order.id)
+      .bind(nextOrderStatus, order.id, order.order_status)
       .run();
+    if (!cancelWrite.meta?.changes) {
+      return errorJson('Order state changed concurrently. Reload and retry.', 409);
+    }
+
+    // GPS is transit-only: stop exposing coordinates once the order is closed.
+    try {
+      await env.DB.prepare(
+        `UPDATE delivery_assignments
+         SET last_lat = NULL, last_lng = NULL, updated_at = datetime('now')
+         WHERE order_id = ? AND website_id = ?`
+      )
+        .bind(order.id, order.website_id)
+        .run();
+    } catch {
+      // Assignment table is optional.
+    }
 
     // Restore inventory on pre-shipment cancellation
     if (isPreShipment) {
@@ -663,25 +693,55 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     });
   }
 
-  // Delivery Partner status update (scoped ONLY to their own assigned delivery!)
+  // Delivery Partner milestone update (scoped ONLY to their own assignment).
+  // `delivered`, COD collection, and proof details can ONLY come from secure POD.
   if (action === 'update_delivery_status') {
     const assignmentId = Number(body.assignmentId);
     const nextStatus = sanitizeText(body.status || '', 30);
-    const allowedStatuses = ['picked_up', 'in_transit', 'delivered', 'failed_attempt', 'returned'];
+    const allowedStatuses = ['picked_up', 'in_transit', 'failed_attempt', 'returned'];
     if (!Number.isInteger(assignmentId) || !allowedStatuses.includes(nextStatus)) {
+      if (nextStatus === 'delivered') {
+        return errorJson(
+          'Delivered status can only be recorded through secure proof of delivery.',
+          410
+        );
+      }
       return errorJson('Valid assignmentId and delivery status are required.', 400);
     }
 
-    const assignment = await env.DB.prepare('SELECT * FROM delivery_assignments WHERE id = ? LIMIT 1')
+    const assignment = await env.DB.prepare(
+      `SELECT id, website_id, order_id, delivery_partner_user_id, status
+       FROM delivery_assignments WHERE id = ? LIMIT 1`
+    )
       .bind(assignmentId)
-      .first<{ id: number; website_id: string; order_id: number; delivery_partner_user_id: string }>();
+      .first<{
+        id: number;
+        website_id: string;
+        order_id: number;
+        delivery_partner_user_id: string;
+        status: string;
+      }>();
     if (!assignment) return errorJson('Delivery assignment not found.', 404);
 
     const isAssignedPartner =
-      assignment.delivery_partner_user_id === auth.user.id ||
-      assignment.delivery_partner_user_id === auth.user.authSubject;
+      String(assignment.delivery_partner_user_id) === auth.user.id ||
+      String(assignment.delivery_partner_user_id) === auth.user.authSubject;
 
-    if (!isAssignedPartner && !auth.user.isSuperAdmin) {
+    if (isAssignedPartner) {
+      const rider = await env.DB.prepare(
+        `SELECT id, website_id, role, status, permissions_json
+         FROM tenant_memberships
+         WHERE website_id = ? AND id = ? AND role = 'delivery_partner' LIMIT 1`
+      )
+        .bind(assignment.website_id, Number(assignment.delivery_partner_user_id))
+        .first<Record<string, any>>();
+      if (!rider || !hasDurableOwnerApproval(rider)) {
+        return errorJson(
+          'Only an owner-approved assigned rider can update delivery milestones.',
+          403
+        );
+      }
+    } else if (!auth.user.isSuperAdmin) {
       const ownerAccess = await requireWebsiteAccess(env, auth.user, assignment.website_id, [
         'business_owner',
         'business_manager',
@@ -708,53 +768,90 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     }
 
     // UNPAID ONLINE ORDER FULFILLMENT RESTRICTION
-    // Block transitions to out_for_delivery or delivered unless payment is verified as paid.
-    // COD orders proceed without online payment restriction.
-    const RESTRICTED_FULFILLMENT_STATUSES = ['picked_up', 'in_transit', 'delivered', 'ready_for_pickup', 'out_for_delivery'];
-    const isOnlinePayment = storeOrder.payment_method === 'cashfree_online' || storeOrder.payment_method !== 'cod';
+    const RESTRICTED_FULFILLMENT_STATUSES = ['picked_up', 'in_transit', 'ready_for_pickup', 'out_for_delivery'];
+    const isOnlinePayment = storeOrder.payment_method !== 'cod';
     if (
       isOnlinePayment &&
       storeOrder.payment_status !== 'paid' &&
       RESTRICTED_FULFILLMENT_STATUSES.includes(nextStatus)
     ) {
-      const targetLabel = nextStatus === 'delivered' ? 'delivered' : 'out_for_delivery';
       return errorJson(
-        `Cannot transition unpaid online order to "${targetLabel}". Payment must be verified before fulfillment.`,
+        `Cannot transition unpaid online order to "${nextStatus}". Payment must be verified before fulfillment.`,
         409
       );
     }
 
-    const codCollected = body.codCollected ? 1 : 0;
-    const podNote = sanitizeText(body.proofOfDeliveryNote || '', 300);
-    const podUrl = sanitizeText(body.proofOfDeliveryUrl || '', 500);
+    const currentAssignmentStatus = String(assignment.status || '');
+    const currentOrderStatus = String(storeOrder.order_status || '');
+    const nextOrderStatus =
+      nextStatus === 'picked_up' || nextStatus === 'in_transit'
+        ? 'out_for_delivery'
+        : nextStatus === 'returned'
+          ? 'returned'
+          : currentOrderStatus;
 
-    await env.DB.prepare(
-      `UPDATE delivery_assignments
-       SET status = ?, cod_collected = ?, proof_of_delivery_note = ?, proof_of_delivery_url = ?, updated_at = datetime('now')
-       WHERE id = ?`
-    )
-      .bind(nextStatus, codCollected, podNote, podUrl, assignmentId)
-      .run();
-
-    if (nextStatus === 'delivered') {
-      await env.DB.prepare(
-        `UPDATE store_orders
-         SET order_status = 'delivered',
-             payment_status = CASE WHEN payment_method = 'cod' AND ? = 1 THEN 'paid' ELSE payment_status END,
-             updated_at = datetime('now')
-         WHERE id = ?`
-      )
-        .bind(codCollected, assignment.order_id)
-        .run();
-    } else if (nextStatus === 'in_transit' || nextStatus === 'picked_up') {
-      await env.DB.prepare(
-        `UPDATE store_orders SET order_status = 'out_for_delivery', updated_at = datetime('now') WHERE id = ?`
-      )
-        .bind(assignment.order_id)
-        .run();
+    if (
+      isBackwardAssignmentTransition(currentAssignmentStatus, nextStatus) ||
+      isBackwardDeliveryTransition(currentOrderStatus, nextOrderStatus)
+    ) {
+      return errorJson(
+        `Cannot move delivery backwards from "${currentAssignmentStatus}" to "${nextStatus}".`,
+        409
+      );
     }
 
-    return json({ updated: true, assignmentId, status: nextStatus, codCollected: Boolean(codCollected) });
+    const assignmentWrite = await env.DB.prepare(
+      `UPDATE delivery_assignments
+       SET status = ?, updated_at = datetime('now')
+       WHERE id = ? AND order_id = ? AND website_id = ? AND status = ?
+         AND status NOT IN ('delivered', 'returned', 'cancelled')`
+    )
+      .bind(
+        toAssignmentStatus(nextStatus),
+        assignmentId,
+        assignment.order_id,
+        assignment.website_id,
+        currentAssignmentStatus
+      )
+      .run();
+    if (!assignmentWrite.meta?.changes) {
+      return errorJson('Delivery assignment changed concurrently. Reload and retry.', 409);
+    }
+
+    if (nextOrderStatus !== currentOrderStatus) {
+      const orderWrite = await env.DB.prepare(
+        `UPDATE store_orders SET order_status = ?, updated_at = datetime('now')
+         WHERE id = ? AND website_id = ? AND order_status = ?
+           AND order_status NOT IN ('delivered', 'returned', 'cancelled')`
+      )
+        .bind(toDbOrderStatus(nextOrderStatus), assignment.order_id, storeOrder.website_id, currentOrderStatus)
+        .run();
+
+      if (!orderWrite.meta?.changes) {
+        await env.DB.prepare(
+          `UPDATE delivery_assignments SET status = ?, updated_at = datetime('now') WHERE id = ?`
+        )
+          .bind(currentAssignmentStatus, assignmentId)
+          .run();
+        return errorJson('Order state changed concurrently. Reload and retry.', 409);
+      }
+    }
+
+    if (nextStatus === 'returned') {
+      try {
+        await env.DB.prepare(
+          `UPDATE delivery_assignments
+           SET last_lat = NULL, last_lng = NULL, updated_at = datetime('now')
+           WHERE id = ?`
+        )
+          .bind(assignmentId)
+          .run();
+      } catch {
+        // Optional location fields may be absent on older deployments.
+      }
+    }
+
+    return json({ updated: true, assignmentId, status: nextStatus, codCollected: false });
   }
 
   const websiteId = sanitizeText(body.websiteId || '', 120);
@@ -909,14 +1006,47 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       return errorJson('orderId and deliveryPartnerUserId are required.', 400);
     }
 
-    const order = await env.DB.prepare(
-      'SELECT id, total_inr, payment_method FROM store_orders WHERE id = ? AND website_id = ? LIMIT 1'
-    )
-      .bind(orderId, websiteId)
-      .first<{ id: number; total_inr: number; payment_method: string }>();
+    const [order, rider] = await Promise.all([
+      env.DB.prepare(
+        `SELECT id, total_inr, payment_method, payment_status, order_status
+         FROM store_orders WHERE id = ? AND website_id = ? LIMIT 1`
+      )
+        .bind(orderId, websiteId)
+        .first<{
+          id: number;
+          total_inr: number;
+          payment_method: string;
+          payment_status: string;
+          order_status: string;
+        }>(),
+      env.DB.prepare(
+        `SELECT id, full_name, email, status, permissions_json, role
+         FROM tenant_memberships
+         WHERE id = ? AND website_id = ? AND role = 'delivery_partner' AND status = 'active'
+         LIMIT 1`
+      )
+        .bind(Number(partnerUserId), websiteId)
+        .first<Record<string, any>>(),
+    ]);
     if (!order) return errorJson('Order not found for this website.', 404);
+    if (!rider || !hasDurableOwnerApproval(rider)) {
+      return errorJson(
+        'The selected rider is not an approved, active delivery partner for this website.',
+        403
+      );
+    }
+    if (order.order_status === 'delivered' || order.order_status === 'returned') {
+      return errorJson('This delivery is already closed.', 410);
+    }
+    if (order.payment_method !== 'cod' && order.payment_status !== 'paid') {
+      return errorJson('Payment must be verified before a delivery can be assigned.', 409);
+    }
 
     const codAmount = order.payment_method === 'cod' ? order.total_inr : 0;
+    const safePartnerName = sanitizeText(
+      rider.full_name || rider.email || partnerName || 'Delivery Partner',
+      120
+    );
     const res = await env.DB.prepare(
       `INSERT INTO delivery_assignments (website_id, order_id, delivery_partner_user_id, partner_name, status, cod_amount_inr, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'assigned', ?, datetime('now'), datetime('now'))
@@ -924,10 +1054,17 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
          delivery_partner_user_id = excluded.delivery_partner_user_id,
          partner_name = excluded.partner_name,
          status = 'assigned',
-         updated_at = datetime('now')`
+         cod_amount_inr = excluded.cod_amount_inr,
+         last_lat = NULL,
+         last_lng = NULL,
+         updated_at = datetime('now')
+       WHERE delivery_assignments.status NOT IN ('delivered', 'returned')`
     )
-      .bind(websiteId, orderId, partnerUserId, partnerName, codAmount)
+      .bind(websiteId, orderId, partnerUserId, safePartnerName, codAmount)
       .run();
+    if (!res.meta?.changes) {
+      return errorJson('Delivery assignment changed concurrently. Reload and retry.', 409);
+    }
 
     const row = await env.DB.prepare('SELECT id FROM delivery_assignments WHERE order_id = ?').bind(orderId).first<{ id: number }>();
     return json({ assignmentId: row?.id || Number(res.meta?.last_row_id || 0), orderId, partnerUserId }, 201);

@@ -82,8 +82,8 @@ class MockD1 {
     },
   ];
   members: Row[] = [
-    { id: 77, website_id: 'site-1', user_id: 'rider-1', email: 'rider@example.com', full_name: 'Rider One', role: 'delivery_partner', status: 'active' },
-    { id: 78, website_id: 'site-1', user_id: 'rider-2', email: 'other@example.com', full_name: 'Rider Two', role: 'delivery_partner', status: 'active' },
+    { id: 77, website_id: 'site-1', user_id: 'rider-1', email: 'rider@example.com', full_name: 'Rider One', role: 'delivery_partner', status: 'active', permissions_json: JSON.stringify(['deliveryApproval:owner_approved', 'availability:online']) },
+    { id: 78, website_id: 'site-1', user_id: 'rider-2', email: 'other@example.com', full_name: 'Rider Two', role: 'delivery_partner', status: 'active', permissions_json: JSON.stringify(['deliveryApproval:owner_approved', 'availability:online']) },
   ];
   assignments: Row[] = [];
   users: Row[] = [
@@ -234,8 +234,10 @@ class MockD1 {
       return { meta: { changes: before - this.assignments.length, last_row_id: 0 } };
     }
     if (n.includes('update delivery_assignments')) {
-      const row = this.assignments.find((a) => Number(a.id) === Number(params[params.length - 2] ?? params[params.length - 1]));
-      const target = row ?? this.assignments.find((a) => Number(a.order_id) === Number(params[params.length - 1]));
+      // Guarded UPDATEs append the observed status, so match by any bound
+      // numeric assignment id (or order id) instead of a fixed param index.
+      const row = this.assignments.find((a) => params.some((p) => Number(p) === Number(a.id)));
+      const target = row ?? this.assignments.find((a) => params.some((p) => Number(p) === Number(a.order_id)));
       if (!target) return { meta: { changes: 0, last_row_id: 0 } };
       if (n.includes('proof_of_delivery_note')) {
         target.status = 'delivered';
@@ -257,7 +259,9 @@ class MockD1 {
       return { meta: { changes: 1, last_row_id: target.id } };
     }
     if (n.includes('update store_orders')) {
-      const order = this.orders.find((o) => Number(o.id) === Number(params[params.length - 1]));
+      // Newer guarded UPDATEs append the observed status after the order id,
+      // so locate the row by any numeric bound id rather than the last param.
+      const order = this.orders.find((o) => params.some((p) => Number(p) === Number(o.id)));
       if (order) {
         if (n.includes("order_status = 'delivered'")) {
           order.order_status = 'delivered';
@@ -390,15 +394,15 @@ await test('delivery portal lists only the rider’s assigned orders', async () 
   assert.equal(otherBody.assignedOrders.length, 0);
 });
 
-await test('unassigned rider cannot change order status or record POD', async () => {
+await test('unassigned rider cannot change status and legacy POD is retired for every caller', async () => {
   const statusRes = await deliveryStatusPatch(
     ctx(req('https://preview.local/api/delivery/orders/10/status', otherRiderToken, 'PATCH', { status: 'out_for_delivery' }), { id: '10' })
   );
   assert.equal(statusRes.status, 403);
-  const podRes = await deliveryPodPatch(
-    ctx(req('https://preview.local/api/delivery/orders/10/pod', otherRiderToken, 'PATCH', { recipientName: 'X', podCode: 'POD-X' }), { id: '10' })
-  );
-  assert.equal(podRes.status, 403);
+  const podRes = await deliveryPodPatch();
+  assert.equal(podRes.status, 410);
+  const podBody = await jsonOf(podRes);
+  assert.equal(podBody.code, 'SECURE_POD_REQUIRED');
 });
 
 await test('assigned rider advances status without trusting client ownership fields', async () => {
@@ -494,18 +498,21 @@ await test('freshness helper parses SQLite and ISO timestamps and rejects stale 
   assert.equal(isFreshLocation(null, now), false);
 });
 
-await test('assigned rider records POD on real saved order state', async () => {
-  const res = await deliveryPodPatch(
-    ctx(req('https://preview.local/api/delivery/orders/10/pod', riderToken, 'PATCH', {
-      recipientName: 'Priya', podCode: 'POD-REAL-10', codCollected: true,
+await test('delivered cannot be forced through legacy status or POD paths', async () => {
+  const legacyPod = await deliveryPodPatch();
+  assert.equal(legacyPod.status, 410);
+  const forcedStatus = await deliveryStatusPatch(
+    ctx(req('https://preview.local/api/delivery/orders/10/status', riderToken, 'PATCH', {
+      status: 'delivered', otpVerified: true, podCode: 'POD-REAL-10',
     }), { id: '10' })
   );
-  assert.equal(res.status, 200);
-  assert.equal(db.orders[0].order_status, 'delivered');
-  assert.equal(db.orders[0].payment_status, 'paid');
-  assert.equal(db.assignments[0].status, 'delivered');
-  assert.match(String(db.assignments[0].proof_of_delivery_note), /POD-REAL-10/);
-  assert.equal(db.assignments[0].last_lat, null);
+  assert.equal(forcedStatus.status, 410);
+  const body = await jsonOf(forcedStatus);
+  assert.equal(body.code, 'SECURE_POD_REQUIRED');
+  assert.equal(db.orders[0].order_status, 'out_for_delivery');
+  assert.equal(db.orders[0].payment_status, 'pending');
+  assert.equal(db.assignments[0].status, 'in_transit');
+  assert.equal(db.assignments[0].proof_of_delivery_note, '');
   assert.equal('notes' in db.orders[0], false);
 });
 
@@ -524,14 +531,16 @@ await test('source guards prevent regressions in routing, assignment, GPS and wh
 
   for (const file of [
     'functions/api/delivery/orders/[id]/status.ts',
-    'functions/api/delivery/orders/[id]/pod.ts',
     'functions/api/delivery/orders/[id]/location.ts',
   ]) {
     assert.match(read(file), /checkAssignedDeliveryAccess/);
   }
 
   const pod = read('functions/api/delivery/orders/[id]/pod.ts');
-  assert.doesNotMatch(pod, /notes = notes/);
+  assert.match(pod, /SECURE_POD_REQUIRED/);
+  assert.match(pod, /410/);
+  assert.doesNotMatch(pod, /status:\s*'delivered'/);
+  assert.doesNotMatch(pod, /body\??\.otpVerified|parseJsonBody/);
   const location = read('functions/api/delivery/orders/[id]/location.ts');
   assert.match(location, /sharingEnabled === false/);
   assert.doesNotMatch(location, /delivery_location_pings/);

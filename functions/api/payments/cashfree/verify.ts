@@ -28,6 +28,7 @@ import {
   getEdgeCashfreeStatus,
 } from '../_cashfree';
 import { cashfreeSettlementIdempotencyKey, normalizeCashfreePaymentId } from '../_cashfreeIdentity';
+import { autoAssignPaidOrder } from '../../delivery/_autoAssignment';
 
 interface CashfreePaymentRow {
   id: number;
@@ -517,6 +518,10 @@ async function handleVerification(context: PagesContext): Promise<Response> {
           cashfreeSettlementIdempotencyKey(orderId, cfPaymentId)
         )
         .run();
+
+      // Paid order automation: best-effort, idempotent, and non-fatal. Manual
+      // assignment remains available when no eligible rider can be found.
+      await autoAssignPaidOrder(env, Number(storeOrder.id));
 
     return json({
       verified: true,

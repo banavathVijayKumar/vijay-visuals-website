@@ -54,6 +54,8 @@ interface AuthContextValue {
   profile: UserProfile | null;
   ownedTenants: TenantRecord[];
   deliveryProfiles: DeliveryPartnerRecord[];
+  /** Server-computed from active tenant_memberships; never inferred from role alone. */
+  deliveryEligible: boolean;
   loading: boolean;
   authError: string | null;
   authModalOpen: boolean;
@@ -74,6 +76,7 @@ const AuthContext = createContext<AuthContextValue>({
   profile: null,
   ownedTenants: [],
   deliveryProfiles: [],
+  deliveryEligible: false,
   loading: true,
   authError: null,
   authModalOpen: false,
@@ -93,6 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [ownedTenants, setOwnedTenants] = useState<TenantRecord[]>([]);
   const [deliveryProfiles, setDeliveryProfiles] = useState<DeliveryPartnerRecord[]>([]);
+  const [deliveryEligible, setDeliveryEligible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -107,6 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setProfile(null);
       setOwnedTenants([]);
       setDeliveryProfiles([]);
+      setDeliveryEligible(false);
       return;
     }
 
@@ -133,16 +138,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user?: UserProfile;
         ownedTenants?: TenantRecord[];
         deliveryProfiles?: DeliveryPartnerRecord[];
+        deliveryEligible?: boolean;
       }>('/api/me');
       setProfile(data.user || mappedProfile);
       setOwnedTenants(data.ownedTenants || []);
       setDeliveryProfiles(data.deliveryProfiles || []);
+      setDeliveryEligible(data.deliveryEligible === true);
       setAuthError(null);
     } catch {
-      // Even if /api/me is unreachable in local static preview, keep verified Supabase profile active
+      // Even if /api/me is unreachable in local static preview, keep verified Supabase profile active.
+      // Delivery access stays closed because eligibility is server-verified.
       setProfile(mappedProfile);
       setOwnedTenants([]);
       setDeliveryProfiles([]);
+      setDeliveryEligible(false);
     }
   }, []);
 
@@ -152,6 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setProfile(null);
       setOwnedTenants([]);
       setDeliveryProfiles([]);
+      setDeliveryEligible(false);
       return;
     }
     setSupabaseReady(true);
@@ -268,6 +278,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setProfile(null);
       setOwnedTenants([]);
       setDeliveryProfiles([]);
+      setDeliveryEligible(false);
     }
   }, []);
 
@@ -280,6 +291,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profile,
         ownedTenants,
         deliveryProfiles,
+        deliveryEligible,
         loading,
         authError,
         authModalOpen,

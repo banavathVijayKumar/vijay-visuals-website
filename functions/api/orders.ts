@@ -16,6 +16,7 @@ import {
 import { sendWhatsAppNotification } from './_whatsapp';
 import { releaseReservedStock, reservationLines } from './_stockReservation';
 import { dispatchLifecycleNotification } from './_lifecycleNotifications';
+import { redactPiiText } from './_pii';
 import { resolveTenantPublicUrl } from './_tenantUrl';
 import {
   PagesContext,
@@ -493,8 +494,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     await dispatchLifecycleNotification(env, {
       websiteId: pub.website_id,
       eventType: 'new_order_owner_alert',
-      subject: `New order #${orderNumber}`,
-      message: `New order #${orderNumber} received for ₹${(total || 0).toLocaleString('en-IN')} (${orderLines.length} item(s)). Review and accept it in the owner dashboard.`,
+      subject: redactPiiText(`New order #${orderNumber}`),
+      message: redactPiiText(
+        `New order #${orderNumber} received for ₹${(total || 0).toLocaleString('en-IN')} (${orderLines.length} item(s)). Review and accept it in the owner dashboard.`
+      ),
       recipientUserId: pub.owner_id || null,
     });
 

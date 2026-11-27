@@ -737,7 +737,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
         <div className="bg-[#12121C] border border-[#242436] rounded-2xl p-6 text-center space-y-4">
           <h3 className="text-lg font-bold text-white">Need a Printable Copy for Internal Approval?</h3>
           <p className="text-xs text-[#8E8EA2] max-w-lg mx-auto">
-            Download our luxury 9-page international digital agency proposal in A4 print-ready PDF format with all specifications, terms, and tables.
+            Download our luxury 9-page international platform proposal in A4 print-ready PDF format with all specifications, terms, and tables.
           </p>
           <div className="flex flex-wrap justify-center gap-3">
             <button
@@ -751,7 +751,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
           </div>
         </div>
 
-        {/* OFFICIAL AGENCY CONTACT STRIP */}
+        {/* OFFICIAL PLATFORM CONTACT STRIP */}
         <div className="bg-[#0D0D14] border border-[#222232] rounded-2xl p-6 text-xs text-[#9E9EB2] flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
             <img

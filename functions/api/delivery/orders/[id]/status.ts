@@ -1,5 +1,8 @@
 // ============================================================================
 // PATCH /api/delivery/orders/:id/status — Update Delivery Order Milestone
+//
+// Milestones are monotonic. `delivered` is terminal and can only be reached by
+// the verified secure-POD writer, never by a generic status request.
 // ============================================================================
 
 import { requireUser } from '../../../_auth';
@@ -13,31 +16,30 @@ import {
 } from '../../../_shared';
 import { checkAssignedDeliveryAccess } from '../../_assignmentAccess';
 import { dispatchLifecycleNotification } from '../../../_lifecycleNotifications';
+import { maskContactForLog } from '../../../_pii';
+import {
+  isBackwardAssignmentTransition,
+  isBackwardDeliveryTransition,
+  toAssignmentStatus,
+  toDbOrderStatus,
+} from '../../_deliveryStatus';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
 }
 
-const UI_TO_DB_ORDER_STATUS: Record<string, string> = {
-  ready_for_pickup: 'packed',
-  out_for_delivery: 'out_for_delivery',
-  delivered: 'delivered',
-  returned: 'returned',
-};
-
-const UI_TO_ASSIGNMENT_STATUS: Record<string, string> = {
-  ready_for_pickup: 'assigned',
-  out_for_delivery: 'in_transit',
-  delivered: 'delivered',
-  returned: 'returned',
-};
+const VALID_MILESTONES = ['accepted', 'ready_for_pickup', 'out_for_delivery', 'returned'];
 
 const UI_TO_NOTIFICATION_EVENT: Record<string, string> = {
+  accepted: 'order_accepted',
   ready_for_pickup: 'order_ready_for_pickup',
   out_for_delivery: 'order_out_for_delivery',
-  delivered: 'order_delivered',
   returned: 'order_returned',
 };
+
+function conflict(message: string): Response {
+  return jsonResponse({ error: message, code: 'DELIVERY_STATE_CHANGED' }, 409);
+}
 
 export async function onRequestPatch(
   context: PagesContext<{ id: string }>
@@ -57,11 +59,17 @@ export async function onRequestPatch(
 
   const body = await parseJsonBody<{ status?: string }>(request);
   const nextStatus = sanitizeText(body?.status, 30);
-  const validStatuses = ['ready_for_pickup', 'out_for_delivery', 'delivered', 'returned'];
-  // store_orders.order_status has a D1 CHECK that does not include
-  // ready_for_pickup. Persist the DB-compatible equivalent while keeping the
-  // UI milestone in the response and audit log.
-  if (!validStatuses.includes(nextStatus)) {
+  if (nextStatus === 'delivered') {
+    return jsonResponse(
+      {
+        error: 'Delivered status can only be recorded through secure proof of delivery.',
+        code: 'SECURE_POD_REQUIRED',
+        replacement: '/api/delivery/orders/:id/secure-pod',
+      },
+      410
+    );
+  }
+  if (!VALID_MILESTONES.includes(nextStatus)) {
     return jsonResponse({ error: 'Invalid delivery status.' }, 400);
   }
 
@@ -72,19 +80,13 @@ export async function onRequestPatch(
        FROM store_orders WHERE id = ? LIMIT 1`
     )
       .bind(orderId)
-      .first<{
-        id: number;
-        website_id: string;
-        payment_method: string;
-        payment_status: string;
-        order_status: string;
-        customer_email?: string;
-        customer_phone?: string;
-        customer_user_id?: string;
-      }>();
+      .first<Record<string, any>>();
 
-    if (!existingOrder) {
-      return jsonResponse({ error: 'Order not found.' }, 404);
+    if (!existingOrder) return jsonResponse({ error: 'Order not found.' }, 404);
+
+    const currentOrderStatus = String(existingOrder.order_status || '');
+    if (isBackwardDeliveryTransition(currentOrderStatus, nextStatus)) {
+      return conflict(`Cannot move delivery backwards from "${currentOrderStatus}" to "${nextStatus}".`);
     }
 
     const access = await checkAssignedDeliveryAccess(
@@ -100,14 +102,11 @@ export async function onRequestPatch(
       );
     }
 
-    // UNPAID ORDER FULFILLMENT PROTECTION:
-    // If payment_method is cashfree_online and payment_status is not paid,
-    // block transitions to ready_for_pickup, out_for_delivery, and delivered with HTTP 409.
-    const RESTRICTED_FULFILLMENT_STATUSES = ['ready_for_pickup', 'out_for_delivery', 'delivered'];
+    // UNPAID ORDER FULFILLMENT PROTECTION
     if (
-      existingOrder.payment_method === 'cashfree_online' &&
-      existingOrder.payment_status !== 'paid' &&
-      RESTRICTED_FULFILLMENT_STATUSES.includes(nextStatus)
+      String(existingOrder.payment_method) === 'cashfree_online' &&
+      String(existingOrder.payment_status) !== 'paid' &&
+      ['accepted', 'ready_for_pickup', 'out_for_delivery'].includes(nextStatus)
     ) {
       return jsonResponse(
         {
@@ -117,21 +116,63 @@ export async function onRequestPatch(
       );
     }
 
-    await env.DB.prepare(
-      `UPDATE store_orders SET order_status = ?, updated_at = datetime('now') WHERE id = ?`
+    const nextDbStatus = toDbOrderStatus(nextStatus);
+    const orderWrite = await env.DB.prepare(
+      `UPDATE store_orders SET order_status = ?, updated_at = datetime('now')
+       WHERE id = ? AND website_id = ? AND order_status = ?
+         AND order_status NOT IN ('delivered', 'returned', 'cancelled')`
     )
-      .bind(UI_TO_DB_ORDER_STATUS[nextStatus], orderId)
+      .bind(nextDbStatus, orderId, String(existingOrder.website_id || ''), currentOrderStatus)
       .run();
+    if (!orderWrite.meta?.changes) {
+      return conflict('Order state changed concurrently. Refresh and retry.');
+    }
 
-    if (access.assignmentId) {
-      const endState = nextStatus === 'delivered' || nextStatus === 'returned';
-      await env.DB.prepare(
+    if (access.assignmentId && access.assignment) {
+      const currentAssignmentStatus = String(access.assignment.status || '');
+      // Compare assignment ranks in assignment vocabulary; UI milestones such
+      // as out_for_delivery are stored as in_transit on the assignment row.
+      if (isBackwardAssignmentTransition(currentAssignmentStatus, toAssignmentStatus(nextStatus))) {
+        // Restore the order so both records remain on the same milestone.
+        await env.DB.prepare(
+          `UPDATE store_orders SET order_status = ?, updated_at = datetime('now')
+           WHERE id = ? AND website_id = ? AND order_status = ?`
+        )
+          .bind(
+            currentOrderStatus,
+            orderId,
+            String(existingOrder.website_id || ''),
+            nextDbStatus
+          )
+          .run();
+        return conflict('Delivery assignment cannot move backwards.');
+      }
+
+      const endState = nextStatus === 'returned';
+      const assignmentWrite = await env.DB.prepare(
         `UPDATE delivery_assignments
          SET status = ?, ${endState ? 'last_lat = NULL, last_lng = NULL,' : ''} updated_at = datetime('now')
-         WHERE id = ? AND order_id = ?`
+         WHERE id = ? AND order_id = ? AND website_id = ? AND status = ?
+           AND status NOT IN ('delivered', 'returned', 'cancelled')`
       )
-        .bind(UI_TO_ASSIGNMENT_STATUS[nextStatus], access.assignmentId, orderId)
+        .bind(
+          toAssignmentStatus(nextStatus),
+          access.assignmentId,
+          orderId,
+          String(existingOrder.website_id || ''),
+          currentAssignmentStatus
+        )
         .run();
+
+      if (!assignmentWrite.meta?.changes) {
+        await env.DB.prepare(
+          `UPDATE store_orders SET order_status = ?, updated_at = datetime('now')
+           WHERE id = ? AND website_id = ? AND order_status = ?`
+        )
+          .bind(currentOrderStatus, orderId, String(existingOrder.website_id || ''), nextDbStatus)
+          .run();
+        return conflict('Delivery assignment changed concurrently. Refresh and retry.');
+      }
     }
 
     await writeAuditLog(env, {
@@ -153,11 +194,13 @@ export async function onRequestPatch(
       subject: `Order #${orderId} — ${nextStatus}`,
       message: `Delivery milestone for order #${orderId}: ${nextStatus}.`,
       recipientUserId: String(existingOrder.customer_user_id || '') || null,
-      recipientContact: String(existingOrder.customer_email || existingOrder.customer_phone || ''),
+      recipientContact: maskContactForLog(
+        String(existingOrder.customer_email || existingOrder.customer_phone || '')
+      ),
     });
 
     return jsonResponse({ success: true, status: nextStatus });
-  } catch (err) {
+  } catch {
     return jsonResponse({ error: 'Failed to update order status.' }, 500);
   }
 }

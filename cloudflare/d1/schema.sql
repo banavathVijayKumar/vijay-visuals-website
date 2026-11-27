@@ -99,6 +99,11 @@ CREATE INDEX IF NOT EXISTS idx_vv_orders_user_created ON vv_orders(user_id, crea
 CREATE INDEX IF NOT EXISTS idx_vv_subscriptions_user_status ON vv_subscriptions(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_vv_usage_user_created ON vv_ai_usage(user_id, created_at DESC);
 
+-- finance_ledger, tenant_memberships, delivery_assignments and store_orders are
+-- created by the numbered migrations in this directory. Rider earnings use the
+-- deterministic reference_id guard added in 0022_rider_earnings_idempotency.sql;
+-- that unique index is optional for backwards compatibility with older previews.
+
 -- Seed catalogue only; all prices remain unset and services remain inactive until Admin configures them.
 INSERT OR IGNORE INTO ai_services
 (id, slug, name, short_description, description, category, icon, is_active, demo_enabled, sort_order)

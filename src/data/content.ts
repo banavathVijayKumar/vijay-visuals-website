@@ -147,9 +147,6 @@ export const CONTACT_INFO = {
   instagramUrl: 'https://instagram.com/vijay_visuals_1',
   whatsappUrl: 'https://wa.me/919381362201',
   location: 'Hyderabad, India · Serving Businesses Worldwide',
-  experienceYears: 'Full-Stack Studio',
-  projectsCompleted: 'Custom Solutions',
-  satisfactionRate: 'Client First',
 };
 
 export const BUSINESS_CATEGORIES = [
@@ -213,56 +210,82 @@ export const WEBSITE_TEMPLATES = [
   },
 ] as const;
 
-export const SERVICES_DATA = [
+/** Official platform positioning — not a video, photography, or design agency. */
+export const PLATFORM_SECTION = {
+  title: 'OUR PLATFORM',
+  subtitle: 'Connecting Customers, Local Businesses & Delivery Partners in One Smart Platform.',
+  description:
+    'Discover local businesses, manage online orders, and make local commerce simpler with connected digital experiences.',
+};
+
+export const PLATFORM_SERVICES_DATA = [
   {
-    id: 'web-platform',
-    number: '01',
-    title: 'AI Website Builder & Global E-Commerce Engine',
-    shortDescription:
-      `Launch mobile-responsive websites across ${CORE_BUSINESS_CATEGORY_COUNT} broad industry groups and ${TEMPLATE_CATEGORY_COUNT} ready-to-customize templates, with 12 interface languages, live checkout, multi-currency FX, wholesale pricing, and GST invoices.`,
-    deliverables: [
-      'Instant /site/your-brand URL, 12-language SEO metadata & custom domain DNS wizard',
-      'Product variants, coupons, bulk wholesale pricing, wishlists & verified-purchase reviews',
-      'Cashfree Platform Payments + segregated seller settlement ledger (automated split subject to Cashfree Easy Split activation) & COD reconciliation',
+    id: 'online-shopping',
+    title: 'ONLINE SHOPPING & STOREFRONTS',
+    description:
+      'Discover local stores, explore available products, compare prices, and conveniently place online orders.',
+    highlights: [
+      'Local shop discovery',
+      'Product browsing',
+      'Shopping cart',
+      'Online ordering',
+      'Customer accounts',
     ],
   },
   {
-    id: 'delivery-ops',
-    number: '02',
-    title: 'CRM, Finance, Warehouses, HR & Delivery OS',
-    shortDescription:
-      'Dedicated role-based workspaces for business owners, staff, customers, and delivery partners with CRM leads, GST expenses, bookings, and fleet commissions.',
-    deliverables: [
-      'Delivery partner availability toggle, pickup-to-doorstep status & commissions',
-      'CRM pipeline, loyalty points, consent-enforced messaging & appointment calendar',
-      'Multi-warehouse & supplier directory, staff attendance & CSV finance export',
+    id: 'business-management',
+    title: 'SMART BUSINESS MANAGEMENT',
+    description:
+      'Help local shop owners manage products, inventory, customer orders, payments, and daily business operations from one dashboard.',
+    highlights: [
+      'Shop owner dashboard',
+      'Product and inventory management',
+      'Order management',
+      'Sales overview',
+      'Business operations',
     ],
   },
   {
-    id: 'ai-automation',
-    number: '03',
-    title: 'AI Automation Center & 12-Language Content Studio',
-    shortDescription:
-      'Gemini-assisted customer support drafting, website copy, SEO suggestions, product descriptions and business names with approval-gated workflows across 12 languages.',
-    deliverables: [
-      'Structured AI modes grounded in published business details; no invented prices or offers',
-      'Trigger-condition-action workflows with manual approval & retry safety',
-      'Metered AI credit tracking, history logs & declarative plugin connectors',
+    id: 'delivery-tracking',
+    title: 'SMART DELIVERY & LIVE TRACKING',
+    description:
+      'Connect shops, customers, and delivery partners through organised pickup, parcel verification, delivery updates, and order tracking.',
+    highlights: [
+      'Rider assignment',
+      'QR-based parcel scanning',
+      'Pickup verification',
+      'Delivery status updates',
+      'Customer tracking',
+      'Secure delivery proof',
     ],
   },
   {
-    id: 'cinema-pwa',
-    number: '04',
-    title: 'Optional Branded PWA & Creative Studio',
-    shortDescription:
-      'Keep website-only affordability or upgrade to an optional installable branded PWA alongside Vijay Visuals signature 4K wedding cinema and brand identity.',
-    deliverables: [
-      'Custom per-business Web App Manifest, icons & offline caching',
-      'Server-verified optional PWA licensing (honestly labeled as Web App, not Play Store)',
-      '4K multi-cam wedding film grading & luxury brand identity suites',
+    id: 'multi-store-commerce',
+    title: 'MULTI-STORE LOCAL COMMERCE',
+    description:
+      'Bring different local businesses and product categories together so customers can discover convenient shopping options nearby.',
+    highlights: [
+      'Multiple business categories',
+      'Independent shop storefronts',
+      'Local product discovery',
+      'Customer-friendly shopping',
+      'White-label customer websites',
     ],
   },
-];
+  {
+    id: 'growth-insights',
+    title: 'DIGITAL GROWTH & BUSINESS INSIGHTS',
+    description:
+      'Support business growth through multilingual experiences, clear business reports, search visibility, and useful automation.',
+    highlights: [
+      'Multilingual customer experience',
+      'Business analytics',
+      'Sales and order reports',
+      'SEO foundations',
+      'Business automation',
+    ],
+  },
+] as const;
 
 export const PORTFOLIO_DATA = [
   {
@@ -309,15 +332,6 @@ export const TESTIMONIALS_DATA = [
     location: 'Hyderabad',
     quote:
       'Vijay transformed our digital presence completely. The black and gold aesthetic radiates authority and significantly strengthened our digital presence and client engagement.',
-  },
-  {
-    id: 't-2',
-    name: 'Dr. Priya & Rohit Verma',
-    role: 'Bride & Groom',
-    company: 'Udaipur Palace Wedding',
-    location: 'Jaipur',
-    quote:
-      'Watching our wedding film edited by Vijay brought tears to our entire family. The color grading is pure royal cinema and every milestone was delivered on schedule.',
   },
   {
     id: 't-3',

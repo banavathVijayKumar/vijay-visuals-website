@@ -389,11 +389,11 @@ async function runTests() {
     assert(data.codSummary.codCollectedInr === 800, 'codCollectedInr is ₹800');
     assert(data.codSummary.codPendingInr === 450, 'codPendingInr is ₹450');
 
-    // Razorpay Status
-    assert(data.razorpay !== undefined, 'razorpay status object is returned');
-    assert(data.razorpay.configured === true, 'Razorpay configured is true');
-    assert(data.razorpay.mode === 'test', 'Razorpay mode is test');
-    assert(data.razorpay.webhookConfigured === true, 'Razorpay webhookConfigured is true');
+    // Cashfree status (legacy "razorpay" key is only a compatibility alias)
+    assert(data.razorpay !== undefined, 'Legacy status alias is present');
+    assert(data.cashfree.configured === false, 'Cashfree is unconfigured in mock env');
+    assert(data.cashfree.mode === 'unconfigured', 'Cashfree mode is unconfigured');
+    assert(data.cashfree.webhookConfigured === false, 'Cashfree webhook is not configured');
   }
 
   console.log('\n--- TEST 3: Unauthenticated Request Returns HTTP 401 JSON ---');
