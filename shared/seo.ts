@@ -28,6 +28,7 @@ const PUBLIC_PLATFORM_EXACT_ROUTES = new Set([
   '/builder',
   '/marketplace',
   '/demo',
+  '/demo-builder',
   '/ai',
   '/payments/cashfree/return',
 ]);
@@ -35,6 +36,7 @@ const PUBLIC_OR_APP_PREFIXES = [
   '/builder/',
   '/marketplace/',
   '/demo/',
+  '/demo-builder/',
   '/ai/',
   '/dashboards',
   '/admin',

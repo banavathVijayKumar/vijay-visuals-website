@@ -518,7 +518,7 @@ await test('delivered cannot be forced through legacy status or POD paths', asyn
 
 await test('source guards prevent regressions in routing, assignment, GPS and white-label/demo scope', () => {
   const middleware = read('functions/_middleware.ts');
-  assert.match(middleware, /SPA_SHELL_EXACT_ROUTES = new Set\(\['\/demo', '\/dashboards', '\/builder'\]\)/);
+  assert.match(middleware, /SPA_SHELL_EXACT_ROUTES = new Set\(\['\/demo', '\/demo-builder', '\/dashboards', '\/builder'\]\)/);
   assert.doesNotMatch(middleware, /SPA_SHELL_EXACT_ROUTES[^\n]*'\/marketplace'/);
 
   const owner = read('functions/api/owner/orders/[id].ts');

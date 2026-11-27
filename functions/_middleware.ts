@@ -58,7 +58,7 @@ const BYPASS_EXACT = new Set(['/robots.txt', '/sitemap.xml']);
  * so they need an explicit shell response. Trailing-slash variants and all
  * other routes keep their existing behavior.
  */
-const SPA_SHELL_EXACT_ROUTES = new Set(['/demo', '/dashboards', '/builder']);
+const SPA_SHELL_EXACT_ROUTES = new Set(['/demo', '/demo-builder', '/dashboards', '/builder']);
 
 export function shouldServeSpaShellDirectly(
   rawPathname: string,

@@ -240,6 +240,9 @@ test('application routes are known but never indexable', () => {
   assert.equal(isKnownPlatformHtmlRoute('/marketplace'), true);
   assert.equal(isKnownPlatformHtmlRoute('/proposal/token-123'), true);
   assert.equal(isKnownPlatformHtmlRoute('/payments/cashfree/return'), true);
+  assert.equal(isKnownPlatformHtmlRoute('/demo-builder'), true);
+  assert.equal(isKnownPlatformHtmlRoute('/demo-builder/'), true);
+  assert.equal(isKnownPlatformHtmlRoute('/demo-builder/step'), true);
   assert.equal(isKnownPlatformHtmlRoute('/not-a-real-page'), false);
   assert.equal(isStaticAssetPath('/favicon.svg'), true);
 
