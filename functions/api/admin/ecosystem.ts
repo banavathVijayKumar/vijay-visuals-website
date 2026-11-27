@@ -6,11 +6,51 @@
 // ============================================================================
 
 import { requireAdmin } from '../_auth';
-import { PagesContext, handleOptions, jsonResponse } from '../_shared';
+import { listSupabaseEmailVerification } from '../auth/_supabaseAdmin';
+import { PagesContext, handleOptions, jsonResponse, sanitizeText } from '../_shared';
 import { getEdgeCashfreeStatus } from '../payments/_cashfree';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
+}
+
+function safeNotes(raw: unknown): Record<string, any> {
+  try {
+    return JSON.parse(String(raw || '{}')) as Record<string, any>;
+  } catch {
+    return {};
+  }
+}
+
+function cashfreeOrderId(raw: unknown): string {
+  const value = String(raw || '');
+  return value.startsWith('cf_') ? value.slice(3) : value;
+}
+
+function accessState(input: {
+  entitlementStatus: string;
+  refundId: string;
+  subscriptionStatus: string;
+  billingCycle: string;
+  paidAt: string;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+}): { entitlementStatus: string; accessStatus: string; accessStartDate: string | null; accessEndDate: string | null } {
+  const entitlement = String(input.entitlementStatus || '').toLowerCase();
+  const subscription = String(input.subscriptionStatus || '').toLowerCase();
+  const refunded = Boolean(input.refundId);
+  const lifetime = String(input.billingCycle || '').toLowerCase() === 'one_time';
+  const expired =
+    !lifetime &&
+    Boolean(input.currentPeriodEnd) &&
+    new Date(input.currentPeriodEnd).getTime() <= Date.now();
+  const active = entitlement === 'active' || (entitlement !== 'revoked' && subscription === 'active' && !expired);
+  return {
+    entitlementStatus: refunded ? 'revoked' : active ? 'active' : 'inactive',
+    accessStatus: refunded ? 'refunded' : expired ? 'expired' : active ? 'active' : 'inactive',
+    accessStartDate: active && !refunded ? input.paidAt || input.currentPeriodStart || null : null,
+    accessEndDate: active && !lifetime && input.currentPeriodEnd && !expired ? input.currentPeriodEnd : null,
+  };
 }
 
 export async function onRequestGet(context: PagesContext): Promise<Response> {
@@ -26,59 +66,161 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   const announcements: Array<Record<string, unknown>> = [];
   const webhookEvents: Array<{ id: number; event?: string; createdAt?: string }> = [];
   const notificationLogs: Array<Record<string, unknown>> = [];
+  const refundHistory: Array<Record<string, unknown>> = [];
+  const deliveryHistory: Array<Record<string, unknown>> = [];
 
   if (env.DB) {
+    const verification = await listSupabaseEmailVerification(env);
+
     // 1. Platform Payments (from cashfree_payments ledger with fallback to platform_payments)
     try {
       const cfPayRes = await env.DB.prepare(
-        `SELECT id, order_id, cf_order_id, user_id, base_amount_inr, gst_amount_inr,
-                amount_inr, currency, environment, status, cf_payment_id, payment_method,
-                payment_time, notes_json, created_at
-         FROM cashfree_payments
-         ORDER BY created_at DESC LIMIT 50`
+        `SELECT c.id, c.order_id, c.cf_order_id, c.user_id, c.entity_type, c.base_amount_inr,
+                c.gst_amount_inr, c.amount_inr, c.currency, c.environment, c.status,
+                c.cf_payment_id, c.payment_method, c.payment_time, c.notes_json, c.created_at,
+                pp.signature_verified, pp.refund_id, pp.receipt, pp.status AS payment_status,
+                pp.website_id, pp.owner_id, pp.billing_cycle, pp.paid_at, pp.subscription_id,
+                u.email AS buyer_email, u.full_name AS buyer_name, u.status AS account_status,
+                ts.status AS subscription_status, ts.current_period_start, ts.current_period_end,
+                pub.public_slug, pub.status AS website_status,
+                (SELECT le.status
+                 FROM platform_payment_entitlements pe
+                 INNER JOIN tenant_lifetime_entitlements le ON le.id = pe.entitlement_id
+                 WHERE pe.payment_id = pp.id LIMIT 1) AS entitlement_status
+         FROM cashfree_payments c
+         LEFT JOIN platform_payments pp ON pp.razorpay_order_id = 'cf_' || c.order_id
+         LEFT JOIN vv_users u ON u.id = pp.owner_id OR u.id = c.user_id
+         LEFT JOIN tenant_subscriptions ts ON ts.id = pp.subscription_id
+         LEFT JOIN customer_website_publications pub ON pub.website_id = pp.website_id
+         ORDER BY c.created_at DESC LIMIT 50`
       ).all<Record<string, any>>();
 
       for (const p of cfPayRes.results || []) {
-        let notes: Record<string, any> = {};
-        try {
-          notes = p.notes_json ? JSON.parse(p.notes_json) : {};
-        } catch {}
+        const notes = safeNotes(p.notes_json);
+        const rawStatus = String(p.payment_status || p.status || 'CREATED').toLowerCase();
+        const displayStatus =
+          ['paid', 'settled', 'captured', 'success'].includes(rawStatus) ? 'paid' : rawStatus;
+        const refundId = String(p.refund_id || notes.refundId || '');
+        const access = accessState({
+          entitlementStatus: String(p.entitlement_status || ''),
+          refundId,
+          subscriptionStatus: String(p.subscription_status || ''),
+          billingCycle: String(p.billing_cycle || ''),
+          paidAt: String(p.paid_at || ''),
+          currentPeriodStart: String(p.current_period_start || ''),
+          currentPeriodEnd: String(p.current_period_end || ''),
+        });
+        const email = String(p.buyer_email || '').trim().toLowerCase();
+        const verified = verification.available
+          ? verification.byId.get(String(p.owner_id || p.user_id || '')) ?? verification.byEmail.get(email) ?? false
+          : null;
+        const paymentPaid = displayStatus === 'paid' && Number(p.signature_verified) === 1;
+        const deliveryStatus = refundId
+          ? 'REFUNDED'
+          : access.entitlementStatus === 'active' && p.website_status === 'published'
+            ? 'DELIVERY_READY'
+            : String(notes.deliveryStatus || '') === 'DELIVERY_FAILED'
+              ? 'DELIVERY_FAILED'
+              : paymentPaid
+                ? 'PROVISIONING'
+                : 'PAYMENT_PENDING';
 
         platformPayments.push({
           id: Number(p.id || 0),
           userId: p.user_id ? Number(p.user_id) || null : null,
-          tenantId: notes.tenantId ? Number(notes.tenantId) : null,
-          planCode: String(notes.planCode || p.entity_type || 'business-website'),
-          planName: String(notes.planName || 'Business Website Package (₹7,999)'),
+          tenantId: p.website_id ? String(p.website_id) : null,
+          planCode: String(p.plan_code || notes.planCode || p.entity_type || 'business-website'),
+          planName: String(notes.planName || 'Business Website Package'),
           amountInr: Number(p.amount_inr || 0),
           currency: String(p.currency || 'INR'),
           mode: String(p.environment || 'sandbox'),
-          razorpayOrderId: String(p.order_id || ''),
-          razorpayPaymentId: String(p.cf_payment_id || p.cf_order_id || ''),
-          status: String(p.status || 'CREATED').toLowerCase(),
+          cashfreeOrderId: cashfreeOrderId(p.order_id),
+          cashfreePaymentId: String(p.cf_payment_id || p.cf_order_id || ''),
+          status: displayStatus,
           createdAt: String(p.created_at || ''),
+          signatureVerified: Number(p.signature_verified) === 1,
+          receiptNumber: String(p.receipt || notes.receiptNumber || `VV-${p.id}`),
+          refundId,
+          refundStatus: refundId ? 'refunded' : null,
+          licenseActivated: access.entitlementStatus === 'active',
+          entitlementStatus: access.entitlementStatus,
+          accessStatus: access.accessStatus,
+          accessStartDate: access.accessStartDate,
+          accessEndDate: access.accessEndDate,
+          deliveryStatus,
+          deliveredAt: deliveryStatus === 'DELIVERY_READY' ? String(p.paid_at || notes.deliveredAt || '') || null : null,
+          accountStatus: String(p.account_status || 'active'),
+          emailVerified: verified,
+          verificationStatus: verification.available ? (verified ? 'verified' : 'pending') : 'unavailable',
+          websiteSlug: String(p.public_slug || ''),
         });
       }
     } catch {
       // Fallback to legacy platform_payments table if present
       try {
         const legRes = await env.DB.prepare(
-          `SELECT * FROM platform_payments ORDER BY created_at DESC LIMIT 50`
+          `SELECT p.*, u.email AS buyer_email, u.status AS account_status,
+                  ts.status AS subscription_status, ts.current_period_start, ts.current_period_end,
+                  pub.public_slug, pub.status AS website_status,
+                  (SELECT le.status
+                   FROM platform_payment_entitlements pe
+                   INNER JOIN tenant_lifetime_entitlements le ON le.id = pe.entitlement_id
+                   WHERE pe.payment_id = p.id LIMIT 1) AS entitlement_status
+           FROM platform_payments p
+           LEFT JOIN vv_users u ON u.id = p.owner_id
+           LEFT JOIN tenant_subscriptions ts ON ts.id = p.subscription_id
+           LEFT JOIN customer_website_publications pub ON pub.website_id = p.website_id
+           ORDER BY p.created_at DESC LIMIT 50`
         ).all<Record<string, any>>();
         for (const p of legRes.results || []) {
+          const refundId = String(p.refund_id || '');
+          const access = accessState({
+            entitlementStatus: String(p.entitlement_status || ''),
+            refundId,
+            subscriptionStatus: String(p.subscription_status || ''),
+            billingCycle: String(p.billing_cycle || ''),
+            paidAt: String(p.paid_at || ''),
+            currentPeriodStart: String(p.current_period_start || ''),
+            currentPeriodEnd: String(p.current_period_end || ''),
+          });
+          const email = String(p.buyer_email || '').trim().toLowerCase();
+          const verified = verification.available
+            ? verification.byId.get(String(p.owner_id || '')) ?? verification.byEmail.get(email) ?? false
+            : null;
           platformPayments.push({
             id: Number(p.id || 0),
             userId: p.user_id ? Number(p.user_id) : null,
-            tenantId: p.tenant_id ? Number(p.tenant_id) : null,
+            tenantId: p.website_id ? String(p.website_id) : null,
             planCode: String(p.plan_code || 'business-website'),
             planName: String(p.plan_name || 'Business Website Package'),
             amountInr: Number(p.amount_inr || 0),
             currency: String(p.currency || 'INR'),
-            mode: String(p.mode || 'sandbox'),
-            razorpayOrderId: String(p.razorpay_order_id || ''),
-            razorpayPaymentId: String(p.razorpay_payment_id || ''),
-            status: String(p.status || 'completed'),
+            mode: String(p.mode || (p.razorpay_mode === 'live' ? 'production' : 'sandbox')),
+            cashfreeOrderId: cashfreeOrderId(p.razorpay_order_id),
+            cashfreePaymentId: String(p.razorpay_payment_id || ''),
+            status: String(p.status || 'completed').toLowerCase() === 'completed'
+              ? 'paid'
+              : String(p.status || 'completed').toLowerCase(),
             createdAt: String(p.created_at || ''),
+            signatureVerified: Number(p.signature_verified) === 1,
+            receiptNumber: String(p.receipt || `VV-${p.id}`),
+            refundId,
+            refundStatus: refundId ? 'refunded' : null,
+            licenseActivated: access.entitlementStatus === 'active',
+            entitlementStatus: access.entitlementStatus,
+            accessStatus: access.accessStatus,
+            accessStartDate: access.accessStartDate,
+            accessEndDate: access.accessEndDate,
+            deliveryStatus: refundId
+              ? 'REFUNDED'
+              : access.entitlementStatus === 'active'
+                ? 'DELIVERY_READY'
+                : 'PAYMENT_PENDING',
+            deliveredAt: access.accessStartDate,
+            accountStatus: String(p.account_status || 'active'),
+            emailVerified: verified,
+            verificationStatus: verification.available ? (verified ? 'verified' : 'pending') : 'unavailable',
+            websiteSlug: String(p.public_slug || ''),
           });
         }
       } catch {}
@@ -194,17 +336,58 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         });
       }
     } catch {}
+
+    // 7. Refunds and reversals (historical Razorpay-named columns store Cashfree IDs)
+    try {
+      const refundRes = await env.DB.prepare(
+        `SELECT id, flow_type, website_id, platform_payment_id, store_order_id,
+                razorpay_payment_id, razorpay_refund_id, amount_inr, reason, status,
+                requested_by, processed_by, created_at, updated_at
+         FROM refunds ORDER BY created_at DESC LIMIT 100`
+      ).all<Record<string, any>>();
+      for (const r of refundRes.results || []) {
+        refundHistory.push({
+          id: Number(r.id || 0),
+          flowType: String(r.flow_type || ''),
+          websiteId: r.website_id ? String(r.website_id) : null,
+          platformPaymentId: r.platform_payment_id ? Number(r.platform_payment_id) : null,
+          storeOrderId: r.store_order_id ? Number(r.store_order_id) : null,
+          cashfreePaymentId: String(r.razorpay_payment_id || ''),
+          cashfreeRefundId: String(r.razorpay_refund_id || ''),
+          amountInr: Number(r.amount_inr || 0),
+          reason: sanitizeText(String(r.reason || ''), 300),
+          status: String(r.status || ''),
+          requestedBy: String(r.requested_by || ''),
+          processedBy: r.processed_by ? String(r.processed_by) : null,
+          createdAt: String(r.created_at || ''),
+          updatedAt: String(r.updated_at || ''),
+        });
+      }
+    } catch {}
+
+    // 8. Delivery/recovery history from the durable audit ledger
+    try {
+      const deliveryRes = await env.DB.prepare(
+        `SELECT id, action, target_type, target_id, metadata_json, created_at
+         FROM platform_audit_logs
+         WHERE target_type IN ('platform_payments', 'customer_website_publications')
+            OR action LIKE '%delivery%'
+         ORDER BY created_at DESC LIMIT 100`
+      ).all<Record<string, any>>();
+      for (const d of deliveryRes.results || []) {
+        deliveryHistory.push({
+          id: Number(d.id || 0),
+          action: String(d.action || ''),
+          targetType: String(d.target_type || ''),
+          targetId: String(d.target_id || ''),
+          details: sanitizeText(String(d.metadata_json || ''), 300),
+          createdAt: String(d.created_at || ''),
+        });
+      }
+    } catch {}
   }
 
-  const razorpayCompat = {
-    configured: cfStatus.configured,
-    mode: cfStatus.mode,
-    message: cfStatus.message,
-    webhookConfigured: cfStatus.webhookConfigured,
-  };
-
   return jsonResponse({
-    razorpay: razorpayCompat,
     cashfree: cfStatus,
     emailConfigured: Boolean(env.RESEND_API_KEY),
     whatsappConfigured: Boolean(env.WHATSAPP_CLOUD_API_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID),
@@ -214,5 +397,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     announcements,
     webhookEvents,
     notificationLogs,
+    refundHistory,
+    deliveryHistory,
   });
 }

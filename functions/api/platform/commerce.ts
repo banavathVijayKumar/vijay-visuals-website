@@ -16,6 +16,8 @@ import {
   sanitizeText,
 } from '../_shared';
 import { assertProductQuota } from '../_tenantAccess';
+import { createEdgeCashfreeRefund } from '../payments/_cashfree';
+import { buildCashfreeRefundIdentity } from '../payments/_cashfreeIdentity';
 
 interface CouponRow {
   id: number;
@@ -507,7 +509,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
     const order = await env.DB.prepare(
       `SELECT id, order_number, website_id, owner_id, customer_user_id, items_json, total_inr,
-              payment_method, payment_status, order_status
+              payment_method, payment_status, order_status, gateway_order_id
        FROM store_orders WHERE id = ? LIMIT 1`
     )
       .bind(orderId)
@@ -522,6 +524,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         payment_method: string;
         payment_status: string;
         order_status: string;
+        gateway_order_id: string | null;
       }>();
 
     if (!order) return errorJson('Order not found.', 404);
@@ -564,15 +567,75 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     }
 
     let refundId: number | null = null;
+    let refundStatus = refundId ? 'requested' : 'not_required_unpaid_cod';
+    let providerRefund: Record<string, unknown> | null = null;
     if (order.payment_status === 'paid' || nextOrderStatus === 'return_requested') {
-      const refRes = await env.DB.prepare(
-        `INSERT INTO refunds
-          (flow_type, store_order_id, website_id, amount_inr, reason, status, requested_by, created_at, updated_at)
-         VALUES ('seller_order', ?, ?, ?, ?, 'requested', ?, datetime('now'), datetime('now'))`
+      const gatewayOrderId = String(order.gateway_order_id || '').trim();
+      const refundAmount = Number(order.total_inr);
+      const identity = await buildCashfreeRefundIdentity({
+        paymentId: order.id,
+        orderId: gatewayOrderId || `store_order_${order.id}`,
+        amountInr: refundAmount,
+        sequence: 1,
+      });
+      const existing = await env.DB.prepare(
+        'SELECT id, status, amount_inr FROM refunds WHERE razorpay_refund_id = ? LIMIT 1'
       )
-        .bind(order.id, order.website_id, order.total_inr, reason, auth.user.id)
-        .run();
-      refundId = Number(refRes.meta?.last_row_id || 0);
+        .bind(identity.refundId)
+        .first<{ id: number; status: string; amount_inr: number }>();
+      if (existing) {
+        refundId = Number(existing.id);
+        refundStatus = existing.status;
+      } else {
+        const refRes = await env.DB.prepare(
+          `INSERT OR IGNORE INTO refunds
+            (flow_type, store_order_id, website_id, razorpay_refund_id, amount_inr, reason,
+             status, requested_by, processed_by, created_at, updated_at)
+           VALUES ('seller_order', ?, ?, ?, ?, ?, 'requested', ?, ?, datetime('now'), datetime('now'))`
+        )
+          .bind(order.id, order.website_id, identity.refundId, refundAmount, reason, auth.user.id, auth.user.id)
+          .run();
+        refundId = Number(refRes.meta?.last_row_id || 0) || null;
+        if (refundId && gatewayOrderId && Number.isInteger(refundAmount) && refundAmount > 0) {
+          try {
+            const result = await createEdgeCashfreeRefund(env, {
+              orderId: gatewayOrderId,
+              amountInr: refundAmount,
+              refundId: identity.refundId,
+              idempotencyKey: identity.idempotencyKey,
+              reason,
+            });
+            providerRefund = { id: result.id, status: result.status, amount: result.amount };
+            refundStatus = String(result.status || 'PENDING').toLowerCase();
+            if (String(result.status || '').toUpperCase() === 'SUCCESS') {
+              await env.DB.prepare(
+                `UPDATE refunds SET status = 'processed', updated_at = datetime('now')
+                 WHERE razorpay_refund_id = ?`
+              )
+                .bind(identity.refundId)
+                .run();
+              await env.DB.prepare(
+                `UPDATE store_orders SET payment_status = 'refunded', updated_at = datetime('now')
+                 WHERE id = ? AND payment_status = 'paid'`
+              )
+                .bind(order.id)
+                .run();
+              refundStatus = 'processed';
+            }
+          } catch (err) {
+            refundStatus = 'failed';
+            await env.DB.prepare(
+              `UPDATE refunds SET status = 'failed', updated_at = datetime('now')
+               WHERE razorpay_refund_id = ?`
+            )
+              .bind(identity.refundId)
+              .run();
+            console.error('Storefront Cashfree refund request failed:', err instanceof Error ? err.message : String(err));
+          }
+        } else {
+          refundStatus = 'requested_manual_review';
+        }
+      }
     }
 
     return json({
@@ -581,7 +644,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       orderNumber: order.order_number,
       orderStatus: nextOrderStatus,
       refundId,
-      refundStatus: refundId ? 'requested' : 'not_required_unpaid_cod',
+      refundStatus,
+      providerRefund,
     });
   }
 

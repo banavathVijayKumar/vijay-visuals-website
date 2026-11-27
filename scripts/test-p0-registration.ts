@@ -214,7 +214,9 @@ check(
 );
 check(
   'P0-1 server verifies password and provisions only in the registration OTP path',
-  verifySource.includes("purpose === 'registration' && (password.length < 6") &&
+  verifySource.includes("const purpose = 'registration' as const") &&
+    verifySource.includes('password.length < 6 || password.length > 128') &&
+    verifySource.includes("if (purpose === 'registration')") &&
     verifySource.includes('provisionVerifiedCustomer(env, {')
 );
 

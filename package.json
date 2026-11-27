@@ -14,7 +14,13 @@
     "test:webhooks": "tsx scripts/test-webhook-signature-security.ts",
     "test:website": "tsx scripts/test-website-workflow-regressions.ts",
     "test:whatsapp": "tsx scripts/test-whatsapp-enquiry.ts",
-    "test:preview": "tsx scripts/test-preview-blocker-fixes.ts"
+    "test:preview": "tsx scripts/test-preview-blocker-fixes.ts",
+    "test:email-verification": "tsx scripts/test-email-verification-reliability.ts",
+    "test:cashfree-safety": "tsx scripts/test-cashfree-safety-fixes.ts",
+    "test:cashfree-webhook-freshness": "tsx scripts/test-cashfree-webhook-freshness.ts",
+    "test:cashfree-security": "node scripts/test-cashfree-security.cjs",
+    "test:cashfree-architecture": "tsx scripts/test-cashfree-only-architecture.ts",
+    "test:sandbox-payment": "tsx scripts/test-sandbox-payment-flow.ts"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",

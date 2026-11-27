@@ -41,6 +41,8 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
   >([]);
   const [emailConfigured, setEmailConfigured] = useState(false);
   const [whatsappConfigured, setWhatsappConfigured] = useState(false);
+  const [refundHistory, setRefundHistory] = useState<Array<Record<string, any>>>([]);
+  const [deliveryHistory, setDeliveryHistory] = useState<Array<Record<string, any>>>([]);
 
   // Announcement form
   const [annTitle, setAnnTitle] = useState('');
@@ -56,23 +58,26 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
     try {
       const res = await apiFetch<{
         cashfree?: { configured: boolean; mode: string; message: string; webhookConfigured: boolean };
-        razorpay?: { configured: boolean; mode: string; message: string; webhookConfigured: boolean };
         platformPayments: PlatformPaymentRecord[];
         sellerAccounts: SellerPayoutAccountRecord[];
         sellerTransfers: SellerTransferRecord[];
         announcements: PlatformAnnouncementRecord[];
         webhookEvents: Array<{ id: number }>;
         notificationLogs?: Array<any>;
+        refundHistory?: Array<Record<string, any>>;
+        deliveryHistory?: Array<Record<string, any>>;
         emailConfigured?: boolean;
         whatsappConfigured?: boolean;
       }>('/api/admin/ecosystem');
-      setCashfree(res.cashfree || res.razorpay || null);
+      setCashfree(res.cashfree || null);
       setPayments(res.platformPayments);
       setSellers(res.sellerAccounts);
       setTransfers(res.sellerTransfers);
       setAnnouncements(res.announcements);
       setWebhookCount(res.webhookEvents.length);
       setNotificationLogs(res.notificationLogs || []);
+      setRefundHistory(res.refundHistory || []);
+      setDeliveryHistory(res.deliveryHistory || []);
       setEmailConfigured(Boolean(res.emailConfigured));
       setWhatsappConfigured(Boolean(res.whatsappConfigured));
       const rDrafts: Record<number, string> = {};
@@ -228,8 +233,22 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
                       ₹{p.amountInr.toLocaleString('en-IN')} · {p.mode.toUpperCase()} · {p.status} · Sig:{' '}
                       {p.signatureVerified ? 'Verified' : 'Pending'}
                     </p>
+                    <p className="text-[10px] text-[#8E8EA2]">
+                      Access: {p.accessStatus || p.entitlementStatus || 'inactive'} · Entitlement:{' '}
+                      {p.entitlementStatus || 'inactive'} · Delivery: {p.deliveryStatus || 'unknown'}
+                    </p>
+                    <p className="text-[10px] text-[#7E7E92]">
+                      Email: {p.verificationStatus === 'unavailable' ? 'verification unavailable' : p.emailVerified ? 'verified' : 'unverified'}
+                      {' · '}Account: {p.accountStatus || 'active'}
+                    </p>
+                    <p className="text-[10px] text-[#7E7E92] font-mono-tabular">
+                      Cashfree order: {p.cashfreeOrderId || 'unavailable'}
+                      {p.cashfreePaymentId ? ` · payment: ${p.cashfreePaymentId}` : ''}
+                      {p.accessStartDate ? ` · from ${new Date(p.accessStartDate).toLocaleDateString('en-IN')}` : ''}
+                      {p.accessEndDate ? ` · until ${new Date(p.accessEndDate).toLocaleDateString('en-IN')}` : ''}
+                    </p>
                   </div>
-                  {p.status === 'captured' && p.signatureVerified && (
+                  {p.status === 'paid' && p.signatureVerified && !p.refundId && (
                     <button
                       type="button"
                       onClick={async () => {
@@ -250,6 +269,38 @@ export const AdminEcosystemPanel: React.FC<AdminEcosystemPanelProps> = ({ onNoti
               ))}
             </div>
           )}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-5 space-y-2">
+            <h3 className="text-sm font-semibold text-white">Refund &amp; Reversal History ({refundHistory.length})</h3>
+            {refundHistory.length === 0 ? (
+              <p className="text-[11px] text-[#8E8EA2]">No refund ledger records found.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto text-[10px] text-[#A0A0B4]">
+                {refundHistory.map((r) => (
+                  <p key={r.id} className="font-mono-tabular">
+                    #{r.id} · {r.flowType} · ₹{Number(r.amountInr || 0).toLocaleString('en-IN')} · {r.status}
+                    {r.cashfreeRefundId ? ` · ${r.cashfreeRefundId}` : ''}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-5 space-y-2">
+            <h3 className="text-sm font-semibold text-white">Delivery &amp; Recovery History ({deliveryHistory.length})</h3>
+            {deliveryHistory.length === 0 ? (
+              <p className="text-[11px] text-[#8E8EA2]">No delivery audit events found.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto text-[10px] text-[#A0A0B4]">
+                {deliveryHistory.map((d) => (
+                  <p key={d.id} className="font-mono-tabular">
+                    {d.action} · {d.targetType || 'payment'} {d.targetId} · {d.createdAt}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -833,9 +833,9 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
                 <span className="w-2 h-2 rounded-full bg-emerald-500/80" />
               </div>
               <div className="truncate px-2 font-mono text-[9px] text-[#A0A0B2] bg-[#14141E] rounded">
-                vijay-visuals-site.pages.dev/site/{tenant.slug}
+                Platform preview · /site/{tenant.slug}
               </div>
-              <span className="text-[9px] text-emerald-400">● Live</span>
+              <span className="text-[9px] text-amber-300">Preview</span>
             </div>
 
             {/* Storefront Mini Preview */}

@@ -669,9 +669,9 @@ export const CustomerLogoCustomizer: React.FC<CustomerLogoCustomizerProps> = ({
           >
             {/* Mock Browser Header / Status Bar */}
             <div className="flex items-center justify-between pb-2 mb-3 border-b border-[#1A1A24] text-[10px] text-[#6E6E82]">
-              <span className="truncate">https://{tenantName.toLowerCase().replace(/[^a-z0-9]/g, '')}.vijayvisuals.in</span>
-              <span className="px-1.5 py-0.2 bg-emerald-950 text-emerald-400 rounded border border-emerald-500/30">
-                SSL Secured
+              <span className="truncate">https://your-business.example</span>
+              <span className="px-1.5 py-0.2 bg-amber-950 text-amber-300 rounded border border-amber-500/30">
+                Illustrative preview
               </span>
             </div>
 

@@ -39,6 +39,7 @@ interface ResolvedTenantRow {
   ssl_status: string;
   public_slug: string;
   business_name: string;
+  owner_status: string | null;
   website_status: string;
   website_json: string;
 }
@@ -279,9 +280,11 @@ async function rewritePlatformSiteRouteMetadata(
   if (!slug || !context.env.DB) return null;
 
   const published = await context.env.DB.prepare(
-    `SELECT website_id, public_slug, business_name, status, website_json
-     FROM customer_website_publications
-     WHERE public_slug = ?
+    `SELECT p.website_id, p.public_slug, p.business_name, p.status, p.website_json,
+            u.status AS owner_status
+     FROM customer_website_publications p
+     LEFT JOIN vv_users u ON u.id = p.owner_id
+     WHERE p.public_slug = ?
      LIMIT 1`
   )
     .bind(slug)
@@ -291,8 +294,10 @@ async function rewritePlatformSiteRouteMetadata(
       business_name: string;
       status: string;
       website_json: string;
+      owner_status: string | null;
     }>();
   if (!published) return null;
+  if (String(published.owner_status || '').toLowerCase() === 'suspended') return null;
 
   const settings = parseTenantSeoSettings(published.website_json);
   const robots = getTenantRobotsDirective({
@@ -323,6 +328,7 @@ async function rewritePlatformSiteRouteMetadata(
     ssl_status: 'not_applicable',
     public_slug: published.public_slug,
     business_name: published.business_name,
+    owner_status: published.owner_status,
     website_status: published.status,
     website_json: published.website_json,
   };
@@ -439,9 +445,11 @@ export async function onRequest(context: PagesContext): Promise<Response> {
 
   if (deliveryHost) {
     const published = await env.DB.prepare(
-      `SELECT website_id, public_slug, business_name, status, website_json
-       FROM customer_website_publications
-       WHERE (public_slug = ? OR website_id = ?) AND status = 'published'
+      `SELECT p.website_id, p.public_slug, p.business_name, p.status, p.website_json,
+              u.status AS owner_status
+       FROM customer_website_publications p
+       LEFT JOIN vv_users u ON u.id = p.owner_id
+       WHERE (p.public_slug = ? OR p.website_id = ?) AND p.status = 'published'
        LIMIT 1`
     )
       .bind(deliveryHost.slug, deliveryHost.slug)
@@ -451,7 +459,16 @@ export async function onRequest(context: PagesContext): Promise<Response> {
         business_name: string;
         status: string;
         website_json: string;
+        owner_status: string | null;
       }>();
+
+    if (published && String(published.owner_status || '').toLowerCase() === 'suspended') {
+      return blockedDomainHtml(
+        'Website Temporarily Unavailable',
+        'This business website is currently unavailable.',
+        hostname
+      );
+    }
 
     if (published) {
       row = {
@@ -464,6 +481,7 @@ export async function onRequest(context: PagesContext): Promise<Response> {
         ssl_status: 'pending',
         public_slug: published.public_slug,
         business_name: published.business_name,
+        owner_status: published.owner_status,
         website_status: published.status,
         website_json: published.website_json,
       };
@@ -481,10 +499,12 @@ export async function onRequest(context: PagesContext): Promise<Response> {
          td.ssl_status,
          p.public_slug,
          p.business_name,
+         u.status AS owner_status,
          p.status AS website_status,
          p.website_json
        FROM tenant_domains td
        INNER JOIN customer_website_publications p ON p.website_id = td.website_id
+       LEFT JOIN vv_users u ON u.id = p.owner_id
        WHERE td.domain_name = ? OR td.domain_name = ?
        LIMIT 1`
     )
@@ -503,6 +523,14 @@ export async function onRequest(context: PagesContext): Promise<Response> {
     return blockedDomainHtml(
       'Domain Not Connected',
       'This custom domain is not connected to any verified business website.',
+      hostname
+    );
+  }
+
+  if (String(row.owner_status || '').toLowerCase() === 'suspended') {
+    return blockedDomainHtml(
+      'Website Temporarily Unavailable',
+      'This business website is currently unavailable.',
       hostname
     );
   }

@@ -40,7 +40,6 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     email?: string;
     otp?: string;
     password?: string;
-    purpose?: 'registration' | 'password_recovery' | 'login';
   }>(request);
 
   if (!body || !body.email || !body.otp) {
@@ -51,9 +50,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   // limit or valid long addresses can never be verified.
   const cleanEmail = sanitizeText(body.email, 254).trim().toLowerCase();
   const rawOtp = sanitizeText(body.otp, 10).trim();
-  const purpose = body.purpose || 'registration';
+  // This endpoint exists only for customer registration. A client-supplied
+  // purpose must never select another flow or skip registration provisioning.
+  const purpose = 'registration' as const;
   const password = String(body.password || '');
-  if (purpose === 'registration' && (password.length < 6 || password.length > 128)) {
+  if (password.length < 6 || password.length > 128) {
     return errorJson('Password must be between 6 and 128 characters.', 400);
   }
 
@@ -200,7 +201,30 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     );
   }
 
-  // 5. Extract Metadata and Synchronize with canonical D1 vv_users table
+  // 5. Claim the OTP atomically BEFORE provisioning. This closes the race where
+  // a concurrent send/resend consumed or expired the record while an external
+  // identity was being created. A provisioning failure after this point leaves
+  // no redeemable code, so the customer must request a fresh OTP.
+  const consume = await env.DB.prepare(
+    `UPDATE auth_email_otps SET consumed_at = datetime('now')
+     WHERE id = ? AND consumed_at IS NULL AND attempts < max_attempts
+       AND datetime('now') <= expires_at`
+  )
+    .bind(record.id)
+    .run();
+
+  if (!consume.meta?.changes) {
+    return json(
+      {
+        ok: false,
+        error: 'This verification code is no longer valid. Please request a new code.',
+        code: 'OTP_NO_LONGER_VALID',
+      },
+      409
+    );
+  }
+
+  // 6. Extract Metadata and Synchronize with canonical D1 vv_users table
   let metadata: Record<string, any> = {};
   try {
     metadata = JSON.parse(record.metadata_json || '{}');
@@ -318,28 +342,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson('Failed to persist customer profile. Please try again.', 500);
   }
 
-  // 6. Success: Claim the OTP atomically, then report success. The conditional
-  // guard prevents a correct code from being redeemed after a concurrent
-  // attempt exhausted or consumed the same record.
-  const consume = await env.DB.prepare(
-    `UPDATE auth_email_otps SET consumed_at = datetime('now')
-     WHERE id = ? AND consumed_at IS NULL AND attempts < max_attempts
-       AND datetime('now') <= expires_at`
-  )
-    .bind(record.id)
-    .run();
-
-  if (!consume.meta?.changes) {
-    return json(
-      {
-        ok: false,
-        error: 'This verification code is no longer valid. Please request a new code.',
-        code: 'OTP_NO_LONGER_VALID',
-      },
-      409
-    );
-  }
-
+  // 7. Success: the OTP was already claimed atomically before provisioning.
   return json({
     ok: true,
     verified: true,

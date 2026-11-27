@@ -1874,7 +1874,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
             <div className="flex items-center gap-2 text-xs text-[#A3A3B5]">
               <Globe className="w-3.5 h-3.5 text-[#D4AF37]" />
               <span className="font-mono-tabular">
-                {customDomain || `vijay-visuals-site.pages.dev/site/${sanitizedSlug || 'your-store'}`}
+                {customDomain || `Platform preview · /site/${sanitizedSlug || 'your-store'}`}
               </span>
             </div>
             <div className="flex items-center gap-1">

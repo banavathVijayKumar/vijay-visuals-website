@@ -31,6 +31,8 @@ export interface AuthenticatedUser {
   isPlatformStaff: boolean;
   staffPermissions: string[];
   status: 'active' | 'suspended';
+  /** True only when the identity provider has confirmed the email address. */
+  emailVerified?: boolean;
 }
 
 export interface AuthSuccess {
@@ -116,6 +118,7 @@ export async function requireUser(request: Request, env: CloudflareEnv): Promise
   let supaUser: {
     id?: string;
     email?: string;
+    email_confirmed_at?: string | null;
     user_metadata?: { full_name?: string; name?: string };
   };
   try {
@@ -304,6 +307,7 @@ export async function requireUser(request: Request, env: CloudflareEnv): Promise
       isPlatformStaff: finalPlatformRole === 'platform_staff' || finalPlatformRole === 'super_admin',
       staffPermissions,
       status,
+      emailVerified: Boolean(supaUser.email_confirmed_at),
     },
   };
 }

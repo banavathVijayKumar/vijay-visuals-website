@@ -98,7 +98,20 @@ async function checkServerTenantEntitlement(userId: number, tenantId?: number) {
   if (user?.role === 'super_admin') {
     return { canPublish: true, planTier: 'enterprise_ai' as const, pwaEnabled: true };
   }
-  // Check verified payment in platformPayments
+  // Legacy Express path must apply the same truth rules as the Edge entitlement
+  // helper: server-verified AND captured AND not refunded AND user not suspended.
+  const [account] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  // The legacy Drizzle schema has no status column; treat a runtime-provided
+  // status as authoritative when present, without inventing a migration.
+  const runtimeStatus = (account as typeof account & { status?: string | null })?.status;
+  if (!account || String(runtimeStatus || '').toLowerCase() === 'suspended') {
+    return {
+      canPublish: false,
+      planTier: 'website_only' as const,
+      pwaEnabled: false,
+    };
+  }
+
   const payments = await db
     .select()
     .from(platformPayments)
@@ -110,7 +123,12 @@ async function checkServerTenantEntitlement(userId: number, tenantId?: number) {
     )
     .orderBy(desc(platformPayments.id));
 
-  const validPayment = payments.find((p) => !tenantId || p.tenantId === tenantId || p.tenantId === null);
+  const validPayment = payments.find((p) => {
+    const status = String(p.status || '').toLowerCase();
+    const paid = ['paid', 'captured', 'settled', 'success'].includes(status);
+    const refunded = Boolean(p.refundId) || status === 'refunded' || status === 'reversed';
+    return paid && !refunded && (!tenantId || p.tenantId === tenantId || p.tenantId === null);
+  });
   if (validPayment) {
     const isPwa = validPayment.planCode === 'website-plus-pwa' || validPayment.planCode.includes('pwa');
     const isEnterprise = validPayment.planCode === 'enterprise' || validPayment.planCode.includes('enterprise');

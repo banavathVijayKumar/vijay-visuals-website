@@ -532,6 +532,45 @@ export async function createEdgeCashfreeRefund(
   };
 }
 
+/**
+ * Cashfree documents the webhook timestamp header as epoch milliseconds and
+ * uses the exact header value in the signed payload (`timestamp + rawBody`).
+ * It documents at-least-once delivery, retries, and dashboard resends, but it
+ * does not publish a fixed freshness tolerance. These limits are therefore a
+ * conservative local replay guard, not a claimed Cashfree requirement:
+ * accept the documented 24-hour resend range plus 5 minutes clock skew, and
+ * reject anything older or too far in the future.
+ */
+export const CASHFREE_WEBHOOK_TIMESTAMP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+export const CASHFREE_WEBHOOK_TIMESTAMP_FUTURE_SKEW_MS = 5 * 60 * 1000;
+
+export type CashfreeWebhookTimestampCheck =
+  | { ok: true; timestampMs: number }
+  | { ok: false; reason: 'missing' | 'malformed' | 'stale' | 'future' };
+
+export function checkCashfreeWebhookTimestampFreshness(
+  timestamp: string,
+  nowMs: number = Date.now()
+): CashfreeWebhookTimestampCheck {
+  const cleanTs = String(timestamp || '').trim();
+  if (!cleanTs) return { ok: false, reason: 'missing' };
+
+  // Official examples use a 13-digit epoch-millisecond value. Do not normalise
+  // the header because the exact string is part of the HMAC message.
+  if (!/^\d{13}$/.test(cleanTs)) return { ok: false, reason: 'malformed' };
+
+  const timestampMs = Number(cleanTs);
+  if (!Number.isSafeInteger(timestampMs)) return { ok: false, reason: 'malformed' };
+
+  if (timestampMs > nowMs + CASHFREE_WEBHOOK_TIMESTAMP_FUTURE_SKEW_MS) {
+    return { ok: false, reason: 'future' };
+  }
+  if (nowMs - timestampMs > CASHFREE_WEBHOOK_TIMESTAMP_MAX_AGE_MS + CASHFREE_WEBHOOK_TIMESTAMP_FUTURE_SKEW_MS) {
+    return { ok: false, reason: 'stale' };
+  }
+  return { ok: true, timestampMs };
+}
+
 export async function verifyEdgeCashfreeWebhookSignature(
   env: CloudflareEnv,
   rawBody: string,

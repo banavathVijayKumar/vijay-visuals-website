@@ -160,11 +160,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       recipient: 'Vijay Visuals',
       buyerEmail: auth.user.email,
       buyerName: auth.user.fullName || auth.user.email,
+      buyerPhone: body.customerPhone || '',
       planCode: plan.code,
       planName: plan.name,
       websiteId: websiteId || '',
       gateway: 'cashfree',
-      paymentSessionId: created.paymentSessionId,
     };
 
     // 1. Insert into cashfree_payments ledger

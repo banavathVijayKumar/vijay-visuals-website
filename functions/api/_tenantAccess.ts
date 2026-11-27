@@ -693,7 +693,7 @@ async function findOwnerFreeStart(
   return env.DB.prepare(
     `SELECT id, website_id, owner_id, plan_code, entitlement_type, status, source, source_reference
      FROM tenant_lifetime_entitlements
-     WHERE owner_id = ? AND entitlement_type = 'free_start'
+     WHERE owner_id = ? AND entitlement_type = 'free_start' AND status = 'active'
      ORDER BY id DESC LIMIT 1`
   )
     .bind(ownerId)
@@ -819,12 +819,25 @@ export async function finalizeCashfreePlatformRefund(
 ): Promise<void> {
   if (!env.DB) return;
 
+  // The finalizer itself must be safe regardless of caller. Only a genuine
+  // provider SUCCESS for the exact captured amount can revoke an entitlement.
+  if (String(input.providerStatus || '').toUpperCase() !== 'SUCCESS') {
+    throw new Error('Refund finalization requires verified provider SUCCESS status.');
+  }
+  if (!Number.isInteger(input.amountInr) || input.amountInr <= 0) {
+    throw new Error('Refund finalization requires a valid whole-rupee amount.');
+  }
+
   const payment = await env.DB.prepare(
-    `SELECT id, subscription_id, razorpay_payment_id, notes_json
+    `SELECT id, subscription_id, razorpay_payment_id, amount_inr, notes_json
      FROM platform_payments WHERE id = ? LIMIT 1`
   )
     .bind(input.paymentId)
-    .first<{ id: number; subscription_id: number | null; razorpay_payment_id: string | null; notes_json: string }>();
+    .first<{ id: number; subscription_id: number | null; razorpay_payment_id: string | null; amount_inr: number; notes_json: string }>();
+
+  if (!payment || Number(payment.amount_inr) !== input.amountInr) {
+    throw new Error('Refund finalization amount does not match the captured payment.');
+  }
 
   const cashfreePayment = await env.DB.prepare(
     'SELECT notes_json FROM cashfree_payments WHERE order_id = ? LIMIT 1'
@@ -1210,14 +1223,16 @@ export async function checkTenantSubscriptionEntitlement(
     console.error('Subscription entitlement lookup failed:', err);
   }
 
-  // 3. Verified paid platform payment fallback for provisioning races.
+  // 3. Verified paid ONE-TIME website purchase fallback for provisioning races.
   // Free Start is never a payment and must not be inferred from a payment row.
+  // Recurring plans must pass the active/non-expired subscription gate in step 2;
+  // a paid row alone must never extend an expired monthly/yearly entitlement.
   try {
     const payment = await env.DB.prepare(
       `SELECT id, plan_code FROM platform_payments
        WHERE (website_id = ? OR (owner_id = ? AND COALESCE(website_id, '') = ''))
          AND status = 'paid' AND signature_verified = 1
-         AND purpose IN ('platform_subscription', 'website_purchase')
+         AND purpose = 'website_purchase' AND billing_cycle = 'one_time'
          AND plan_code <> ?
        ORDER BY id DESC LIMIT 1`
     )

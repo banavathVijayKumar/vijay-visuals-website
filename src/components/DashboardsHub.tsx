@@ -42,7 +42,7 @@ import {
 import { apiFetch } from '../lib/api';
 import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
 import { readAndOptimizeImageFile } from '../lib/imageUpload';
-import { formatVerifiedPaymentLabel } from '../lib/paymentDisplay';
+import { formatVerifiedPaymentLabel, maskPaymentReference } from '../lib/paymentDisplay';
 import { useAuth } from '../hooks/useAuth';
 import {
   AppointmentRecord,
@@ -96,18 +96,60 @@ interface DashboardsHubProps {
 
 type RoleTab = 'owner' | 'delivery' | 'customer' | 'super_admin';
 
+interface PackageFeature {
+  name: string;
+  unlocked: boolean;
+  lockedReason: string | null;
+}
+
+interface UpgradeOption {
+  planCode: string;
+  planName: string;
+  priceInr: number;
+  billingCycle: string;
+  features: string[];
+  lockedReason: string;
+}
+
 interface CustomerPackageStatus {
+  accountEmail?: string;
+  emailVerified?: boolean | null;
+  accountStatus?: string;
   packageStatus: string;
+  subscriptionStatus?: string | null;
   planCode: string;
   planName: string;
   paymentStatus: string | null;
   signatureVerified?: boolean | null;
+  verifiedPayment?: boolean;
   canPublish: boolean;
+  entitlementStatus?: string;
+  currentPeriodStart?: string | null;
   currentPeriodEnd: string | null;
+  remainingValidityDays?: number | null;
+  validityLabel?: string;
   isFreeStart: boolean;
   amountInr: number | null;
+  baseAmountInr?: number | null;
+  gstAmountInr?: number | null;
+  receiptNumber?: string | null;
+  cashfreeOrderId?: string | null;
+  cashfreePaymentId?: string | null;
+  purchaseDate?: string | null;
+  activationDate?: string | null;
+  refundId?: string | null;
+  billingCycle?: string;
+  planFeatures?: PackageFeature[];
+  lockedReason?: string | null;
+  upgradeOptions?: UpgradeOption[];
   websiteId: string | null;
 }
+
+const formatDateValue = (value: string | null | undefined): string => {
+  if (!value) return 'Unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Unavailable' : date.toLocaleDateString('en-IN');
+};
 
 const getPackageStatusClass = (status: string): string => {
   if (status === 'active' || status === 'free_start') {
@@ -116,17 +158,31 @@ const getPackageStatusClass = (status: string): string => {
   if (status === 'pending') {
     return 'bg-sky-950/60 text-sky-400 border-sky-500/30';
   }
-  if (status === 'failed' || status === 'refunded' || status === 'expired') {
+  if (status === 'failed' || status === 'refunded' || status === 'expired' || status === 'cancelled') {
     return 'bg-rose-950/60 text-rose-400 border-rose-500/30';
   }
   return 'bg-[#171722] text-[#9E9EB2] border-[#2A2A38]';
 };
 
 const getReceiptNumber = (p: any): string =>
-  p?.receipt || p?.receiptNumber || (p?.id ? `RCPT-${p.id}` : 'RCPT-UNAVAILABLE');
+  p?.receipt || p?.receiptNumber || 'Receipt unavailable';
+
+const isVerifiedPaidRecord = (p: any): boolean => {
+  const status = String(p?.status || '').toLowerCase();
+  const paid = ['paid', 'settled', 'captured', 'success'].includes(status);
+  const verified =
+    p?.signature_verified === 1 ||
+    p?.signature_verified === true ||
+    p?.signatureVerified === true;
+  return paid && verified;
+};
+
+const hasStoredReceipt = (p: any): boolean => getReceiptNumber(p) !== 'Receipt unavailable';
+
+const canShowTaxInvoice = (p: any): boolean => isVerifiedPaidRecord(p) && hasStoredReceipt(p);
 
 const getPlanName = (p: any): string =>
-  p?.plan_name || p?.planName || p?.plan_code || p?.planCode || 'Business Website Package';
+  p?.plan_name || p?.planName || p?.plan_code || p?.planCode || 'Package details unavailable';
 
 const getBaseAmount = (p: any): number | null => {
   if (typeof p?.base_amount_inr === 'number' && p.base_amount_inr > 0) return p.base_amount_inr;
@@ -151,8 +207,16 @@ const getGrandTotal = (p: any): number | null => {
 const getPaymentDate = (p: any): string | null =>
   p?.paid_at || p?.paidAt || p?.created_at || p?.createdAt || null;
 
-const getPaymentId = (p: any): string | null =>
-  p?.cf_payment_id || p?.cfPaymentId || p?.razorpay_payment_id || p?.razorpayPaymentId || null;
+const getCashfreePaymentId = (p: any): string | null =>
+  p?.cashfreePaymentId ||
+  p?.cf_payment_id ||
+  p?.cfPaymentId ||
+  p?.razorpay_payment_id ||
+  p?.razorpayPaymentId ||
+  null;
+
+const getCashfreeOrderId = (p: any): string | null =>
+  p?.cashfreeOrderId || p?.cf_order_id || p?.cfOrderId || null;
 
 export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   allTenants,
@@ -1065,14 +1129,20 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   };
 
   // --- PLATFORM PACKAGE RENEWAL & CHECKOUT ---
-  const handleRenewPackage = async (tenantId?: number) => {
+  const handleRenewPackage = async (selectedPlanCode?: string, selectedPlanName?: string) => {
     if (!profile) return;
+    const option = packageStatus?.upgradeOptions?.find((item) => item.planCode === selectedPlanCode);
+    const planCode = selectedPlanCode || option?.planCode || packageStatus?.upgradeOptions?.[0]?.planCode;
+    if (!planCode) {
+      onNotify('No package is available to purchase in the current catalogue.');
+      return;
+    }
     setBuyingPackage(true);
     try {
       const opts = {
-        planCode: 'business-website',
-        planName: 'Business Website Package (₹7,999)',
-        websiteId: tenantId ? String(tenantId) : ownedTenants[0]?.id ? String(ownedTenants[0].id) : undefined,
+        planCode,
+        planName: selectedPlanName || option?.planName || packageStatus?.upgradeOptions?.[0]?.planName,
+        websiteId: packageStatus?.websiteId || (ownedTenants[0]?.id ? String(ownedTenants[0].id) : undefined),
         publishWebsite: true,
         prefill: {
           name: profile.name || '',
@@ -1082,7 +1152,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
         onSuccess: async () => {
           await loadCustomerDashboard();
           await refreshProfile();
-          onNotify('Payment verified! Your website package subscription is active.');
+          onNotify('Payment verified. Your entitlement will refresh from the server-side ledger.');
         },
         onError: (err: Error) => {
           onNotify(err.message || 'Payment verification failed.');
@@ -3224,7 +3294,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-4 space-y-2">
+                  <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-4 space-y-2 text-[11px]">
                     <span className="text-[10px] text-[#8E8EA0] uppercase tracking-wider">Package Status</span>
                     <p className="font-luxury text-base font-bold text-white">
                       {packageStatus?.planName || 'No package selected'}
@@ -3241,40 +3311,109 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                     <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${getPackageStatusClass(packageStatus?.packageStatus || 'none')}`}>
                       Entitlement: {(packageStatus?.packageStatus || 'none').toUpperCase()}
                     </span>
-                    {packageStatus?.currentPeriodEnd && (
+                    <p className="text-[10px] text-[#8A8A9E]">
+                      Account: {packageStatus?.accountEmail || profile?.email || 'Unavailable'} ·{' '}
+                      {packageStatus?.emailVerified === null || packageStatus?.emailVerified === undefined
+                        ? 'verification status unavailable'
+                        : packageStatus.emailVerified
+                          ? 'email verified'
+                          : 'email not verified'}
+                      {' · '}status: {packageStatus?.accountStatus || 'active'}
+                    </p>
+                    <p className="text-[10px] text-[#8A8A9E]">
+                      Subscription: {(packageStatus?.subscriptionStatus || 'not_applicable').toUpperCase()} ·{' '}
+                      Billing: {(packageStatus?.billingCycle || 'not_selected').replace(/_/g, ' ')}
+                    </p>
+                    <p className="text-[10px] text-[#8A8A9E]">{packageStatus?.validityLabel || 'No validity record'}</p>
+                    {typeof packageStatus?.remainingValidityDays === 'number' && (
                       <p className="text-[10px] text-[#8A8A9E]">
-                        Current period ends {new Date(packageStatus.currentPeriodEnd).toLocaleDateString('en-IN')}
+                        Remaining validity: {packageStatus.remainingValidityDays} day(s)
                       </p>
+                    )}
+                    <p className="text-[10px] text-[#8A8A9E]">
+                      Purchased: {formatDateValue(packageStatus?.purchaseDate)} · Activated:{' '}
+                      {formatDateValue(packageStatus?.activationDate)} · Expires:{' '}
+                      {formatDateValue(packageStatus?.currentPeriodEnd)}
+                    </p>
+                    {packageStatus?.cashfreeOrderId && (
+                      <p className="font-mono-tabular text-[10px] text-[#7E7E92]">
+                        Cashfree order: {maskPaymentReference(packageStatus.cashfreeOrderId)}
+                      </p>
+                    )}
+                    {packageStatus?.cashfreePaymentId && (
+                      <p className="font-mono-tabular text-[10px] text-[#7E7E92]">
+                        Cashfree payment: {maskPaymentReference(packageStatus.cashfreePaymentId)}
+                      </p>
+                    )}
+                    {packageStatus?.lockedReason && (
+                      <p className="text-[10px] text-rose-300">{packageStatus.lockedReason}</p>
                     )}
                   </div>
 
                   <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-4 space-y-1.5 text-[11px]">
-                    <span className="text-[10px] text-[#8E8EA0] uppercase tracking-wider block mb-1">Included Entitlements</span>
-                    <p className="text-[#C2C2D4] flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
-                      <span>Exclusive website management dashboard</span>
-                    </p>
-                    <p className="text-[#C2C2D4] flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
-                      <span>Edit colors, banners, fonts &amp; layout</span>
-                    </p>
-                    <p className="text-[#C2C2D4] flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
-                      <span>Catalog, pricing &amp; customer orders</span>
-                    </p>
-                    <p className="text-[#C2C2D4] flex items-center gap-1.5">
-                      <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
-                      <span>Custom domain linking &amp; live publishing</span>
-                    </p>
+                    <span className="text-[10px] text-[#8E8EA0] uppercase tracking-wider block mb-1">
+                      Included / Locked Features
+                    </span>
+                    {!packageStatus?.planFeatures?.length ? (
+                      <p className="text-[#8E8EA2]">Feature list is unavailable for this package.</p>
+                    ) : (
+                      packageStatus.planFeatures.map((feature) => (
+                        <p
+                          key={feature.name}
+                          className={`flex items-start gap-1.5 ${feature.unlocked ? 'text-[#C2C2D4]' : 'text-[#77778C]'}`}
+                        >
+                          {feature.unlocked ? (
+                            <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0 mt-0.5" />
+                          ) : (
+                            <X className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                          )}
+                          <span>
+                            {feature.name}
+                            {!feature.unlocked && feature.lockedReason ? ` — ${feature.lockedReason}` : ''}
+                          </span>
+                        </p>
+                      ))
+                    )}
                   </div>
 
-                  <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 p-4 space-y-1.5 text-[10px] text-[#C4B79A] leading-relaxed">
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 p-4 space-y-2 text-[10px] text-[#C4B79A] leading-relaxed">
                     <span className="text-[10px] text-amber-300 font-semibold uppercase tracking-wider block mb-1">
-                      Package Boundaries
+                      Renewal &amp; Upgrade
                     </span>
-                    <p>• <strong>Custom Domain:</strong> Customer provides own domain (registrar fees paid directly).</p>
-                    <p>• <strong>Seller Payments:</strong> Store checkout payments are processed through Cashfree PG.</p>
-                    <p>• <strong>Platform Hosting:</strong> Cloudflare edge hosting included under platform arrangement.</p>
+                    <p>
+                      {packageStatus?.billingCycle === 'one_time'
+                        ? 'This is a one-time package. There is no recurring renewal; choose another package below to upgrade.'
+                        : packageStatus?.subscriptionStatus === 'cancelled'
+                          ? 'Recurring access was cancelled. A fresh purchase is required to restore access.'
+                          : packageStatus?.subscriptionStatus === 'expired'
+                            ? 'Recurring access expired. A fresh purchase is required to restore access.'
+                            : 'Recurring access continues until the recorded period end, subject to an active entitlement.'}
+                    </p>
+                    {!packageStatus?.upgradeOptions?.length ? (
+                      <p>No higher package is currently available in the catalogue.</p>
+                    ) : (
+                      packageStatus.upgradeOptions.map((option) => (
+                        <div
+                          key={option.planCode}
+                          className="rounded border border-[#2B2B3C] bg-[#08080C] p-2 space-y-1"
+                        >
+                          <p className="text-white font-semibold">
+                            {option.planName} · ₹{option.priceInr.toLocaleString('en-IN')} ·{' '}
+                            {option.billingCycle.replace(/_/g, ' ')}
+                          </p>
+                          <p>{option.features.slice(0, 3).join(' · ') || 'Feature list unavailable'}</p>
+                          <button
+                            type="button"
+                            disabled={buyingPackage}
+                            onClick={() => handleRenewPackage(option.planCode, option.planName)}
+                            className="text-[#ECC86A] border border-[#D4AF37]/50 rounded px-2 py-1 disabled:opacity-50"
+                          >
+                            Purchase via Cashfree
+                          </button>
+                        </div>
+                      ))
+                    )}
+                    <p>• Custom domain fees, gateway MDR, and third-party API charges are billed separately.</p>
                   </div>
                 </div>
               </div>
@@ -3291,7 +3430,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
                 {platformPayments.length === 0 ? (
                   <p className="p-6 text-center text-xs text-[#8E8EA2]">
-                    No platform payments recorded yet under {profile.email}. Once you purchase a package, your official GST tax invoices will appear here.
+                    No platform payments recorded yet under {profile.email}. Verified payments with a stored receipt number can be viewed as tax invoices; other records remain payment records.
                   </p>
                 ) : (
                   <div className="divide-y divide-[#1D1D28]">
@@ -3300,30 +3439,38 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       const planName = getPlanName(pay);
                       const grandTotal = getGrandTotal(pay);
                       const payDate = getPaymentDate(pay);
-                      const paymentId = getPaymentId(pay);
+                      const paymentId = getCashfreePaymentId(pay);
+                      const orderId = getCashfreeOrderId(pay);
                       const dateFormatted = payDate && !isNaN(new Date(payDate).getTime())
                         ? new Date(payDate).toLocaleDateString('en-IN')
                         : 'Date Unavailable';
+
+                      let payNotes: Record<string, any> = {};
+                      try {
+                        payNotes = JSON.parse(pay.notes_json || '{}');
+                      } catch {}
 
                       // Entitlement comes from the linked D1 entitlement row, never
                       // from stale human-readable notes written at checkout time.
                       const entitlementStatus = String(pay.entitlement_status || '').toLowerCase();
                       const paymentStatus = String(pay.status || '').toLowerCase();
+                      const storedDeliveryStatus = String(
+                        payNotes.deliveryStatus || pay.delivery_status || ''
+                      ).toUpperCase();
                       const deliveryState: string =
                         entitlementStatus === 'active'
                           ? 'ACTIVE'
                           : entitlementStatus === 'revoked' || paymentStatus === 'refunded'
                             ? 'REFUNDED'
-                            : paymentStatus === 'failed'
-                              ? 'FAILED'
-                              : paymentStatus === 'paid' && Number(pay.signature_verified) === 1
-                                ? 'ACTIVE'
+                            : storedDeliveryStatus === 'DELIVERY_FAILED'
+                              ? 'DELIVERY_FAILED'
+                              : paymentStatus === 'failed'
+                                ? 'FAILED'
                                 : 'PAYMENT_PENDING';
-                      let payNotes: Record<string, any> = {};
-                      try {
-                        payNotes = JSON.parse(pay.notes_json || '{}');
-                      } catch {}
-                      const siteUrl = payNotes.websiteUrl || (pay.website_id ? `/site/${pay.public_slug || pay.website_id}` : null);
+                      const siteUrl =
+                        deliveryState === 'ACTIVE' && pay.website_id
+                          ? `/site/${pay.public_slug || pay.website_id}`
+                          : null;
 
                       return (
                         <div key={pay.id} className="p-4 flex flex-wrap items-center justify-between gap-4 text-xs">
@@ -3342,7 +3489,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                                   <span className="ml-1 text-amber-300">· verification pending</span>
                                 )}
                               </span>
-                              {deliveryState === 'ACTIVE' || deliveryState === 'DELIVERY_READY' ? (
+                              {deliveryState === 'ACTIVE' ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
                                   <CheckCircle2 className="w-3 h-3" />
                                   <span>Delivered · Active</span>
@@ -3350,17 +3497,27 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                               ) : deliveryState === 'DELIVERY_FAILED' ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] text-rose-400 font-medium">
                                   <AlertCircle className="w-3 h-3" />
-                                  <span>Delivery Pending</span>
+                                  <span>Delivery failed</span>
+                                </span>
+                              ) : deliveryState === 'REFUNDED' || deliveryState === 'FAILED' ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-rose-400 font-medium">
+                                  <AlertCircle className="w-3 h-3" />
+                                  <span>{deliveryState === 'REFUNDED' ? 'Refunded' : 'Payment failed'}</span>
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 text-[10px] text-sky-400 font-medium">
                                   <Clock className="w-3 h-3" />
-                                  <span>Provisioning...</span>
+                                  <span>Awaiting verification / provisioning</span>
+                                </span>
+                              )}
+                              {orderId && (
+                                <span className="font-mono-tabular text-[10px] text-[#7E7E92]">
+                                  Cashfree order: {maskPaymentReference(orderId)}
                                 </span>
                               )}
                               {paymentId && (
                                 <span className="font-mono-tabular text-[10px] text-[#7E7E92]">
-                                  Ref: {paymentId}
+                                  Cashfree payment: {maskPaymentReference(paymentId)}
                                 </span>
                               )}
                             </div>
@@ -3392,7 +3549,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                               onClick={() => setSelectedReceipt(pay)}
                               className="px-3 py-1.5 rounded border border-[#D4AF37]/50 text-[#ECC86A] text-xs font-medium hover:bg-[#D4AF37] hover:text-[#08080A] transition-colors"
                             >
-                              View Platform Tax Invoice
+                              {canShowTaxInvoice(pay) ? 'View Platform Tax Invoice' : 'View Payment Record'}
                             </button>
                           </div>
                         </div>
@@ -4105,12 +4262,16 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   <div>
                     <h2 className="font-luxury text-lg font-bold text-white tracking-wider">VIJAY VISUALS</h2>
                     <p className="text-[10px] text-[#A0A0B4] mt-0.5">Platform Web Engineering &amp; Multi-Tenant Cloud Services</p>
-                    <p className="text-[10px] text-[#7E7E92]">Tax Invoice · SAC Code: 998314 (GSTIN: Pending Registration / Business Settings)</p>
+                    <p className="text-[10px] text-[#7E7E92]">
+                      {canShowTaxInvoice(selectedReceipt)
+                        ? 'Tax Invoice · SAC Code: 998314 (GSTIN: Pending Registration / Business Settings)'
+                        : 'Payment Record · Not a verified tax invoice'}
+                    </p>
                   </div>
                 </div>
                 <div className="text-right">
                   <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950/70 text-emerald-400 border border-emerald-500/40 mb-1">
-                    PAID / TAX INVOICE
+                    {canShowTaxInvoice(selectedReceipt) ? 'PAID / TAX INVOICE' : 'PAYMENT RECORD'}
                   </span>
                   <p className="font-mono-tabular text-[11px] text-[#ECC86A] font-semibold">
                     {getReceiptNumber(selectedReceipt)}
@@ -4128,12 +4289,25 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
               </div>
             </div>
 
-            {/* Billed To */}
+            {/* Billed To — stored purchaser details, not the current profile */}
             <div className="rounded-lg border border-[#1E1E2C] bg-[#09090E] p-3 mb-4 text-[11px] space-y-1">
-              <span className="text-[10px] text-[#8E8EA0] uppercase tracking-wider block">Customer Details</span>
-              <p className="text-white font-medium">{profile?.name || 'Customer'}</p>
-              <p className="text-[#A2A2B6]">{profile?.email}</p>
-              {profile?.phone && <p className="text-[#A2A2B6]">Mobile: {profile.phone}</p>}
+              <span className="text-[10px] text-[#8E8EA0] uppercase tracking-wider block">Purchaser Details On Record</span>
+              {(() => {
+                let notes: Record<string, any> = {};
+                try {
+                  notes = JSON.parse(selectedReceipt.notes_json || '{}');
+                } catch {}
+                const name = notes.buyerName || selectedReceipt.buyer_name || 'Not recorded';
+                const email = notes.buyerEmail || selectedReceipt.buyer_email || 'Not recorded';
+                const phone = notes.buyerPhone || selectedReceipt.buyer_phone || '';
+                return (
+                  <>
+                    <p className="text-white font-medium">{name}</p>
+                    <p className="text-[#A2A2B6]">{email}</p>
+                    {phone && <p className="text-[#A2A2B6]">Mobile: {phone}</p>}
+                  </>
+                );
+              })()}
             </div>
 
             {/* Items Table */}
@@ -4148,51 +4322,39 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                   const gst = getGstAmount(selectedReceipt);
                   const total = getGrandTotal(selectedReceipt);
 
-                  if (base === null && total === null) {
+                  if (base === null || gst === null || total === null) {
                     return (
                       <div className="p-4 text-center text-amber-400 text-xs border border-amber-500/20 rounded bg-amber-950/20">
-                        Payment breakdown details are unavailable for this receipt.
+                        Stored tax breakdown is unavailable for this receipt. Only the recorded payment total is shown.
+                        {total !== null ? ` Recorded total: ₹${total.toLocaleString('en-IN')}.` : ''}
                       </div>
                     );
                   }
-
-                  const taxableBase = base !== null ? base : (total !== null ? Math.round(total / 1.18) : 0);
-                  const calculatedGst = gst !== null ? gst : (total !== null ? total - taxableBase : 0);
-                  const finalTotal = total !== null ? total : (taxableBase + calculatedGst);
-                  const cgst = Math.round(calculatedGst / 2);
-                  const sgst = calculatedGst - cgst;
-                  const planName = getPlanName(selectedReceipt);
 
                   return (
                     <>
                       <div className="grid grid-cols-12">
                         <div className="col-span-8">
-                          <p className="text-white font-medium">{planName}</p>
+                          <p className="text-white font-medium">{getPlanName(selectedReceipt)}</p>
                           <p className="text-[10px] text-[#7E7E92]">Website Management &amp; Storefront Access (SAC: 998314)</p>
                         </div>
                         <span className="col-span-4 text-right font-mono-tabular text-white">
-                          ₹{taxableBase.toLocaleString('en-IN')}
+                          ₹{base.toLocaleString('en-IN')}
                         </span>
                       </div>
 
                       <div className="border-t border-[#1C1C28] pt-2 space-y-1 text-[10px] text-[#9A9AB0] font-mono-tabular">
                         <div className="flex justify-between">
-                          <span>Taxable Base Subtotal:</span>
-                          <span>₹{taxableBase.toLocaleString('en-IN')}</span>
+                          <span>Taxable Base (stored):</span>
+                          <span>₹{base.toLocaleString('en-IN')}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>CGST (9.0%):</span>
-                          <span>₹{cgst.toLocaleString('en-IN')}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>SGST (9.0%):</span>
-                          <span>₹{sgst.toLocaleString('en-IN')}</span>
+                          <span>GST (stored):</span>
+                          <span>₹{gst.toLocaleString('en-IN')}</span>
                         </div>
                         <div className="flex justify-between text-xs font-bold text-white pt-1.5 border-t border-[#1C1C28]">
-                          <span>Grand Total (Settled):</span>
-                          <span className="text-[#ECC86A]">
-                            ₹{finalTotal.toLocaleString('en-IN')}
-                          </span>
+                          <span>Grand Total (stored):</span>
+                          <span className="text-[#ECC86A]">₹{total.toLocaleString('en-IN')}</span>
                         </div>
                       </div>
                     </>
@@ -4204,10 +4366,24 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
             {/* Verification Metadata */}
             <div className="rounded-lg border border-[#1C1C28] bg-[#09090E] p-2.5 mb-4 text-[10px] text-[#7E7E92] font-mono-tabular space-y-0.5">
               <p>Payment Gateway: Cashfree Payments (Server-Side Verified HMAC-SHA256)</p>
-              {getPaymentId(selectedReceipt) && (
-                <p>Payment ID: {getPaymentId(selectedReceipt)}</p>
+              {getCashfreeOrderId(selectedReceipt) && (
+                <p>Cashfree order: {maskPaymentReference(getCashfreeOrderId(selectedReceipt))}</p>
               )}
-              <p>Status: {selectedReceipt.status ? String(selectedReceipt.status).toUpperCase() : 'COMPLETED'} &amp; Entitlement Granted</p>
+              {getCashfreePaymentId(selectedReceipt) && (
+                <p>Cashfree payment: {maskPaymentReference(getCashfreePaymentId(selectedReceipt))}</p>
+              )}
+              <p>
+                Status:{' '}
+                {selectedReceipt.status
+                  ? String(selectedReceipt.status).toUpperCase()
+                  : 'UNKNOWN'}{' '}
+                {isVerifiedPaidRecord(selectedReceipt)
+                  ? '& Verified Payment'
+                  : '& Not Verified Paid'}
+              </p>
+              {String(
+                selectedReceipt.entitlement_status || selectedReceipt.entitlementStatus || ''
+              ).toLowerCase() === 'active' && <p>Entitlement: Granted</p>}
             </div>
 
             {/* Modal Actions */}
@@ -4218,7 +4394,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                 className="flex-1 py-2.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-bold hover:opacity-95 transition-opacity flex items-center justify-center gap-1.5 shadow-md"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print / Save Tax Invoice</span>
+                <span>{canShowTaxInvoice(selectedReceipt) ? 'Print / Save Tax Invoice' : 'Print / Save Payment Record'}</span>
               </button>
               <button
                 type="button"

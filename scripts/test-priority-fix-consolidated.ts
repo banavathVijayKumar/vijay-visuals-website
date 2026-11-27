@@ -766,6 +766,14 @@ async function runPackageStatusTests(): Promise<void> {
     assert.equal(body.canPublish, true);
     assert.equal(body.planCode, 'starter-website');
     assert.equal(body.planName, 'Starter Website Package');
+    assert.equal(body.accountEmail, 'auth-owner@example.invalid');
+    assert.equal(body.emailVerified, false);
+    assert.equal(body.accountStatus, 'active');
+    assert.equal(body.cashfreeOrderId, 'order_web_active');
+    assert.match(body.validityLabel, /Lifetime access/);
+    assert.ok(Array.isArray(body.planFeatures) && body.planFeatures.length > 0);
+    assert.ok(body.planFeatures.every((feature: any) => feature.unlocked === true));
+    assert.ok(Array.isArray(body.upgradeOptions) && body.upgradeOptions.length > 0);
   });
 
   await it('pending order without entitlement never reports ACTIVE', async () => {
@@ -808,6 +816,29 @@ async function runPackageStatusTests(): Promise<void> {
     assert.equal(history.status, 200);
     assert.equal(historyBody.payments[0].status, 'refunded');
     assert.equal(historyBody.payments[0].entitlement_status, 'revoked');
+  });
+
+  await it('cancelled recurring subscription is CANCELLED, not silently EXPIRED', async () => {
+    const { db: cancelledDb, d1: cancelledD1 } = createD1();
+    seedPackageWebsite(cancelledDb, {
+      websiteId: 'web_cancelled',
+      slug: 'cancelled-store',
+      businessName: 'Cancelled Store',
+    });
+    cancelledDb.prepare(
+      `INSERT INTO tenant_subscriptions
+        (website_id, owner_id, plan_code, billing_cycle, status, current_period_end)
+       VALUES ('web_cancelled', 'auth-owner', 'starter-website', 'monthly', 'cancelled', datetime('now', '+10 days'))`
+    ).run();
+    const response = await getPackageStatus(
+      makeContext({ ...env, DB: cancelledD1 }, {}, 'token-owner', 'GET')
+    );
+    const body = await readJson(response);
+    assert.equal(response.status, 200);
+    assert.equal(body.packageStatus, 'cancelled');
+    assert.equal(body.subscriptionStatus, 'cancelled');
+    assert.equal(body.canPublish, false);
+    assert.match(body.lockedReason, /cancelled/i);
   });
 
   await it('customer without a website gets NONE instead of a hardcoded active package', async () => {

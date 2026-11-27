@@ -67,6 +67,15 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
     return errorJson('Refund sequence must be a whole number from 1 to 100.', 400);
   }
   const sequence = rawSequence;
+
+  // The shared finalizer treats a terminal refund as full and revokes access.
+  // Never let a partial or repeated sequence silently revoke the whole purchase.
+  if (requestedAmount !== Number(row.amount_inr) || sequence !== 1) {
+    return errorJson(
+      'Only one full refund of the captured amount is supported here. Partial or repeat refunds require manual operator handling.',
+      400
+    );
+  }
   const refundAmountInr = refundAmount;
 
   // Historical column names hold the Cashfree MERCHANT order id with a `cf_`

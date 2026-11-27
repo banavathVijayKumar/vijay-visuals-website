@@ -30,6 +30,7 @@ export type ProvisionCustomerResult =
 export interface AdminUserRef {
   id?: string;
   email?: string;
+  email_confirmed_at?: string | null;
 }
 
 export interface AdminError {
@@ -207,6 +208,38 @@ export async function provisionVerifiedCustomer(
     return { ok: false, code: 'PROVISIONING_FAILED', status: 502 };
   }
   return { ok: true, userId: String(data.user.id), created: true };
+}
+
+/**
+ * Returns only boolean email-confirmation state keyed by provider user id and
+ * normalized email. No raw provider profile, token, or secret is returned.
+ */
+export async function listSupabaseEmailVerification(
+  env: CloudflareEnv,
+  deps: AdminDeps = {}
+): Promise<{ available: boolean; byId: Map<string, boolean>; byEmail: Map<string, boolean> }> {
+  const byId = new Map<string, boolean>();
+  const byEmail = new Map<string, boolean>();
+  const config = getSupabaseAdminConfig(env);
+  if (!config) return { available: false, byId, byEmail };
+
+  try {
+    const client = deps.client || createSupabaseAdminClient(config);
+    for (let page = 1; page <= 5; page++) {
+      const { data, error } = await client.auth.admin.listUsers({ page, perPage: 1000 });
+      if (error) return { available: false, byId, byEmail };
+      const users = Array.isArray(data?.users) ? data.users : [];
+      for (const user of users) {
+        const verified = Boolean(user.email_confirmed_at);
+        if (user.id) byId.set(String(user.id), verified);
+        if (user.email) byEmail.set(String(user.email).trim().toLowerCase(), verified);
+      }
+      if (users.length < 1000) break;
+    }
+    return { available: true, byId, byEmail };
+  } catch {
+    return { available: false, byId, byEmail };
+  }
 }
 
 /**

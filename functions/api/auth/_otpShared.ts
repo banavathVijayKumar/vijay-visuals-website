@@ -12,6 +12,13 @@ export const RESEND_COOLDOWN_SECONDS = 60;
 export const MAX_OTP_ATTEMPTS = 5;
 
 /**
+ * Customer-facing delivery-failure copy. The account is never created until a
+ * valid OTP is verified, so this message must never imply success.
+ */
+export const EMAIL_DELIVERY_UNAVAILABLE_MESSAGE =
+  'Email verification is temporarily unavailable. Your account has not been created. Please try again later.';
+
+/**
  * Generates a cryptographically secure 6-digit numeric code (100000 - 999999).
  */
 export function generateSecureNumericOtp(): string {

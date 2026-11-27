@@ -319,7 +319,7 @@ async function run() {
   // --------------------------------------------------------------------------
   console.log('[MODULE 1: INDEPENDENT CUSTOMER WEBSITE DELIVERY]');
   // --------------------------------------------------------------------------
-  await it('Automatic Delivery Subdomain resolution (svs.vijayvisuals.in)', async () => {
+  await it('Automatic Delivery Subdomain resolves as a preview, not a live customer domain', async () => {
     const req = new Request('https://vijay-visuals-site.pages.dev/api/domains/resolve?host=svs.vijayvisuals.in');
     const res = await resolveDomain({ request: req, env: mockEnv } as any);
     assert.strictEqual(res.status, 200);
@@ -328,7 +328,10 @@ async function run() {
     assert.strictEqual(data.websiteId, 'prev_site_svs');
     assert.strictEqual(data.tenantSlug, 'svs');
     assert.strictEqual(data.isDefaultDeliverySubdomain, true);
-    assert.strictEqual(data.deliveryUrl, 'https://svs.vijayvisuals.in');
+    assert.strictEqual(data.deliveryUrl, null);
+    assert.strictEqual(data.previewDeliveryUrl, 'https://svs.vijayvisuals.in');
+    assert.strictEqual(data.isPlatformPreview, true);
+    assert.strictEqual(data.status, 'requires_wildcard_dns_tls');
   });
 
   await it('Connected custom domain resolution (www.svsstore.in)', async () => {

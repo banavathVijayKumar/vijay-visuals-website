@@ -654,7 +654,7 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
               </span>
               <p className="text-xs font-semibold text-white">Temporary Platform Path URL</p>
               <code className="text-[11px] font-mono text-[#ECC86A] bg-black/40 px-2 py-1 rounded block truncate">
-                https://master.vijay-visuals-site.pages.dev/site/&lt;your-slug&gt;
+                /site/&lt;your-slug&gt; (platform preview)
               </code>
               <p className="text-[11px] text-[#7E7E92]">
                 Active immediately upon clicking Publish. No DNS waiting or registrar setup required.
@@ -665,12 +665,12 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
               <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block">
                 2. Free Platform Subdomain
               </span>
-              <p className="text-xs font-semibold text-white">Direct Subdomain Brand URL</p>
+              <p className="text-xs font-semibold text-white">Custom Domain (Customer-Owned)</p>
               <code className="text-[11px] font-mono text-blue-300 bg-black/40 px-2 py-1 rounded block truncate">
-                https://&lt;yourbrand&gt;.vijayvisuals.in
+                https://&lt;your-owned-domain&gt;
               </code>
               <p className="text-[11px] text-[#7E7E92]">
-                Included free with every package. (Resolver code is fully active; will go live once root nameservers are delegated).
+                Requires a domain you own plus verified DNS/HTTPS. No domain is bundled or assumed available.
               </p>
             </div>
 

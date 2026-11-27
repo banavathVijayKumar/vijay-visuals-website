@@ -7,7 +7,11 @@
 
 import { requireUser } from '../../../_auth';
 import { PagesContext, errorJson, json, sanitizeText, writeAuditLog } from '../../../_shared';
-import { getPaymentEntitlementId, provisionLifetimeEntitlement } from '../../../_tenantAccess';
+import {
+  checkTenantSubscriptionEntitlement,
+  getPaymentEntitlementId,
+  provisionLifetimeEntitlement,
+} from '../../../_tenantAccess';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from '../../../plans';
 
 export async function onRequestPost(context: PagesContext<{ id: string }>): Promise<Response> {
@@ -128,7 +132,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       await env.DB.prepare(
         `INSERT INTO customer_website_publications
           (website_id, owner_id, public_slug, business_name, website_json, status, published_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'published', datetime('now'), datetime('now'), datetime('now'))`
+         VALUES (?, ?, ?, ?, ?, 'unpublished', NULL, datetime('now'), datetime('now'))`
       )
         .bind(newWebsiteId, payment.owner_id, rawSlug, businessName, JSON.stringify(websiteData))
         .run();
@@ -171,37 +175,49 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
         if (!provision.ok && provision.error) return provision.error;
       }
     } else if (!subscriptionId) {
-      const durationExpr = payment.billing_cycle === 'yearly' ? '+365 days' : '+30 days';
-      const subRes = await env.DB.prepare(
-        `INSERT INTO tenant_subscriptions
-          (website_id, owner_id, plan_code, billing_cycle, status, base_amount_inr, gst_amount_inr,
-           total_amount_inr, setup_fee_inr, payment_gateway, gateway_subscription_id,
-           current_period_start, current_period_end, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, 'cashfree', ?, datetime('now'), datetime('now', ?), datetime('now'), datetime('now'))`
-      )
-        .bind(
-          targetWebsiteId,
-          payment.owner_id,
-          payment.plan_code,
-          payment.billing_cycle === 'yearly' ? 'yearly' : 'monthly',
-          payment.base_amount_inr,
-          payment.gst_amount_inr,
-          payment.amount_inr,
-          payment.setup_fee_inr,
-          payment.razorpay_payment_id || payment.razorpay_order_id,
-          durationExpr
-        )
-        .run();
-      subscriptionId = Number(subRes.meta?.last_row_id || 0) || null;
+      // A paid recurring ledger row without a linked subscription is only
+      // historical evidence. Never mint fresh active access from it.
+      return errorJson(
+        'This recurring payment has no active linked subscription. A fresh purchase is required before publishing.',
+        409
+      );
     } else {
-      // Ensure recurring subscription status is active
+      // Never resurrect a cancelled or expired recurring subscription. A paid
+      // ledger row is historical proof of payment, not current access.
+      const activeSub = await env.DB.prepare(
+        `SELECT id FROM tenant_subscriptions
+         WHERE id = ? AND status = 'active' AND current_period_end > datetime('now')
+         LIMIT 1`
+      )
+        .bind(subscriptionId)
+        .first<{ id: number }>();
+      if (!activeSub) {
+        return errorJson(
+          'The linked subscription is no longer active. A fresh purchase is required before publishing.',
+          409
+        );
+      }
       await env.DB.prepare(
         `UPDATE tenant_subscriptions
-         SET status = 'active', website_id = ?, updated_at = datetime('now')
+         SET website_id = ?, updated_at = datetime('now')
          WHERE id = ?`
       )
         .bind(targetWebsiteId, subscriptionId)
         .run();
+    }
+
+    // Publish only after a fresh entitlement check confirms current access.
+    const entitlement = await checkTenantSubscriptionEntitlement(
+      env,
+      targetWebsiteId,
+      payment.owner_id,
+      false
+    );
+    if (!entitlement.canPublish) {
+      return errorJson(
+        'No active entitlement exists for this website. Payment alone cannot publish it.',
+        409
+      );
     }
 
     // Publish only after the paid entitlement/subscription has been persisted.

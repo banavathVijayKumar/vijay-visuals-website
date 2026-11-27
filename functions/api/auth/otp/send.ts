@@ -10,6 +10,7 @@ import {
   PagesContext,
   checkRateLimit,
   errorJson,
+  getClientIp,
   handleOptions,
   isValidEmailAddress,
   json,
@@ -17,8 +18,9 @@ import {
   rateLimitResponse,
   sanitizeText,
 } from '../../_shared';
-import { sendTransactionalEmail, buildOtpEmailHtml } from '../../_email';
+import { sendTransactionalEmail, buildOtpEmailHtml, getCustomerOtpSender } from '../../_email';
 import {
+  EMAIL_DELIVERY_UNAVAILABLE_MESSAGE,
   ensureOtpTable,
   generateSalt,
   generateSecureNumericOtp,
@@ -48,7 +50,6 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     fullName?: string;
     phone?: string;
     requestedRole?: string;
-    purpose?: 'registration' | 'password_recovery' | 'login';
   }>(request);
 
   if (!body || !body.email) {
@@ -60,14 +61,16 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson('Please provide a valid email address.', 400);
   }
 
-  const purpose = body.purpose || 'registration';
+  // Registration is the only purpose served by this endpoint; client input
+  // cannot select a different OTP namespace.
+  const purpose = 'registration' as const;
   const fullName = sanitizeText(body.fullName || '', 100);
   const phone = sanitizeText(body.phone || '', 20);
   // Role is never taken from the client. OTP registration can only create a
   // customer; privileged roles must be granted server-side after verification.
   const requestedRole = 'customer';
 
-  const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '';
+  const clientIp = getClientIp(request);
 
   // Fail-closed IP throttle: prevents one caller from enumerating many recipients.
   const ipLimit = await checkRateLimit(env, `otp_send_ip:${clientIp || 'unknown'}`, 20, 3600);
@@ -142,7 +145,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
   // 5. Send Branded Email via Resend
   const emailHtml = buildOtpEmailHtml(rawOtp, OTP_EXPIRY_MINUTES);
-  const emailText = `Your Vijay Visuals verification code is ${rawOtp}. This code expires in ${OTP_EXPIRY_MINUTES} minutes. Never share this code with anyone.`;
+  const emailText = `Your verification code is ${rawOtp}. Your account is not created until this code is verified. This code expires in ${OTP_EXPIRY_MINUTES} minutes. Never share this code with anyone.`;
+  const otpSender = getCustomerOtpSender(env);
 
   const sendResult = await sendTransactionalEmail(env, {
     to: cleanEmail,
@@ -150,6 +154,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     html: emailHtml,
     text: emailText,
     eventType: 'registration_otp',
+    audience: 'customer',
+    tenantBrandName: otpSender.name,
+    verifiedSenderEmail: otpSender.email,
+    verifiedSenderDomain: otpSender.email.split('@')[1] || '',
     idempotencyKey: `otp_${cleanEmail}_${Date.now()}`,
   });
 
@@ -163,10 +171,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       .bind(cleanEmail, purpose)
       .run();
     console.error('OTP email delivery failed; status:', sendResult.status || 'unknown');
-    return errorJson(
-      'The verification email could not be delivered. Please try again later or contact support.',
-      503
-    );
+    return errorJson(EMAIL_DELIVERY_UNAVAILABLE_MESSAGE, 503, {
+      code: 'EMAIL_DELIVERY_UNAVAILABLE',
+    });
   }
 
   return json({

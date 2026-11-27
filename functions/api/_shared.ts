@@ -422,11 +422,11 @@ export function safeEqual(a: string, b: string): boolean {
 }
 
 export function getClientIp(request: Request): string {
-  return (
-    request.headers.get('CF-Connecting-IP') ||
-    request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
-    'unknown'
-  );
+  // Cloudflare sets CF-Connecting-IP at the edge. X-Forwarded-For is
+  // caller-controlled when a request bypasses the edge and must never be used
+  // as a rate-limit identity. An absent trusted IP is treated as one shared
+  // "unknown" bucket so throttles fail closed instead of being spoofable.
+  return request.headers.get('CF-Connecting-IP')?.trim() || 'unknown';
 }
 
 export interface RateLimitResult {

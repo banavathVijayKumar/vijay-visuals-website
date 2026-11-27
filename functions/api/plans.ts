@@ -24,7 +24,7 @@ export const LEGACY_SAAS_PLAN_CODES = [
   'enterprise',
 ] as const;
 
-const DEFAULT_PLANS = [
+export const DEFAULT_PLANS = [
   {
     id: 0,
     code: 'free-start',
@@ -160,6 +160,11 @@ const DEFAULT_PLANS = [
       'Cloud hosting overages, dedicated API services, and custom developer credentials apply separately.',
   },
 ];
+
+/** Authoritative local catalogue fallback used when D1 has no plan row. */
+export function getDefaultWebsitePlan(code: string): (typeof DEFAULT_PLANS)[number] | null {
+  return DEFAULT_PLANS.find((plan) => plan.code === code) || null;
+}
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();

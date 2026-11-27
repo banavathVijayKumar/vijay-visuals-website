@@ -131,8 +131,11 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         redirectUrl: null,
         isDefaultDeliverySubdomain: true,
         deliveryParent: deliveryHost.parentHost,
-        deliveryUrl: `https://${pub.public_slug}.vijayvisuals.in`,
-        previewDeliveryUrl: `https://${pub.public_slug}.vijay-visuals-site.pages.dev`,
+        // A default delivery host is a platform preview, not a customer-owned
+        // domain. Never fabricate a custom-domain URL or imply DNS/TLS is live.
+        deliveryUrl: null,
+        previewDeliveryUrl: `https://${lookupHost}`,
+        isPlatformPreview: true,
         customDomainConnected: false,
       });
     }

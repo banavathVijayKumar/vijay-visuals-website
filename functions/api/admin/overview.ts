@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { requireAdmin } from '../_auth';
+import { listSupabaseEmailVerification } from '../auth/_supabaseAdmin';
 import { PagesContext, handleOptions, jsonResponse } from '../_shared';
 import { mapOrderRowToUi } from '../_tenantAccess';
 import { PublicationRow, mapPublicationToTenant } from '../_tenantMapper';
@@ -71,13 +72,19 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       }
     } catch {}
 
-    // 2. Users from vv_users
+    // 2. Users from vv_users. Email confirmation is read from the identity
+    // provider, not inferred from D1 ledger rows.
     try {
+      const verification = await listSupabaseEmailVerification(env);
       const userRes = await env.DB.prepare(
         `SELECT id, email, full_name, role, status, created_at
          FROM vv_users ORDER BY created_at DESC LIMIT 200`
       ).all<Record<string, any>>();
       (userRes.results || []).forEach((u, idx) => {
+        const email = String(u.email || '').trim().toLowerCase();
+        const verified = verification.available
+          ? verification.byId.get(String(u.id)) ?? verification.byEmail.get(email) ?? false
+          : null;
         users.push({
           id: idx + 1,
           uid: String(u.id || ''),
@@ -87,6 +94,13 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
           role: u.role === 'admin' ? 'super_admin' : 'business_owner',
           preferredLang: 'en',
           savedAddressesJson: '[]',
+          accountStatus: String(u.status || 'active'),
+          emailVerified: verified,
+          verificationStatus: !verification.available
+            ? 'unavailable'
+            : verified
+              ? 'verified'
+              : 'pending',
           createdAt: String(u.created_at || ''),
         });
       });

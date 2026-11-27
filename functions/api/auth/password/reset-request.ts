@@ -11,6 +11,7 @@
 import {
   PagesContext,
   checkRateLimit,
+  getClientIp,
   handleOptions,
   json,
   parseJsonBody,
@@ -99,7 +100,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
 
     // Per-IP throttle complements the per-email limiter so one caller cannot
     // target many distinct mailboxes. Fail closed via the shared helper.
-    const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '';
+    const clientIp = getClientIp(request);
     const ipLimit = await checkRateLimit(env, `password_reset_ip:${clientIp || 'unknown'}`, 20, 3600);
     if (!ipLimit.allowed) {
       return rateLimitResponse(ipLimit, 'Too many password reset requests. Please try again later.');

@@ -15,6 +15,9 @@ import {
 import { X, Lock, Mail, User, Phone, KeyRound, CheckCircle2, ShieldCheck, ArrowLeft, RefreshCw } from 'lucide-react';
 import { VijayVisualsLogo } from '../VijayVisualsLogo';
 
+const EMAIL_DELIVERY_UNAVAILABLE_MESSAGE =
+  'Email verification is temporarily unavailable. Your account has not been created. Please try again later.';
+
 export type AuthModalMode = 'signin' | 'register' | 'verify_otp' | 'forgot' | 'reset_password';
 
 interface AuthModalProps {
@@ -199,7 +202,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       };
 
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Failed to resend verification code. Please try again.');
+        const deliveryUnavailable =
+          res.status === 503 || data.error === EMAIL_DELIVERY_UNAVAILABLE_MESSAGE;
+        if (deliveryUnavailable) {
+          // The server consumed every outstanding code on delivery failure.
+          // Clear stale digits/cooldown so the customer can safely retry.
+          setOtpDigits(['', '', '', '', '', '']);
+          setOtpCooldown(0);
+        }
+        setError(
+          deliveryUnavailable
+            ? EMAIL_DELIVERY_UNAVAILABLE_MESSAGE
+            : data.error || 'Failed to resend verification code. Please try again.'
+        );
+        return;
       }
 
       setOtpDigits(['', '', '', '', '', '']);
@@ -325,7 +341,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         };
 
         if (!otpRes.ok || !otpData.ok) {
-          setError(otpData.error || 'Failed to dispatch verification code. Please try again.');
+          setError(
+            otpRes.status === 503 || otpData.error === EMAIL_DELIVERY_UNAVAILABLE_MESSAGE
+              ? EMAIL_DELIVERY_UNAVAILABLE_MESSAGE
+              : otpData.error || 'Failed to dispatch verification code. Please try again.'
+          );
           return;
         }
 
@@ -362,7 +382,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         };
 
         if (!verifyRes.ok || !verifyData.ok) {
-          setError(verifyData.error || 'Invalid verification code. Please check and try again.');
+          setError(
+            verifyRes.status === 503
+              ? 'Verification service is temporarily unavailable. Please try again later.'
+              : verifyData.error || 'Invalid verification code. Please check and try again.'
+          );
           return;
         }
 

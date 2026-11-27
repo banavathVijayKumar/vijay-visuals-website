@@ -364,19 +364,30 @@ export interface CashfreeSellerSettlementRecord {
 export interface PlatformPaymentRecord {
   id: number;
   userId: number | null;
-  tenantId: number | null;
+  tenantId: string | null;
   planCode: string;
   planName: string;
   amountInr: number;
   currency: string;
   mode: string;
-  razorpayOrderId: string;
-  razorpayPaymentId: string;
+  cashfreeOrderId: string;
+  cashfreePaymentId: string;
   signatureVerified: boolean;
   status: string;
   licenseActivated: boolean;
+  entitlementStatus: string;
+  accessStatus: string;
+  accessStartDate: string | null;
+  accessEndDate: string | null;
+  deliveryStatus: string;
+  deliveredAt: string | null;
+  accountStatus: string;
+  emailVerified: boolean | null;
+  verificationStatus: string;
+  websiteSlug: string;
   receiptNumber: string;
   refundId: string;
+  refundStatus: string | null;
   notes: string;
   createdAt: string;
 }

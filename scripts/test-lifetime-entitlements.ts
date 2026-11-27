@@ -272,6 +272,24 @@ await it('Expired paid monthly subscription does not grant publishing entitlemen
   assert.equal(entitlement.canPublish, false);
 });
 
+await it('A paid but expired recurring payment row does not restore publishing entitlement', async () => {
+  // Historical paid rows must not outlive the subscription period. Without the
+  // one-time-only fallback guard this row would re-grant access forever.
+  db.prepare(
+    `INSERT INTO platform_payments
+      (owner_id, website_id, purpose, plan_code, plan_name, billing_cycle,
+       base_amount_inr, gst_amount_inr, amount_inr, razorpay_order_id,
+       signature_verified, status)
+     VALUES (?, ?, 'platform_subscription', ?, ?, 'monthly', 499, 90, 589, ?, 1, 'paid')`
+  )
+    .bind('owner_c', 'expired_site', 'starter', 'Starter', 'cf_expired_paid_row')
+    .run();
+
+  const entitlement = await checkTenantSubscriptionEntitlement(env, 'expired_site', 'owner_c');
+  assert.equal(entitlement.hasActiveSubscription, false);
+  assert.equal(entitlement.canPublish, false);
+});
+
 await it('Active paid yearly subscription grants entitlement until real period end', async () => {
   db.prepare(
     `INSERT INTO customer_website_publications

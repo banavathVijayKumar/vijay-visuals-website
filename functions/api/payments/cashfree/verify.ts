@@ -539,6 +539,7 @@ async function handleVerification(context: PagesContext): Promise<Response> {
   let targetSlug = '';
   let subscriptionId: number | null = null;
   let provisioningError: string | null = null;
+  let approvalRequired = false;
 
   try {
     const payloadWebsiteRef = sanitizeText(
@@ -650,16 +651,23 @@ async function handleVerification(context: PagesContext): Promise<Response> {
           throw new Error('Cannot publish website with a non-website subscription tier.');
         }
         const approvalBlocked = await customerApprovalBlockedResponse(env, targetWebsiteId);
-        if (approvalBlocked) return approvalBlocked;
-        await env.DB.prepare(
-          `UPDATE customer_website_publications
-           SET status = 'published',
-               published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
-               updated_at = datetime('now')
-           WHERE website_id = ?`
-        )
-          .bind(targetWebsiteId)
-          .run();
+        if (approvalBlocked) {
+          // Money is captured and the entitlement is already active. Never turn
+          // a verified purchase into a client-facing verification error; keep
+          // the site unpublished until the customer accepts pending changes.
+          approvalRequired = true;
+          console.warn('Cashfree checkout kept website unpublished pending customer approval.');
+        } else {
+          await env.DB.prepare(
+            `UPDATE customer_website_publications
+             SET status = 'published',
+                 published_at = CASE WHEN published_at IS NULL OR published_at = '' THEN datetime('now') ELSE published_at END,
+                 updated_at = datetime('now')
+             WHERE website_id = ?`
+          )
+            .bind(targetWebsiteId)
+            .run();
+        }
       }
 
       if (!targetSlug) {
@@ -694,6 +702,8 @@ async function handleVerification(context: PagesContext): Promise<Response> {
       details: { error: provisioningError, orderId, cfPaymentId },
     });
   }
+
+  notes.approvalRequired = approvalRequired;
 
   // Final updates
   await env.DB.prepare(
@@ -761,6 +771,7 @@ async function handleVerification(context: PagesContext): Promise<Response> {
     websiteId: targetWebsiteId,
     websiteUrl: notes.websiteUrl,
     provisioningError,
+    approvalRequired,
     orderState: notes.orderState,
     deliveryStatus: notes.deliveryStatus,
   });

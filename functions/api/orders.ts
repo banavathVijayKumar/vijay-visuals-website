@@ -172,6 +172,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       lineTotal: number;
     }> = [];
     let subtotal = 0;
+    let gstSubtotal = 0;
 
     for (const item of rawItems) {
       const productId = Number(item?.productId);
@@ -212,7 +213,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       }
 
       const prod = await env.DB.prepare(
-        `SELECT id, name, price_inr, stock_qty, variants_json, is_active
+        `SELECT id, name, price_inr, gst_percent, stock_qty, variants_json, is_active
          FROM store_products
          WHERE id = ? AND website_id = ? LIMIT 1`
       )
@@ -221,6 +222,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           id: number;
           name: string;
           price_inr: number;
+          gst_percent: number;
           stock_qty: number;
           variants_json?: string | null;
           is_active: number;
@@ -242,6 +244,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           ? meta.wholesalePrice
           : Number(prod.price_inr);
       const lineTotal = unitPrice * quantity;
+      const gstPercent = Math.max(0, Math.min(28, Number(prod.gst_percent || 0)));
+      gstSubtotal += Math.round((lineTotal * gstPercent) / 100);
       subtotal += lineTotal;
       orderLines.push({
         productId: prod.id,
@@ -296,7 +300,11 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     const cfStatus = getEdgeCashfreeStatus(env);
     const isSandboxTestOrder = hasSandboxItem || cfStatus.mode === 'sandbox';
     const effectiveDeliveryFee = hasSandboxItem ? 0 : deliveryFee;
-    const total = Math.max(0, subtotal - discount + effectiveDeliveryFee);
+    const taxableSubtotal = Math.max(0, subtotal - discount);
+    // Apply the same line-item GST rates after a proportional discount.
+    const gstAmountInr =
+      subtotal > 0 ? Math.round((gstSubtotal * taxableSubtotal) / subtotal) : 0;
+    const total = taxableSubtotal + gstAmountInr + effectiveDeliveryFee;
     const orderNumber = isSandboxTestOrder
       ? `TEST-ORD-${Date.now().toString().slice(-6)}-${randomHex(2).toUpperCase()}`
       : `VV-${Date.now().toString().slice(-6)}-${randomHex(2).toUpperCase()}`;
@@ -372,7 +380,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
          (order_number, website_id, owner_id, customer_user_id, customer_name, customer_phone, customer_email,
           shipping_address, items_json, subtotal_inr, discount_inr, gst_inr, shipping_inr, total_inr,
           coupon_code, payment_method, payment_status, gateway_order_id, gateway_payment_id, order_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'pending', ?, ?, 'placed')`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 'placed')`
       )
         .bind(
           orderNumber,
@@ -386,6 +394,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           JSON.stringify(orderLines),
           subtotal,
           discount,
+          gstAmountInr,
           effectiveDeliveryFee,
           total,
           appliedCode,
@@ -407,7 +416,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
           ) VALUES (
             ?, NULL, ?, 'storefront_order', ?,
             ?, ?, ?, ?, ?,
-            0, ?, 'INR', ?, 'CREATED',
+            ?, ?, 'INR', ?, 'CREATED',
             ?, '{}', datetime('now'), datetime('now')
           )`
         )
@@ -419,7 +428,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
             customerUserId || 'guest',
             customerEmail,
             customerPhone,
-            total,
+            taxableSubtotal,
+            gstAmountInr,
             total,
             cfMode,
             JSON.stringify({
@@ -429,6 +439,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
               deliveryFee: effectiveDeliveryFee,
               subtotal,
               discount,
+              gstAmountInr,
             })
           )
       );

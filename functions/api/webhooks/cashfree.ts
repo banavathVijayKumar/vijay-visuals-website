@@ -36,6 +36,7 @@ import {
 import { sendWhatsAppNotification } from '../_whatsapp';
 import { resolveTenantPublicUrl } from '../_tenantUrl';
 import {
+  checkCashfreeWebhookTimestampFreshness,
   fetchEdgeCashfreeOrder,
   fetchEdgeCashfreeOrderPayments,
   getSafeCashfreeNotifyUrl,
@@ -171,6 +172,19 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return errorJson('Missing x-webhook-signature or x-webhook-timestamp header.', 401);
   }
 
+  // Reject malformed or stale/future timestamps before any business logic.
+  // The exact original header string is still used for HMAC verification below.
+  const timestampCheck = checkCashfreeWebhookTimestampFreshness(timestamp);
+  if (!timestampCheck.ok) {
+    const reason =
+      timestampCheck.reason === 'stale'
+        ? 'stale'
+        : timestampCheck.reason === 'future'
+          ? 'outside the allowed future tolerance'
+          : 'malformed';
+    return errorJson(`Invalid Cashfree webhook timestamp: ${reason}.`, 401);
+  }
+
   // A dedicated webhook signing secret is mandatory. CASHFREE_CLIENT_SECRET
   // must never be accepted as a substitute for webhook verification.
   const hasDedicatedWebhookSecret = Boolean(getTrimmedEnvVar(env, 'CASHFREE_WEBHOOK_SECRET'));
@@ -274,7 +288,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       : null;
 
     const linkedPayment = await env.DB.prepare(
-      `SELECT id, subscription_id, razorpay_payment_id, status, refund_id
+      `SELECT id, subscription_id, razorpay_payment_id, status, refund_id, amount_inr
        FROM platform_payments WHERE razorpay_order_id = ? LIMIT 1`
     )
       .bind(`cf_${orderId}`)
@@ -284,6 +298,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         razorpay_payment_id: string | null;
         status: string;
         refund_id: string | null;
+        amount_inr: number;
       }>();
 
     if (linkedPayment || refundRow?.platform_payment_id) {
@@ -291,6 +306,36 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     }
 
     const paymentId = Number(linkedPayment?.id || refundRow?.platform_payment_id || 0);
+
+    // A signed refund webhook is not permission to revoke access. Finalize only
+    // when the merchant refund id is known locally, the payment can be linked,
+    // and the reported amount matches the captured amount. Fail closed so the
+    // gateway can retry after an operator reconciles the ledger.
+    const capturedAmountInr = Number(linkedPayment?.amount_inr || refundRow?.amount_inr || 0);
+    const amountMatchesCaptured =
+      capturedAmountInr > 0 && Math.abs(amountInr - capturedAmountInr) <= 0.01;
+
+    if (providerStatus === 'SUCCESS') {
+      if (!merchantRefundId || !refundRow) {
+        return errorJson(
+          'Refund webhook requires a known merchant refund_id; no ledger or entitlement was changed.',
+          400
+        );
+      }
+      if (!paymentId) {
+        return errorJson(
+          'Refund webhook could not be linked to a captured payment; no ledger or entitlement was changed.',
+          409
+        );
+      }
+      if (!amountMatchesCaptured) {
+        return errorJson(
+          'Refund amount does not match the captured payment; no ledger or entitlement was changed.',
+          409
+        );
+      }
+    }
+
     const refundFinalized = providerStatus === 'SUCCESS' && paymentId > 0;
 
     if (refundFinalized) {

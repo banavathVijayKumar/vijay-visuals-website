@@ -192,7 +192,7 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
             </div>
             <div className="flex-1 max-w-md mx-auto bg-[#08080C] border border-[#222232] rounded-md px-3 py-1 flex items-center justify-between text-[11px] text-[#8E8EA2]">
               <span className="truncate">
-                https://{data.businessName.toLowerCase().replace(/[^a-z0-9]/g, '')}.vijayvisuals.com/{activePage === 'home' ? '' : activePage}
+                https://your-business.example/{activePage === 'home' ? '' : activePage}
               </span>
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 ml-1.5" />
             </div>
@@ -698,7 +698,7 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
 
           {/* Storefront Footer */}
           <footer className="border-t border-[#1C1C28] bg-[#08080C] px-4 py-3 text-center text-[10px] text-[#6E6E82]">
-            &copy; {new Date().getFullYear()} {data.businessName} · Designed & Engineered by Vijay Visuals Digital Architecture
+            &copy; {new Date().getFullYear()} {data.businessName}
           </footer>
         </div>
       </div>

@@ -52,6 +52,29 @@ export interface EmailSenderIdentity {
   formatted: string;
 }
 
+/**
+ * Customer verification mail must never reuse the platform/owner notification
+ * identity. A verified business sender is used only when its domain is on the
+ * explicit provider-verified allowlist; otherwise the provider's neutral
+ * onboarding sender is used and delivery remains blocked for external
+ * recipients until a verified domain is configured by the operator.
+ */
+export function getCustomerOtpSender(env: CloudflareEnv): EmailSenderIdentity {
+  const configured = getSenderEmail(env);
+  const match = configured.match(/^(.*)<([^>]+)>$/);
+  const email = String(match?.[2] || configured).trim().toLowerCase();
+  const domain = email.split('@')[1] || '';
+  if (domain && configuredVerifiedDomains(env).includes(domain)) {
+    const name = safeTenantSenderName(match?.[1] || 'Customer Notifications');
+    return { email, name, formatted: `${name} <${email}>` };
+  }
+  return {
+    email: NEUTRAL_CUSTOMER_SENDER_EMAIL,
+    name: NEUTRAL_CUSTOMER_SENDER_NAME,
+    formatted: NEUTRAL_CUSTOMER_SENDER,
+  };
+}
+
 function normalizeSenderDomain(raw: unknown): string {
   return String(raw || '')
     .trim()
@@ -513,7 +536,7 @@ export function buildOtpEmailHtml(otpCode: string, expiresMinutes = 10): string 
       Confirm Your Email Address
     </h2>
     <p style="margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #CCCCCC;">
-      Thank you for creating an account with Vijay Visuals. To verify your identity and activate your account, please enter the following 6-digit verification code:
+      You requested a verification code. Your account is not created until this code is verified. Please enter the following 6-digit code to continue:
     </p>
 
     <!-- OTP Code Display Box -->
@@ -531,11 +554,15 @@ export function buildOtpEmailHtml(otpCode: string, expiresMinutes = 10): string 
 
     <div style="background-color: #14141E; border-left: 3px solid #DFBA5A; border-radius: 4px; padding: 14px 18px; margin: 24px 0 0 0;">
       <p style="margin: 0; font-size: 12px; color: #9A9AB0; line-height: 1.5;">
-        <strong style="color: #FFFFFF;">Security Notice:</strong> Vijay Visuals team members will never contact you asking for your verification code or password. If you did not initiate this request, you can safely ignore this email.
+        <strong style="color: #FFFFFF;">Security Notice:</strong> No support team member will ever contact you asking for your verification code or password. If you did not initiate this request, you can safely ignore this email.
       </p>
     </div>
   `;
-  return baseEmailWrapper(content, 'Vijay Visuals — Account Verification Code');
+  return baseEmailWrapper(content, 'Your Verification Code', {
+    brandName: 'Verification Service',
+    brandSubtitle: 'Secure email verification',
+    footerHtml: NEUTRAL_CUSTOMER_EMAIL_FOOTER_HTML,
+  });
 }
 
 /**
