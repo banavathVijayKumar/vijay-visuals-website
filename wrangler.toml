@@ -1,4 +1,4 @@
-name = "vijay-visuals-site"
+﻿name = "vijay-visuals-site"
 pages_build_output_dir = "dist"
 compatibility_date = "2025-01-01"
 
@@ -10,6 +10,21 @@ database_name = "vijay-visuals-preview"
 database_id = "04ebaf6a-ff38-445c-889d-1fb391548a41"
 migrations_dir = "cloudflare/d1/migrations"
 
+# Preview-only public Supabase client configuration. Restored as plain Pages
+# variables after the previous source-of-truth change removed them. Secrets
+# (including the service-role key) remain Cloudflare encrypted secrets.
+[env.preview.vars]
+VITE_SUPABASE_URL = "https://nflqxcrgwxoqvqbveisq.supabase.co"
+SUPABASE_URL = "https://nflqxcrgwxoqvqbveisq.supabase.co"
+VITE_SUPABASE_ANON_KEY = "sb_publishable_BxyDJmuSmWNZaCFK1All7w_qqRN-LHW"
+SUPABASE_ANON_KEY = "sb_publishable_BxyDJmuSmWNZaCFK1All7w_qqRN-LHW"
+
+# Pages requires every non-inheritable binding to be repeated for env.preview.
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "vijay-visuals-preview"
+database_id = "04ebaf6a-ff38-445c-889d-1fb391548a41"
+migrations_dir = "cloudflare/d1/migrations"
 # Cloudflare Pages Production Environment (Branch: main - strictly untouched)
 # Bound to original Production D1 database: vijay-visuals-marketplace
 [[env.production.d1_databases]]
