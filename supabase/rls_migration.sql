@@ -8,6 +8,7 @@ RETURNS INTEGER
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
+SET search_path = public
 AS $$
   SELECT id FROM public.users WHERE uid = auth.uid()::text LIMIT 1;
 $$;
@@ -17,6 +18,7 @@ RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
+SET search_path = public
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.users
@@ -29,6 +31,7 @@ RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
+SET search_path = public
 AS $$
   SELECT public.vv_is_super_admin() OR EXISTS (
     SELECT 1 FROM public.tenants t
@@ -94,8 +97,19 @@ CREATE POLICY "admin_manage_announcements" ON public.platform_announcements
 CREATE POLICY "users_self_access" ON public.users
   FOR SELECT USING (uid = auth.uid()::text OR public.vv_is_super_admin());
 
+-- Users may update only their own non-privileged fields. WITH CHECK freezes
+-- role so an authenticated client cannot self-escalate to super_admin.
+DROP POLICY IF EXISTS "users_self_update" ON public.users;
 CREATE POLICY "users_self_update" ON public.users
-  FOR UPDATE USING (uid = auth.uid()::text OR public.vv_is_super_admin());
+  FOR UPDATE
+  USING (uid = auth.uid()::text OR public.vv_is_super_admin())
+  WITH CHECK (
+    public.vv_is_super_admin()
+    OR (
+      uid = auth.uid()::text
+      AND role = (SELECT u.role FROM public.users u WHERE u.uid = auth.uid()::text LIMIT 1)
+    )
+  );
 
 -- Strict multi-tenant isolation for private business tables
 CREATE POLICY "tenant_isolation_orders" ON public.orders

@@ -18,8 +18,10 @@ import { isMissingTableError, requireTenantOwnerAccess } from '../../../_tenantA
 export const RETENTION_POLICY = {
   maxSnapshotsRetained: 50,
   retentionWindowDays: 90,
-  autoSnapshotOnPublish: true,
-  scheduledDailySnapshot: true,
+  // Snapshots are currently manual. No scheduled or publish-time snapshot job
+  // is registered, so do not advertise either capability as active.
+  autoSnapshotOnPublish: false,
+  scheduledDailySnapshot: false,
   backupScope: {
     included: [
       'website_json',

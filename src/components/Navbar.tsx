@@ -4,6 +4,7 @@ import { AppView } from '../types/platform';
 import { getI18n, Lang } from '../data/content';
 import { useAuth } from '../hooks/useAuth';
 import { getSupabaseClient } from '../lib/supabase';
+import { getScrollBehavior } from '../lib/motion';
 
 interface NavbarProps {
   activeView: AppView;
@@ -75,14 +76,14 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
       onNavigate('studio');
       setTimeout(() => {
         const el = document.getElementById(id);
-        if (el) el.scrollIntoView({ behavior: 'smooth' });
+        if (el) el.scrollIntoView({ behavior: getScrollBehavior() });
       }, 100);
     } else {
       const el = document.getElementById(id);
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth' });
+        el.scrollIntoView({ behavior: getScrollBehavior() });
       } else if (id === 'hero') {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: getScrollBehavior() });
       }
     }
   };
@@ -123,7 +124,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
           href="/"
           onClick={(event) => handleSectionClick(event, 'hero')}
           aria-label="Vijay Visuals — home"
-          className="flex items-center gap-2.5 sm:gap-3 cursor-pointer shrink-0 group select-none min-w-0"
+          className="flex min-h-11 items-center gap-2.5 sm:gap-3 cursor-pointer shrink-0 group select-none min-w-0"
         >
           <div className="relative w-9 h-9 sm:w-11 sm:h-11 shrink-0 rounded-full p-[1.5px] bg-gradient-to-tr from-[#D4AF37] via-[#FFF2B8] to-[#966F17] shadow-[0_0_12px_rgba(212,175,55,0.35)] group-hover:scale-105 transition-transform">
             <img
@@ -140,7 +141,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
             <span className="font-luxury font-black text-sm sm:text-base tracking-[0.14em] bg-gradient-to-r from-[#FFF3C7] via-[#ECC86A] to-[#C29729] bg-clip-text text-transparent leading-none drop-shadow-sm">
               VIJAY VISUALS
             </span>
-            <span className="text-[9px] sm:text-[10px] text-[#A5A5BA] tracking-tight font-medium mt-1 truncate">
+            <span className="hidden text-[9px] sm:block sm:text-[10px] text-[#A5A5BA] tracking-tight font-medium mt-1 truncate">
               Creative Solutions for a Digital World
             </span>
           </div>
@@ -151,7 +152,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
           <a
             href="/#hero"
             onClick={(event) => handleSectionClick(event, 'hero')}
-            className={`px-3.5 py-1.5 rounded-full transition-all ${
+            className={`inline-flex min-h-11 items-center px-3.5 py-1.5 rounded-full transition-all ${
               activeView === 'studio'
                 ? 'bg-[#251E10]/90 text-[#ECC86A] border border-[#D4AF37]/60 shadow-[0_0_12px_rgba(212,175,55,0.25)] font-semibold'
                 : 'hover:text-white'
@@ -163,7 +164,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
           <a
             href="/#about"
             onClick={(event) => handleSectionClick(event, 'about')}
-            className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
+            className="inline-flex min-h-11 items-center px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
             About
           </a>
@@ -174,7 +175,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
               type="button"
               onClick={() => setServicesDropdownOpen((prev) => !prev)}
               onMouseEnter={() => setServicesDropdownOpen(true)}
-              className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors inline-flex items-center gap-1"
+              className="inline-flex min-h-11 items-center gap-1 px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
             >
               <span>Services</span>
               <ChevronDown className="w-3 h-3 text-[#D4AF37] opacity-80" />
@@ -212,7 +213,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
           <a
             href="/#portfolio"
             onClick={(event) => handleSectionClick(event, 'portfolio')}
-            className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
+            className="inline-flex min-h-11 items-center px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
             Portfolio
           </a>
@@ -220,7 +221,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
           <a
             href="/#pricing"
             onClick={(event) => handleSectionClick(event, 'pricing')}
-            className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
+            className="inline-flex min-h-11 items-center px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
             Packages
           </a>
@@ -228,15 +229,15 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
           <a
             href="/#testimonials"
             onClick={(event) => handleSectionClick(event, 'testimonials')}
-            className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
+            className="inline-flex min-h-11 items-center px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
-            Testimonials
+            Sample Testimonials
           </a>
 
           <a
             href="/#contact"
             onClick={(event) => handleSectionClick(event, 'contact')}
-            className="px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
+            className="inline-flex min-h-11 items-center px-3 py-1.5 rounded-full hover:text-white hover:bg-white/5 transition-colors"
           >
             Contact
           </a>
@@ -248,7 +249,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
           <button
             type="button"
             onClick={() => scrollToSection('pricing')}
-            className="hidden sm:inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full border border-[#D4AF37]/70 bg-gradient-to-r from-[#121624] to-[#1E1928] text-xs font-semibold text-[#F5E2AC] hover:bg-gold-gradient hover:text-[#08080C] hover:border-transparent transition-all shadow-[0_2px_8px_rgba(0,0,0,0.5)] whitespace-nowrap"
+            className="hidden sm:inline-flex min-h-11 items-center gap-1.5 px-4 py-1.5 rounded-full border border-[#D4AF37]/70 bg-gradient-to-r from-[#121624] to-[#1E1928] text-xs font-semibold text-[#F5E2AC] hover:bg-gold-gradient hover:text-[#08080C] hover:border-transparent transition-all shadow-[0_2px_8px_rgba(0,0,0,0.5)] whitespace-nowrap"
           >
             <span>Get a Quote</span>
             <ArrowRight className="w-3.5 h-3.5 text-[#D4AF37] group-hover:text-[#08080C]" />
@@ -345,7 +346,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
               type="button"
               disabled={loading}
               onClick={signInWithGoogle}
-              className="px-3 sm:px-3.5 py-1.5 text-xs font-semibold rounded-full bg-gold-gradient text-[#08080A] hover:opacity-95 transition-opacity whitespace-nowrap shrink-0 shadow-sm"
+              className="min-h-11 px-4 sm:px-3.5 py-1.5 text-xs font-semibold rounded-full bg-gold-gradient text-[#08080A] hover:opacity-95 transition-opacity whitespace-nowrap shrink-0 shadow-sm"
             >
               {t.signIn}
             </button>
@@ -355,7 +356,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
           <button
             type="button"
             onClick={() => setMobileOpen((prev) => !prev)}
-            className="lg:hidden p-1.5 text-[#A3A3B5] hover:text-white rounded-lg hover:bg-[#1E1E28] transition-colors shrink-0"
+            className="lg:hidden inline-flex h-11 w-11 items-center justify-center text-[#A3A3B5] hover:text-white rounded-lg hover:bg-[#1E1E28] transition-colors shrink-0"
             aria-label="Toggle navigation menu"
           >
             {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -366,64 +367,97 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
       {/* Mobile Slide-Down Menu */}
       {mobileOpen && (
         <div className="lg:hidden border-t border-[#1E1E28] bg-[#070A14]/98 backdrop-blur-xl px-4 py-4 space-y-2 max-h-[80vh] overflow-y-auto">
-          {/* Main Anchor Links */}
-          <div className="grid grid-cols-2 gap-1.5 pb-3 border-b border-[#1A1F30]">
-            <a
-              href="/#hero"
-              onClick={(event) => handleSectionClick(event, 'hero')}
-              className="py-2 px-3 text-left rounded-lg text-xs font-semibold bg-[#221B0F] text-[#ECC86A] border border-[#D4AF37]/40"
+          {/* Primary quick links — Amazon-style horizontal chips, no bottom nav needed. */}
+          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-3 border-b border-[#1A1F30]">
+            <button
+              type="button"
+              onClick={() => scrollToSection('hero')}
+              className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3.5 text-xs font-semibold bg-[#221B0F] text-[#ECC86A] border border-[#D4AF37]/40"
             >
               Home
-            </a>
-            <a
-              href="/#about"
-              onClick={(event) => handleSectionClick(event, 'about')}
-              className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+            </button>
+            <button
+              type="button"
+              onClick={() => handleNavigateView('marketplace')}
+              className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3.5 text-xs font-medium text-[#C4C4D4] bg-[#111522] border border-[#222A3D]"
             >
-              About
-            </a>
-            <a
-              href="/#services"
-              onClick={(event) => handleSectionClick(event, 'services')}
-              className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+              Categories / Templates
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('services')}
+              className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3.5 text-xs font-medium text-[#C4C4D4] bg-[#111522] border border-[#222A3D]"
             >
               Services
-            </a>
-            <a
-              href="/#portfolio"
-              onClick={(event) => handleSectionClick(event, 'portfolio')}
-              className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
-            >
-              Portfolio
-            </a>
-            <a
-              href="/#pricing"
-              onClick={(event) => handleSectionClick(event, 'pricing')}
-              className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('pricing')}
+              className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3.5 text-xs font-medium text-[#C4C4D4] bg-[#111522] border border-[#222A3D]"
             >
               Packages
-            </a>
-            <a
-              href="/#testimonials"
-              onClick={(event) => handleSectionClick(event, 'testimonials')}
-              className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+            </button>
+            {profile ? (
+              <button
+                type="button"
+                onClick={() => handleNavigateView('dashboards')}
+                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3.5 text-xs font-medium text-[#C4C4D4] bg-[#111522] border border-[#222A3D]"
+              >
+                <User className="h-3.5 w-3.5 text-[#D4AF37]" />
+                Account
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileOpen(false);
+                  void signInWithGoogle();
+                }}
+                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3.5 text-xs font-medium text-[#C4C4D4] bg-[#111522] border border-[#222A3D]"
+              >
+                <User className="h-3.5 w-3.5 text-[#D4AF37]" />
+                Account / Sign In
+              </button>
+            )}
+          </div>
+
+          {/* Secondary anchor links */}
+          <div className="grid grid-cols-2 gap-1.5 pb-3 border-b border-[#1A1F30]">
+            <button
+              type="button"
+              onClick={() => scrollToSection('about')}
+              className="min-h-11 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
-              Testimonials
-            </a>
-            <a
-              href="/#contact"
-              onClick={(event) => handleSectionClick(event, 'contact')}
-              className="py-2 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+              About
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('portfolio')}
+              className="min-h-11 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+            >
+              Sample Work
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('testimonials')}
+              className="min-h-11 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+            >
+              Sample Testimonials
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('contact')}
+              className="min-h-11 px-3 text-left rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Contact
-            </a>
-            <a
-              href="/#pricing"
-              onClick={(event) => handleSectionClick(event, 'pricing')}
-              className="py-2 px-3 text-left rounded-lg text-xs font-bold text-[#F5E2AC] bg-gradient-to-r from-[#D4AF37]/20 to-[#ECC86A]/30 border border-[#D4AF37]/50"
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('pricing')}
+              className="col-span-2 min-h-11 px-3 text-left rounded-lg text-xs font-bold text-[#F5E2AC] bg-gradient-to-r from-[#D4AF37]/20 to-[#ECC86A]/30 border border-[#D4AF37]/50"
             >
               Get a Quote →
-            </a>
+            </button>
           </div>
 
           {/* Secondary Platform Portals & Tools */}
@@ -434,7 +468,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
             <a
               href={viewHref('demo')}
               onClick={(event) => handleViewClick(event, 'demo')}
-              className="w-full flex items-center justify-between py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+              className="w-full flex items-center justify-between min-h-11 py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               <span>Live Interactive Demo</span>
               <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40">
@@ -444,28 +478,28 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
             <a
               href={viewHref('builder')}
               onClick={(event) => handleViewClick(event, 'builder')}
-              className="w-full text-left py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+              className="inline-flex min-h-11 w-full items-center py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Storefront Website Builder
             </a>
             <a
               href={viewHref('marketplace')}
               onClick={(event) => handleViewClick(event, 'marketplace')}
-              className="w-full text-left py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+              className="inline-flex min-h-11 w-full items-center py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Store Directory &amp; Showcase
             </a>
             <a
               href={viewHref('dashboards')}
               onClick={(event) => handleViewClick(event, 'dashboards')}
-              className="w-full text-left py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+              className="inline-flex min-h-11 w-full items-center py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               Workspace Portals (Owner / Admin)
             </a>
             <a
               href={viewHref('ai')}
               onClick={(event) => handleViewClick(event, 'ai')}
-              className="w-full text-left py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
+              className="inline-flex min-h-11 w-full items-center py-2 px-3 rounded-lg text-xs font-medium text-[#C4C4D4] hover:bg-[#151928] hover:text-white"
             >
               AI Automation &amp; Multi-Lang Studio
             </a>

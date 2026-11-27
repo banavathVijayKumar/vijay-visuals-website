@@ -38,6 +38,8 @@ import {
   TESTIMONIALS_DATA,
 } from '../data/content';
 import { apiFetch } from '../lib/api';
+import { getScrollBehavior } from '../lib/motion';
+import { DEMO_STORE_SLUGS } from '../data/demo';
 import { validateIndiaWhatsAppNumber } from '../../shared/indiaWhatsapp';
 import { AppView, PlatformPlanRecord, TenantRecord } from '../types/platform';
 import { VijayVisualsLogo } from './VijayVisualsLogo';
@@ -303,12 +305,15 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
 
   const renderMarketplaceSection = () => (
     <section id="marketplace" className="py-16 md:py-24 border-b border-[#1D1D26]">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
           <div>
             <p className="text-xs font-medium tracking-wider text-[#D4AF37] mb-2">
               Multi-Tenant Storefronts · 16 Business Categories
             </p>
+            <span className="inline-flex min-h-8 items-center rounded-full border border-[#D4AF37]/40 bg-[#D4AF37]/10 px-3 text-[11px] font-semibold text-[#ECC86A]">
+              Preview directory · demo stores are labeled below
+            </span>
             <h2 className="font-luxury text-2xl md:text-4xl font-bold text-white text-balance">
               {t.liveStoresTitle}
             </h2>
@@ -319,16 +324,17 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               <Search className="w-4 h-4 text-[#737388] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
+                aria-label="Search storefronts"
                 value={storeSearch}
                 onChange={(e) => setStoreSearch(e.target.value)}
                 placeholder="Search storefronts..."
-                className="pl-9 pr-3 py-2 text-xs rounded-md border border-[#262634] bg-[#0D0D13] text-white placeholder-[#6D6D80] focus:border-[#D4AF37] focus:outline-none w-56"
+                className="min-h-11 w-full pl-9 pr-3 py-2 text-xs rounded-md border border-[#262634] bg-[#0D0D13] text-white placeholder-[#6D6D80] focus:border-[#D4AF37] focus:outline-none sm:w-56"
               />
             </div>
             <button
               type="button"
               onClick={() => onNavigate('builder')}
-              className="px-4 py-2 text-xs font-semibold rounded-md bg-gold-gradient text-[#08080A] whitespace-nowrap shrink-0"
+              className="min-h-11 px-4 py-2 text-xs font-semibold rounded-md bg-gold-gradient text-[#08080A] whitespace-nowrap shrink-0"
             >
               Create Your Business Site
             </button>
@@ -336,11 +342,11 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
         </div>
 
         {/* Category Filter Tabs (Functional buttons, not static metadata pills) */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-8">
+        <div className="no-scrollbar -mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-3 mb-8 sm:mx-0 sm:px-0">
           <button
             type="button"
             onClick={() => setSelectedCategory('all')}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
+            className={`min-h-11 px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
               selectedCategory === 'all'
                 ? 'bg-[#D4AF37] text-[#08080A]'
                 : 'bg-[#12121A] text-[#A5A5B8] hover:text-white border border-[#222230]'
@@ -355,7 +361,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
+                className={`min-h-11 px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-colors ${
                   selectedCategory === cat.id
                     ? 'bg-[#D4AF37] text-[#08080A]'
                     : 'bg-[#12121A] text-[#A5A5B8] hover:text-white border border-[#222230]'
@@ -375,7 +381,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
             <button
               type="button"
               onClick={() => onNavigate('builder')}
-              className="px-5 py-2.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold"
+              className="min-h-11 px-5 py-2.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold"
             >
               Build a Website in This Category
             </button>
@@ -405,6 +411,11 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     </div>
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-[#08080A]/85 via-[#08080A]/25 to-transparent" />
+                  {DEMO_STORE_SLUGS.has(store.slug) && (
+                    <span className="absolute left-3 top-3 rounded-full border border-[#D4AF37]/50 bg-[#08080A]/85 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#ECC86A]">
+                      Demo · sample data
+                    </span>
+                  )}
                   <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-xs text-[#E8E8ED]">
                     <span className="font-mono-tabular text-[#ECC86A]">/site/{store.slug}</span>
                     <span>{store.pwaEnabled ? t.websitePlusPwa : t.websiteOnly}</span>
@@ -434,7 +445,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     }}
                     className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-md border border-[#D4AF37]/45 text-[#ECC86A] hover:bg-[#D4AF37] hover:text-[#08080A] text-xs font-semibold transition-colors"
                   >
-                    <span>{t.openStore}</span>
+                    <span>{DEMO_STORE_SLUGS.has(store.slug) ? 'Open Demo Storefront' : t.openStore}</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>
@@ -452,7 +463,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
         <div className="border-b border-[#1D1D26] bg-[#0B0B10] py-4">
           <div className="max-w-7xl mx-auto px-6 flex flex-wrap items-center justify-between gap-4">
             <p className="text-xs text-[#A3A3B5]">
-              Explore published multi-tenant businesses on Vijay Visuals · Click any store for full checkout & AI support
+              Explore published multi-tenant storefronts on Vijay Visuals · Seeded demo stores are labeled “Demo · sample data”
             </p>
             <div className="flex items-center gap-3">
               <button
@@ -476,14 +487,14 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
     <div className="bg-[#08080A] text-[#E8E8ED]">
       {/* Utility Sub-Bar (keeps Top Header strictly 3 zones) */}
       <div className="border-b border-[#181822] bg-[#0B0B10] w-full">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2.5 text-xs">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[#9D9DB0] text-[11px] sm:text-xs">
             <span className="truncate max-w-[200px] sm:max-w-none">{CONTACT_INFO.location}</span>
             <span aria-hidden="true">·</span>
             <button
               type="button"
               onClick={onOpenTracker}
-              className="inline-flex items-center gap-1.5 text-[#ECC86A] hover:underline shrink-0"
+              className="inline-flex min-h-11 items-center gap-1.5 text-[#ECC86A] hover:underline shrink-0"
             >
               <Truck className="w-3.5 h-3.5" />
               <span>{t.trackOrder}</span>
@@ -494,7 +505,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               aria-label="Quick language switcher"
               value={lang}
               onChange={(e) => onChangeLang(e.target.value as Lang)}
-              className="rounded-md border border-[#252534] bg-[#0E0E15] px-2 py-1 text-[11px] sm:text-xs text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none max-w-[140px] sm:max-w-none"
+              className="hidden min-h-11 rounded-md border border-[#252534] bg-[#0E0E15] px-2 py-1 text-[11px] text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none sm:block sm:max-w-none sm:text-xs"
             >
               {SUPPORTED_LANGUAGES.map((l) => (
                 <option key={l.code} value={l.code}>
@@ -513,7 +524,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
         onNavigate={onNavigate}
         onOpenQuote={() => {
           const el = document.getElementById('pricing');
-          if (el) el.scrollIntoView({ behavior: 'smooth' });
+          if (el) el.scrollIntoView({ behavior: getScrollBehavior() });
         }}
       />
 
@@ -544,7 +555,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       </section>
 
       {/* About Vijay Visuals & Complete E-Commerce Architecture */}
-      <section id="about" className="py-16 md:py-20 border-b border-[#1D1D26] bg-[#0B0B10] scroll-mt-16">
+      <section id="about" className="py-16 md:py-20 border-b border-[#1D1D26] bg-[#0B0B10] scroll-mt-24">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
             <div className="lg:col-span-5 space-y-4">
@@ -609,7 +620,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       </section>
 
       {/* Core Platform Capabilities (01-04 Editorial List) */}
-      <section id="services" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-16">
+      <section id="services" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-24">
         <div className="max-w-7xl mx-auto px-6">
           <div className="max-w-2xl mb-12">
             <p className="text-xs font-medium text-[#D4AF37] mb-2">Platform Architecture & Studio Services</p>
@@ -648,8 +659,8 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       {renderMarketplaceSection()}
 
       {/* Portfolio & Testimonials */}
-      <section id="portfolio" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-16">
-        <div className="max-w-7xl mx-auto px-6">
+      <section id="portfolio" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-24">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="mb-12">
             <p className="text-xs font-medium text-[#D4AF37] mb-2">Illustrative Studio Examples</p>
             <h2 className="font-luxury text-2xl md:text-4xl font-bold text-white">
@@ -692,9 +703,9 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                       event.preventDefault();
                       onOpenStorefront(item.slug);
                     }}
-                    className="text-xs font-semibold text-[#ECC86A] hover:underline inline-flex items-center gap-1.5"
+                    className="inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-[#ECC86A] hover:underline"
                   >
-                    <span>Inspect Live Storefront</span>
+                    <span>Inspect Sample Storefront</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </a>
                 </div>
@@ -702,28 +713,36 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
             ))}
           </div>
 
-          <div id="testimonials" className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 scroll-mt-20">
-            {TESTIMONIALS_DATA.map((rev) => (
-              <blockquote
-                key={rev.id}
-                className="rounded-xl border border-[#1E1E2A] bg-[#0C0C12] p-6 flex flex-col justify-between"
-              >
-                <p className="text-sm text-[#D2D2DF] leading-relaxed mb-5">“{rev.quote}”</p>
-                <footer className="text-xs border-t border-[#1D1D28] pt-3">
-                  <p className="font-semibold text-white">{rev.name}</p>
-                  <p className="text-[#8E8EA0]">
-                    {rev.role}, {rev.company} · {rev.location}
-                  </p>
-                </footer>
-              </blockquote>
-            ))}
+          <div id="testimonials" className="pt-8 scroll-mt-24">
+            <div className="mb-5 flex flex-wrap items-center gap-3">
+              <h3 className="font-luxury text-xl font-semibold text-white">Sample Testimonials</h3>
+              <span className="rounded-full border border-[#D4AF37]/45 bg-[#D4AF37]/10 px-3 py-1 text-[11px] font-semibold text-[#ECC86A]">
+                Illustrative only · not verified customer reviews
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {TESTIMONIALS_DATA.map((rev) => (
+                <blockquote
+                  key={rev.id}
+                  className="rounded-xl border border-[#1E1E2A] bg-[#0C0C12] p-6 flex flex-col justify-between"
+                >
+                  <p className="text-sm text-[#D2D2DF] leading-relaxed mb-5">“{rev.quote}”</p>
+                  <footer className="text-xs border-t border-[#1D1D28] pt-3">
+                    <p className="font-semibold text-white">{rev.name}</p>
+                    <p className="text-[#8E8EA0]">
+                      {rev.role}, {rev.company} · {rev.location}
+                    </p>
+                  </footer>
+                </blockquote>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
       {/* Transparent Pricing & Interactive Estimator (Module 11) */}
-      <section id="pricing" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-16">
-        <div className="max-w-7xl mx-auto px-6">
+      <section id="pricing" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-24">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="max-w-3xl mb-12">
             <p className="text-xs font-medium text-[#D4AF37] mb-2">
               Super Admin Configurable Pricing · Honest Third-Party Cost Disclosure
@@ -828,14 +847,14 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <button
                     type="button"
                     onClick={() => setBillingPeriod('monthly')}
-                    className={`px-3 py-1 rounded ${billingPeriod === 'monthly' ? 'bg-[#D4AF37] text-[#08080A] font-semibold' : 'text-[#A3A3B5]'}`}
+                    className={`inline-flex min-h-11 items-center px-3 py-1 rounded ${billingPeriod === 'monthly' ? 'bg-[#D4AF37] text-[#08080A] font-semibold' : 'text-[#A3A3B5]'}`}
                   >
                     Monthly
                   </button>
                   <button
                     type="button"
                     onClick={() => setBillingPeriod('yearly')}
-                    className={`px-3 py-1 rounded ${billingPeriod === 'yearly' ? 'bg-[#D4AF37] text-[#08080A] font-semibold' : 'text-[#A3A3B5]'}`}
+                    className={`inline-flex min-h-11 items-center px-3 py-1 rounded ${billingPeriod === 'yearly' ? 'bg-[#D4AF37] text-[#08080A] font-semibold' : 'text-[#A3A3B5]'}`}
                   >
                     Yearly (-15% Recurring)
                   </button>
@@ -960,15 +979,15 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                 <form onSubmit={handleLockProposal} className="space-y-2 pt-2 border-t border-[#1E1E2B]">
                   <p className="font-semibold text-white">Save &amp; Lock Official Quotation</p>
                   <div className="grid grid-cols-2 gap-2">
-                    <input type="text" required value={propName} onChange={(e) => setPropName(e.target.value)} placeholder="Your Name" className="rounded border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-white" />
-                    <input type="text" required value={propBiz} onChange={(e) => setPropBiz(e.target.value)} placeholder="Business Name" className="rounded border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-white" />
-                    <input type="email" required value={propEmail} onChange={(e) => setPropEmail(e.target.value)} placeholder="Email" className="rounded border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-white" />
-                    <input type="tel" required value={propPhone} onChange={(e) => setPropPhone(e.target.value)} placeholder="Phone / WhatsApp" className="rounded border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-white" />
+                    <input aria-label="Your name" type="text" required value={propName} onChange={(e) => setPropName(e.target.value)} placeholder="Your Name" className="min-h-11 rounded border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-white" />
+                    <input aria-label="Business name" type="text" required value={propBiz} onChange={(e) => setPropBiz(e.target.value)} placeholder="Business Name" className="min-h-11 rounded border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-white" />
+                    <input aria-label="Email address" type="email" required value={propEmail} onChange={(e) => setPropEmail(e.target.value)} placeholder="Email" className="min-h-11 rounded border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-white" />
+                    <input aria-label="Phone or WhatsApp number" type="tel" required value={propPhone} onChange={(e) => setPropPhone(e.target.value)} placeholder="Phone / WhatsApp" className="min-h-11 rounded border border-[#2A2A38] bg-[#08080C] px-2.5 py-1.5 text-white" />
                   </div>
                   <button
                     type="submit"
                     disabled={propBusy}
-                    className="w-full py-2.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold"
+                    className="min-h-11 w-full py-2.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold"
                   >
                     {propBusy ? 'Locking Quotation...' : 'Generate Locked Quotation (18% GST)'}
                   </button>
@@ -1013,7 +1032,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       <GlobalGrowthHub lang={lang} onNavigate={onNavigate} onNotify={onNotify} />
 
       {/* FAQs & Contact Form */}
-      <section id="contact" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-16">
+      <section id="contact" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-24">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-12 gap-12">
           <div className="lg:col-span-6 space-y-6">
             <div>
@@ -1045,6 +1064,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <div>
                     <label className="block text-xs text-[#A7A7B8] mb-1">Your Name</label>
                     <input
+                      aria-label="Your name"
                       type="text"
                       required
                       value={contactName}
@@ -1055,6 +1075,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <div>
                     <label className="block text-xs text-[#A7A7B8] mb-1">Email Address</label>
                     <input
+                      aria-label="Email address"
                       type="email"
                       required
                       value={contactEmail}
@@ -1067,6 +1088,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <div>
                     <label className="block text-xs text-[#A7A7B8] mb-1">Phone / WhatsApp (+91)</label>
                     <input
+                      aria-label="Phone or WhatsApp number"
                       type="tel"
                       value={contactPhone}
                       onChange={(e) => setContactPhone(e.target.value)}
@@ -1077,6 +1099,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <div>
                     <label className="block text-xs text-[#A7A7B8] mb-1">Subject</label>
                     <input
+                      aria-label="Subject"
                       type="text"
                       value={contactSubject}
                       onChange={(e) => setContactSubject(e.target.value)}
@@ -1087,6 +1110,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                 <div>
                   <label className="block text-xs text-[#A7A7B8] mb-1">Business Requirements</label>
                   <textarea
+                    aria-label="Business requirements"
                     rows={4}
                     required
                     value={contactMsg}
@@ -1095,12 +1119,13 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     className="w-full rounded-md border border-[#292938] bg-[#09090D] px-3 py-2 text-sm text-white focus:border-[#D4AF37] focus:outline-none"
                   />
                 </div>
-                <label className="flex items-start gap-2 text-[11px] text-[#9A9AAE] cursor-pointer">
+                <label className="flex min-h-11 items-center gap-2 text-[11px] text-[#9A9AAE] cursor-pointer">
                   <input
+                    aria-label="I agree to receive a WhatsApp reply about this inquiry"
                     type="checkbox"
                     checked={contactWhatsappOptIn}
                     onChange={(e) => setContactWhatsappOptIn(e.target.checked)}
-                    className="accent-[#D4AF37] mt-0.5"
+                    className="h-10 w-10 shrink-0 accent-[#D4AF37]"
                   />
                   <span>I explicitly agree to receive a WhatsApp reply about this project inquiry.</span>
                 </label>
@@ -1152,6 +1177,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               className="flex flex-wrap items-center gap-2"
             >
               <input
+                aria-label="Email address for platform updates"
                 type="email"
                 required
                 value={platNewsEmail}
@@ -1159,16 +1185,17 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                 placeholder="you@business.in"
                 className="rounded border border-[#282838] bg-[#08080C] px-3 py-1.5 text-white"
               />
-              <label className="inline-flex items-center gap-1.5 text-[11px] text-[#9A9AAE] cursor-pointer">
+              <label className="inline-flex min-h-11 items-center gap-1.5 text-[11px] text-[#9A9AAE] cursor-pointer">
                 <input
+                  aria-label="I opt in to platform updates"
                   type="checkbox"
                   checked={platNewsConsent}
                   onChange={(e) => setPlatNewsConsent(e.target.checked)}
-                  className="accent-[#D4AF37]"
+                  className="h-10 w-10 shrink-0 accent-[#D4AF37]"
                 />
                 <span>I opt in</span>
               </label>
-              <button type="submit" className="px-3.5 py-1.5 rounded bg-gold-gradient text-[#08080A] font-semibold">
+              <button type="submit" className="min-h-11 px-3.5 py-1.5 rounded bg-gold-gradient text-[#08080A] font-semibold">
                 Subscribe
               </button>
             </form>
@@ -1180,27 +1207,27 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               <p className="mt-2 text-[#7D7D90]">
                 Multi-Tenant Business Platform &amp; Creative Studio · {CONTACT_INFO.location}
               </p>
-              <p className="mt-1 text-[11px] text-[#6A6A7C]">
+              <p className="mt-1 text-[11px] text-[#8A8AA0]">
                 Third-party domain, cloud hosting, payment gateway, and messaging API fees apply separately. Optional PWA is a browser-installable web app, not a Play Store app.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-5">
-              <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer" className="hover:text-[#ECC86A]">
+              <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center hover:text-[#ECC86A]">
                 Sitemap
               </a>
-              <a href="tel:+919381362201" className="inline-flex items-center gap-1.5 hover:text-[#ECC86A]">
+              <a href="tel:+919381362201" className="inline-flex min-h-11 items-center gap-1.5 hover:text-[#ECC86A]">
                 <Phone className="w-3.5 h-3.5 text-emerald-400" />
                 <span>+91 9381362201</span>
               </a>
-              <a href={CONTACT_INFO.whatsappUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-[#ECC86A]">
+              <a href={CONTACT_INFO.whatsappUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-1.5 hover:text-[#ECC86A]">
                 <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
                 <span>WhatsApp</span>
               </a>
-              <a href={CONTACT_INFO.instagramUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 hover:text-[#ECC86A]">
+              <a href={CONTACT_INFO.instagramUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-1.5 hover:text-[#ECC86A]">
                 <Instagram className="w-3.5 h-3.5" />
                 <span>@{CONTACT_INFO.instagram}</span>
               </a>
-              <a href={`mailto:${CONTACT_INFO.email}`} className="inline-flex items-center gap-1.5 hover:text-[#ECC86A]">
+              <a href={`mailto:${CONTACT_INFO.email}`} className="inline-flex min-h-11 items-center gap-1.5 hover:text-[#ECC86A]">
                 <Mail className="w-3.5 h-3.5 text-[#D4AF37]" />
                 <span>{CONTACT_INFO.email}</span>
               </a>

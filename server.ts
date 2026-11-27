@@ -69,12 +69,15 @@ const CONTENT_SECURITY_POLICY = [
 ].join('; ');
 
 const app = express();
-app.use((_req, res, next) => {
+app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
   next();
 });
 // Module 3D: Raw request body MUST be preserved for Razorpay HMAC-SHA256 webhook verification
@@ -145,28 +148,44 @@ async function writeAuditLog(
   }
 }
 
+const TENANT_STAFF_ROLES = new Set(['store_manager', 'inventory_clerk', 'support_agent']);
+
 async function assertTenantAccess(req: AuthRequest, tenantId: number) {
   const [tenant] = await db.select().from(tenants).where(eq(tenants.id, tenantId)).limit(1);
   if (!tenant) return { ok: false as const, status: 404, error: 'Business not found.' };
   const dbUser = req.dbUser;
   if (!dbUser) return { ok: false as const, status: 401, error: 'Authentication required.' };
   if (dbUser.role === 'super_admin' || tenant.ownerUserId === dbUser.id) {
-    return { ok: true as const, tenant };
+    return { ok: true as const, tenant, isOwnerOrAdmin: true, staffRole: null as string | null };
   }
-  // Allow assigned staff member of the same tenant
-  const staff = await db
+  const [staff] = await db
     .select()
     .from(staffMembers)
     .where(and(eq(staffMembers.tenantId, tenantId), eq(staffMembers.email, dbUser.email), eq(staffMembers.active, true)))
     .limit(1);
-  if (staff.length > 0) {
-    return { ok: true as const, tenant };
+  // Only recognized, active staff roles are accepted. Unknown legacy rows no
+  // longer receive owner-level tenant access.
+  if (staff && TENANT_STAFF_ROLES.has(staff.staffRole)) {
+    return { ok: true as const, tenant, isOwnerOrAdmin: false, staffRole: staff.staffRole };
   }
   return {
     ok: false as const,
     status: 403,
     error: 'Tenant isolation enforced: you cannot access another business’s private data.',
   };
+}
+
+async function assertTenantOwnerOrAdmin(req: AuthRequest, tenantId: number) {
+  const access = await assertTenantAccess(req, tenantId);
+  if (!access.ok) return access;
+  if (!access.isOwnerOrAdmin) {
+    return {
+      ok: false as const,
+      status: 403,
+      error: 'Business Owner or Super Admin access required.',
+    };
+  }
+  return access;
 }
 
 // ---------- HEALTH & EXTERNAL INTEGRATIONS STATUS ----------
@@ -252,7 +271,13 @@ app.patch('/api/me', requireAuth, async (req: AuthRequest, res) => {
 app.get('/api/plans', async (_req, res) => {
   try {
     const rows = await db.select().from(platformPlans).orderBy(platformPlans.id);
-    res.json({ plans: rows });
+    // Cashfree-only: sanitize stale legacy gateway names in customer-facing copy.
+    const plans = rows.map((row) => ({
+      ...row,
+      featuresJson: (row.featuresJson || '[]').replace(/Razorpay/gi, 'Cashfree'),
+      thirdPartyDisclosure: (row.thirdPartyDisclosure || '').replace(/Razorpay/gi, 'Cashfree'),
+    }));
+    res.json({ plans });
   } catch (error) {
     console.error('GET /api/plans failed:', error);
     res.status(500).json({ error: 'Unable to fetch pricing packages.' });
@@ -1227,7 +1252,7 @@ app.patch('/api/owner/orders/:id', requireAuth, async (req: AuthRequest, res) =>
 app.post('/api/tenants/:tenantId/staff', requireAuth, async (req: AuthRequest, res) => {
   try {
     const tenantId = Number(req.params.tenantId);
-    const access = await assertTenantAccess(req, tenantId);
+    const access = await assertTenantOwnerOrAdmin(req, tenantId);
     if (!access.ok) return res.status(access.status).json({ error: access.error });
     const schema = z.object({
       name: z.string().min(2).max(100),
@@ -1268,9 +1293,9 @@ app.post('/api/tenants/:tenantId/delivery-partners', requireAuth, async (req: Au
 
     const linkCurrentUser = parsed.data.linkCurrentUser === true;
     if (!linkCurrentUser) {
-      // Only the tenant owner/staff or a super admin may add riders on behalf
-      // of a business. Self-registration is allowed into an existing tenant.
-      const access = await assertTenantAccess(req, tenantId);
+      // Adding riders on behalf of a business is an owner/admin action.
+      // Self-registration remains allowed, but does not mutate the global role.
+      const access = await assertTenantOwnerOrAdmin(req, tenantId);
       if (!access.ok) return res.status(access.status).json({ error: access.error });
     }
 
@@ -1286,9 +1311,9 @@ app.post('/api/tenants/:tenantId/delivery-partners', requireAuth, async (req: Au
       })
       .returning();
 
-    if (linkCurrentUser && req.dbUser!.role === 'customer') {
-      await db.update(users).set({ role: 'delivery_partner' }).where(eq(users.id, req.dbUser!.id));
-    }
+    // The global users.role is intentionally unchanged. Assigned-order
+    // authorization is derived from deliveryPartners/delivery partner rows,
+    // so a self-link must not promote a customer account globally.
 
     res.status(201).json({ partner: created });
   } catch (error) {

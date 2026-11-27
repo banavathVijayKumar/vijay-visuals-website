@@ -11,7 +11,6 @@ import {
   domainHealthChecks,
   domainNotifications,
   domainPricingConfig,
-  staffMembers,
   tenantDomains,
   tenants,
   users,
@@ -643,16 +642,12 @@ async function assertTenantDomainAccess(req: AuthRequest, tenantId: number) {
   if (dbUser.role === 'super_admin' || tenant.ownerUserId === dbUser.id) {
     return { ok: true as const, tenant };
   }
-  const staff = await db
-    .select()
-    .from(staffMembers)
-    .where(and(eq(staffMembers.tenantId, tenantId), eq(staffMembers.email, dbUser.email), eq(staffMembers.active, true)))
-    .limit(1);
-  if (staff.length > 0) return { ok: true as const, tenant };
+  // DNS/domain changes are owner/admin-only. Staff membership never granted
+  // domain control in the Cloudflare implementation either.
   return {
     ok: false as const,
     status: 403,
-    error: 'Tenant isolation enforced: you cannot manage domains belonging to another business.',
+    error: 'Business Owner or Super Admin access required to manage domains.',
   };
 }
 

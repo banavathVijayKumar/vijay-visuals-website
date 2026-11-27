@@ -38,7 +38,7 @@ export async function onRequestGet(
     const parsed = JSON.parse(row.website_json) as Record<string, unknown>;
     const pwaEnabled = parsed.pwaEnabled === true;
     const hasLicenseKey =
-      typeof parsed.pwaLicenseKey === 'string' && parsed.pwaLicenseKey.trim().length > 0;
+      typeof parsed.pwaLicenseKey === 'string' && parsed.pwaLicenseKey.trim().length >= 8;
 
     return jsonResponse({
       valid: pwaEnabled && hasLicenseKey,

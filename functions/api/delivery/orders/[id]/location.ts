@@ -7,9 +7,11 @@
 import { requireUser } from '../../../_auth';
 import {
   PagesContext,
+  checkRateLimit,
   handleOptions,
   jsonResponse,
   parseJsonBody,
+  rateLimitResponse,
   sanitizeText,
   writeAuditLog,
 } from '../../../_shared';
@@ -69,6 +71,14 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
   if (!Number.isInteger(orderId) || orderId <= 0) {
     return jsonResponse({ error: 'Invalid order ID.' }, 400);
   }
+
+  const pingLimit = await checkRateLimit(
+    env,
+    `delivery_ping:${auth.user.id}:${orderId}`,
+    60,
+    600
+  );
+  if (!pingLimit.allowed) return rateLimitResponse(pingLimit, 'Too many location updates for this order.');
 
   let order: Record<string, any> | null = null;
   try {

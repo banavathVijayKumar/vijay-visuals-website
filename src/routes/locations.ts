@@ -30,6 +30,13 @@ export function resolveGoogleMapsApiKey(): string {
   return '';
 }
 
+/** Browser-only key resolver: never returns a server-side geocoding credential. */
+export function resolvePublicGoogleMapsApiKey(): string {
+  const trimmed = (process.env.VITE_GOOGLE_MAPS_API_KEY || '').trim();
+  if (!trimmed || trimmed === 'MY_GOOGLE_MAPS_API_KEY' || trimmed === 'YOUR_API_KEY') return '';
+  return trimmed;
+}
+
 export function buildDirectionsUrl(lat?: number | null, lng?: number | null, address?: string): string {
   if (typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng)) {
     return `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lng.toFixed(6)}`;
@@ -79,12 +86,16 @@ async function assertLocationTenantAccess(req: AuthRequest, tenantId: number) {
   if (dbUser.role === 'super_admin' || tenant.ownerUserId === dbUser.id) {
     return { ok: true as const, tenant };
   }
-  const staff = await db
+  const [staff] = await db
     .select()
     .from(staffMembers)
     .where(and(eq(staffMembers.tenantId, tenantId), eq(staffMembers.email, dbUser.email), eq(staffMembers.active, true)))
     .limit(1);
-  if (staff.length > 0) return { ok: true as const, tenant };
+  // Location management is a store-manager capability. Unknown legacy roles are
+  // denied rather than treated as full tenant access.
+  if (staff?.staffRole === 'store_manager') {
+    return { ok: true as const, tenant, isOwnerOrAdmin: false, staffRole: staff.staffRole };
+  }
   return {
     ok: false as const,
     status: 403,
@@ -155,14 +166,14 @@ export function createLocationsRouter(): Router {
 
   // 1. Public Safe Maps Configuration (no server secrets leaked; indicates Google Maps JS availability)
   router.get('/api/locations/config', (_req: Request, res: Response) => {
-    const apiKey = resolveGoogleMapsApiKey();
+    const apiKey = resolvePublicGoogleMapsApiKey();
     const mapboxConfigured = Boolean((process.env.MAPBOX_ACCESS_TOKEN || '').trim());
     res.json({
       configured: Boolean(apiKey),
       provider: apiKey ? 'google_maps' : 'manual_fallback',
       apiKey: apiKey || '',
       mapboxConfigured,
-      geocodingProxyEnabled: Boolean(apiKey),
+      geocodingProxyEnabled: Boolean(resolveGoogleMapsApiKey()),
       manualFallbackAlwaysAvailable: true,
     });
   });
@@ -349,7 +360,7 @@ export function createLocationsRouter(): Router {
         tenantId: tenant.id,
         tenantName: tenant.name,
         fallbackAddress: tenant.address,
-        mapsConfigured: Boolean(resolveGoogleMapsApiKey()),
+        mapsConfigured: Boolean(resolvePublicGoogleMapsApiKey()),
         locations: branches.map((b) => ({
           ...b,
           directionsUrl: buildDirectionsUrl(b.latitude, b.longitude, b.fullAddress),
@@ -696,6 +707,44 @@ export function createLocationsRouter(): Router {
         return res.status(404).json({ error: 'Order not found.' });
       }
 
+      // Live GPS is sensitive customer data. Mirror the Cloudflare gate: either
+      // an authenticated owner of the order / super admin, or full phone/email
+      // verification supplied with the order number. Never return coordinates
+      // or a store branch to an unverified caller.
+      const dbUser = req.dbUser;
+      const verifyPhone = String(req.query.phone || '').replace(/\D/g, '');
+      const verifyEmail = String(req.query.email || '').trim().toLowerCase();
+      let trackingAuthorized = false;
+
+      if (dbUser) {
+        const customerEmail = String(ord.customerEmail || '').toLowerCase();
+        trackingAuthorized =
+          dbUser.role === 'super_admin' ||
+          (ord.customerUserId != null && ord.customerUserId === dbUser.id) ||
+          (Boolean(customerEmail) && customerEmail === String(dbUser.email || '').toLowerCase());
+      }
+
+      if (!trackingAuthorized) {
+        const orderPhone = String(ord.customerPhone || '').replace(/\D/g, '');
+        const orderEmail = String(ord.customerEmail || '').toLowerCase();
+        const phoneMatches =
+          verifyPhone.length >= 10 &&
+          orderPhone.length >= 10 &&
+          (verifyPhone === orderPhone ||
+            verifyPhone.endsWith(orderPhone.slice(-10)) ||
+            orderPhone.endsWith(verifyPhone.slice(-10)));
+        trackingAuthorized =
+          phoneMatches || (Boolean(verifyEmail) && Boolean(orderEmail) && verifyEmail === orderEmail);
+      }
+
+      if (!trackingAuthorized) {
+        return res.status(403).json({
+          error:
+            'Order verification required. Provide the full phone number or email used for this order, or sign in.',
+          code: 'TRACKING_VERIFICATION_REQUIRED',
+        });
+      }
+
       const [primaryBranch] = await db
         .select()
         .from(businessLocations)
@@ -743,7 +792,7 @@ export function createLocationsRouter(): Router {
         status: ord.status,
         pollingAllowed: true,
         recommendedPollIntervalMs: 20000,
-        mapsConfigured: Boolean(resolveGoogleMapsApiKey()),
+        mapsConfigured: Boolean(resolvePublicGoogleMapsApiKey()),
         latestPing: latestPing || null,
         storeBranch: primaryBranch
           ? {

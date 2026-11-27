@@ -44,12 +44,16 @@ async function assertTenantOwnerOrStaff(req: AuthRequest, tenantId: number) {
   if (dbUser.role === 'super_admin' || tenant.ownerUserId === dbUser.id) {
     return { ok: true as const, tenant };
   }
-  const staff = await db
+  const [staff] = await db
     .select()
     .from(staffMembers)
     .where(and(eq(staffMembers.tenantId, tenantId), eq(staffMembers.email, dbUser.email), eq(staffMembers.active, true)))
     .limit(1);
-  if (staff.length > 0) return { ok: true as const, tenant };
+  // Growth workflows are available to store managers and support agents.
+  // Inventory clerks and unknown legacy roles are denied.
+  if (staff && (staff.staffRole === 'store_manager' || staff.staffRole === 'support_agent')) {
+    return { ok: true as const, tenant, staffRole: staff.staffRole };
+  }
   return { ok: false as const, status: 403, error: 'Forbidden: you do not have access to this business tenant.' };
 }
 

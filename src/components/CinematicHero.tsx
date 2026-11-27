@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { AppView } from '../types/platform';
 import { Lang, getI18n } from '../data/content';
+import { getScrollBehavior } from '../lib/motion';
 
 interface CinematicHeroProps {
   lang: Lang;
@@ -56,7 +57,7 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
   const handleExploreServices = () => {
     const el = document.getElementById('services');
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
+      el.scrollIntoView({ behavior: getScrollBehavior() });
     }
   };
 
@@ -69,7 +70,7 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
       onOpenQuote();
     } else {
       const el = document.getElementById('pricing');
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
+      if (el) el.scrollIntoView({ behavior: getScrollBehavior() });
     }
   };
 
@@ -266,9 +267,9 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
             </div>
 
             {/* 3D Golden Satin Ribbon Banner: "Creative Solutions for a Digital World" */}
-            <div className="relative my-3 sm:my-4 max-w-full">
-              <div className="gold-ribbon-3d py-1.5 sm:py-2 px-6 sm:px-10 rounded-sm inline-block shadow-xl">
-                <p className="font-sans-clean font-black text-xs sm:text-sm md:text-base text-[#090D17] uppercase tracking-[0.18em] sm:tracking-[0.24em] whitespace-nowrap drop-shadow-sm">
+            <div className="relative my-3 flex w-full justify-center px-2 sm:my-4">
+              <div className="gold-ribbon-3d max-w-full rounded-sm px-4 py-1.5 shadow-xl sm:px-10 sm:py-2">
+                <p className="font-sans-clean font-black text-center text-[11px] leading-tight text-[#090D17] uppercase tracking-[0.12em] drop-shadow-sm sm:text-sm sm:tracking-[0.24em] md:text-base">
                   Creative Solutions for a Digital World
                 </p>
               </div>

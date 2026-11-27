@@ -530,7 +530,7 @@ export function replaceHeadMetadata(
     ? 'og:|twitter:|google-site-verification|description|robots|theme-color|mobile-web-app-capable|apple-mobile-web-app-capable|apple-mobile-web-app-status-bar-style|apple-mobile-web-app-title'
     : 'og:|twitter:|description|robots';
   const linkPattern = removeVerification
-    ? 'canonical|alternate|icon|shortcut icon|apple-touch-icon'
+    ? 'canonical|alternate|icon|shortcut icon|apple-touch-icon|manifest'
     : 'canonical|alternate';
   result = result
     .replace(
@@ -692,9 +692,16 @@ export function renderTenantHeadInjection(input: {
   phone?: string | null;
   logoUrl?: string | null;
   googleSiteVerification?: string | null;
+  themeColor?: string | null;
+  pwaAppName?: string | null;
+  pwaEnabled?: boolean;
   structuredData: string;
   platformBlogUrl?: string | null;
 }): { title: string; injection: string } {
+  const brandedPwa = input.pwaEnabled === true;
+  const tenantManifestHref = input.tenantSlug
+    ? `/api/tenants/${encodeURIComponent(input.tenantSlug)}/manifest.webmanifest`
+    : '';
   const tags = [
     '<meta name="vv-tenant-metadata" content="server-rendered" />',
     input.tenantSlug
@@ -718,6 +725,22 @@ export function renderTenantHeadInjection(input: {
     input.logoUrl ? `<meta property="og:image" content="${escapeHtml(input.logoUrl)}" />` : '',
     input.logoUrl ? `<link rel="icon" href="${escapeHtml(input.logoUrl)}" />` : '',
     input.logoUrl ? `<link rel="apple-touch-icon" href="${escapeHtml(input.logoUrl)}" />` : '',
+    input.themeColor ? `<meta name="theme-color" content="${escapeHtml(input.themeColor)}" />` : '',
+    brandedPwa
+      ? '<meta name="mobile-web-app-capable" content="yes" />'
+      : '',
+    brandedPwa
+      ? '<meta name="apple-mobile-web-app-capable" content="yes" />'
+      : '',
+    brandedPwa
+      ? '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />'
+      : '',
+    brandedPwa && input.pwaAppName
+      ? `<meta name="apple-mobile-web-app-title" content="${escapeHtml(input.pwaAppName)}" />`
+      : '',
+    brandedPwa && tenantManifestHref
+      ? `<link rel="manifest" href="${escapeHtml(tenantManifestHref)}" />`
+      : '',
     `<script type="application/ld+json">${input.structuredData}</script>`,
   ].filter(Boolean);
 

@@ -183,6 +183,10 @@ export function buildTenantHeadInjection(
     products,
   });
 
+  const pwaEnabled = parsed.pwaEnabled === true;
+  const hasPwaLicense =
+    typeof parsed.pwaLicenseKey === 'string' && parsed.pwaLicenseKey.trim().length >= 8;
+
   return renderTenantHeadInjection({
     name: row.business_name,
     seoTitle: copy.seoTitle,
@@ -192,6 +196,9 @@ export function buildTenantHeadInjection(
     tenantSlug: row.public_slug,
     logoUrl: settings.logoUrl,
     googleSiteVerification: settings.googleSiteVerification,
+    themeColor: text(parsed.pwaThemeColor) || text(parsed.primaryColor) || undefined,
+    pwaAppName: text(parsed.pwaAppName) || undefined,
+    pwaEnabled: pwaEnabled && hasPwaLicense,
     structuredData,
   });
 }

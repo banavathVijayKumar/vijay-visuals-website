@@ -31,7 +31,8 @@ export default defineConfig(({mode}) => {
       react(),
       tailwindcss(),
       VitePWA({
-        registerType: 'autoUpdate',
+        registerType: 'prompt',
+        injectRegister: null,
         includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
           id: '/',
@@ -65,11 +66,25 @@ export default defineConfig(({mode}) => {
           ],
         },
         workbox: {
-          skipWaiting: true,
+          // Wait for an explicit user-approved reload instead of taking over mid-session.
+          skipWaiting: false,
           clientsClaim: true,
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,jpg}'],
-          navigateFallbackDenylist: [/^\/api\//],
+          // Only the platform start page gets an offline shell. Tenant, auth,
+          // checkout and API routes must always go to the network so their
+          // server-rendered branding and sensitive responses are never cached.
+          navigateFallbackAllowlist: [/^\/$/],
+          navigateFallbackDenylist: [
+            /^\/api\//,
+            /^\/auth\//,
+            /^\/account\//,
+            /^\/checkout\//,
+            /^\/pay/,
+            /^\/site\//,
+            /^\/proposal\//,
+            /^\/dashboard/,
+          ],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

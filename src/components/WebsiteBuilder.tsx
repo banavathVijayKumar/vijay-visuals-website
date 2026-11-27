@@ -1900,7 +1900,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
           <div className="flex justify-center">
             <div
               className={`rounded-xl border border-[#282838] overflow-hidden transition-all duration-200 ${
-                previewDevice === 'mobile' ? 'w-[375px]' : 'w-full'
+                previewDevice === 'mobile' ? 'w-full max-w-[375px]' : 'w-full'
               }`}
               style={{ backgroundColor: accentColor }}
             >

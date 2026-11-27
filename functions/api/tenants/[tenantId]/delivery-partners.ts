@@ -115,27 +115,9 @@ export async function onRequestPost(
 
     if (!created) return errorJson('Failed to register delivery partner.', 500);
 
-    // Express promoted a customer to delivery_partner in the users table.
-    // Pages maps Supabase customers to vv_users.role = 'customer'; sync that
-    // canonical D1 row when the caller is self-registering.
-    if (linkCurrentUser && auth.user.platformRole === 'end_customer') {
-      try {
-        const existingUser = await env.DB.prepare(
-          'SELECT role FROM vv_users WHERE id = ? OR auth_subject = ? LIMIT 1'
-        )
-          .bind(auth.user.id, auth.user.authSubject || auth.user.id)
-          .first<{ role: string }>();
-        if (!existingUser || existingUser.role === 'customer' || !existingUser.role) {
-          await env.DB.prepare(
-            'UPDATE vv_users SET role = ?, updated_at = datetime(\'now\') WHERE id = ? OR auth_subject = ?'
-          )
-            .bind('delivery_partner', auth.user.id, auth.user.authSubject || auth.user.id)
-            .run();
-        }
-      } catch {
-        // Role sync is secondary to the membership record; vv_users is not in migrations.
-      }
-    }
+    // The canonical vv_users.role is intentionally unchanged. Delivery access
+    // is derived from the tenant_memberships/delivery partner record, so a
+    // self-link must not globally promote a customer account.
 
     return jsonResponse(
       {

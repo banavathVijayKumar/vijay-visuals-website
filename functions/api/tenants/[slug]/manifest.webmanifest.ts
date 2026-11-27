@@ -54,6 +54,21 @@ export async function onRequestGet(
     parsed = row.website_json ? JSON.parse(row.website_json) : {};
   } catch {}
 
+  // Branded install manifests are a licensed PWA feature. Keep unlicensed
+  // storefronts on the platform identity instead of exposing a tenant manifest.
+  const pwaEnabled = parsed.pwaEnabled === true;
+  const hasLicenseKey =
+    typeof parsed.pwaLicenseKey === 'string' && parsed.pwaLicenseKey.trim().length >= 8;
+  if (!pwaEnabled || !hasLicenseKey) {
+    return new Response(JSON.stringify({ error: 'Branded PWA is not enabled for this storefront.' }), {
+      status: 404,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   const tenant = mapPublicationToTenant(row, parsed);
   const shortName = cleanString(tenant.pwaShortName || tenant.name, 12) || 'Store';
   const startUrl = `/site/${tenant.slug}`;

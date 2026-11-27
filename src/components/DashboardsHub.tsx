@@ -1375,8 +1375,8 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                     </div>
                   </div>
 
-                  {/* Owner Sub-Tabs */}
-                  <div className="flex flex-wrap gap-2 border-b border-[#1E1E2B] pb-3">
+                  {/* Owner Sub-Tabs — horizontal scroller keeps content above the fold on phones. */}
+                  <div className="no-scrollbar flex gap-2 overflow-x-auto border-b border-[#1E1E2B] pb-3">
                     {[
                       { id: 'command_center', label: 'Daily Command Center' },
                       { id: 'website_editor', label: 'Edit Website & Content' },
@@ -1410,7 +1410,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                         key={tab.id}
                         type="button"
                         onClick={() => setOwnerSection(tab.id as typeof ownerSection)}
-                        className={`px-3 py-1.5 rounded-md text-xs font-medium ${
+                        className={`inline-flex min-h-11 shrink-0 items-center px-3 py-1.5 rounded-md text-xs font-medium ${
                           ownerSection === tab.id
                             ? 'bg-[#D4AF37] text-[#08080A]'
                             : 'bg-[#12121A] text-[#A3A3B5] hover:text-white'
@@ -1529,12 +1529,12 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                               </span>
                             </div>
                           </div>
-                          <div className="grid grid-cols-7 gap-2 pt-1">
+                          <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4 lg:grid-cols-7">
                             {ownerData.stats.salesTrend.map((t) => (
                               <div key={t.date} className="rounded-lg border border-[#1E1E2B] bg-[#09090E] p-2 text-center">
-                                <p className="text-[10px] text-[#8E8EA2] font-mono-tabular">{t.date.slice(5)}</p>
-                                <p className="font-mono-tabular text-xs font-bold text-white mt-1">₹{t.revenue.toLocaleString('en-IN')}</p>
-                                <p className="text-[9px] text-[#D4AF37] mt-0.5">{t.orders} {t.orders === 1 ? 'order' : 'orders'}</p>
+                                <p className="text-[11px] text-[#8E8EA2] font-mono-tabular">{t.date.slice(5)}</p>
+                                <p className="font-mono-tabular text-xs font-bold text-white mt-1 break-words">₹{t.revenue.toLocaleString('en-IN')}</p>
+                                <p className="text-[10px] text-[#D4AF37] mt-0.5">{t.orders} {t.orders === 1 ? 'order' : 'orders'}</p>
                               </div>
                             ))}
                           </div>

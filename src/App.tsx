@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Globe } from 'lucide-react';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { apiFetch } from './lib/api';
+import { getScrollBehavior } from './lib/motion';
 import { CurrencyCode, GLOBAL_CURRENCIES, Lang, SUPPORTED_LANGUAGES } from './data/content';
 import { AppView, OrderRecord, PlatformAnnouncementRecord, PlatformPlanRecord, TenantRecord } from './types/platform';
 import { applyPlatformMetadata } from './lib/platformMetadata';
@@ -15,6 +16,8 @@ import { AiAutomationCenter } from './components/AiAutomationCenter';
 import { OrderTrackerModal } from './components/OrderTrackerModal';
 import { InvoiceModal } from './components/InvoiceModal';
 import { OfflineIndicator } from './components/PWAControls';
+import { BackToTop } from './components/BackToTop';
+import { PWAUpdatePrompt } from './components/PWAUpdatePrompt';
 import { AuthModal } from './components/auth/AuthModal';
 import { InteractiveDemoHub } from './components/InteractiveDemoHub';
 import { CustomerProposalView } from './components/CustomerProposalView';
@@ -282,7 +285,7 @@ function PlatformShell() {
               ? '/'
               : `/${view}`;
       window.history.pushState({}, '', appendLangParam(route, lang));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo({ top: 0, behavior: getScrollBehavior() });
     },
     [lang]
   );
@@ -387,7 +390,7 @@ function PlatformShell() {
           {/* Global Persistent 12-Language & Multi-Currency Utility Strip (Public Site + Dashboards) */}
           <div className="border-b border-[#181822] bg-[#0B0B10] w-full">
             <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2.5 text-xs">
-              <div className="flex items-center gap-2 text-[#A7A7BA] text-[11px] sm:text-xs">
+              <div className="hidden items-center gap-2 text-[#A7A7BA] text-[11px] sm:flex sm:text-xs">
                 <Globe className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
                 <span className="truncate">Made in India · Built for the World</span>
               </div>
@@ -398,7 +401,7 @@ function PlatformShell() {
                     aria-label="Select platform language"
                     value={lang}
                     onChange={(e) => changeLanguage(e.target.value as Lang)}
-                    className="rounded border border-[#252534] bg-[#0E0E15] px-2 py-1 text-[11px] sm:text-xs text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none max-w-[150px] sm:max-w-none"
+                    className="min-h-11 rounded border border-[#252534] bg-[#0E0E15] px-2 py-1 text-[11px] sm:text-xs text-[#ECC86A] focus:border-[#D4AF37] focus:outline-none max-w-[150px] sm:max-w-none"
                   >
                     {SUPPORTED_LANGUAGES.map((l) => (
                       <option key={l.code} value={l.code}>
@@ -414,7 +417,7 @@ function PlatformShell() {
                     aria-label="Select display currency"
                     value={currency}
                     onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
-                    className="rounded border border-[#252534] bg-[#0E0E15] px-2 py-1 text-[11px] sm:text-xs text-[#E8E8ED] focus:border-[#D4AF37] focus:outline-none max-w-[110px] sm:max-w-none"
+                    className="min-h-11 rounded border border-[#252534] bg-[#0E0E15] px-2 py-1 text-[11px] sm:text-xs text-[#E8E8ED] focus:border-[#D4AF37] focus:outline-none max-w-[110px] sm:max-w-none"
                   >
                     {GLOBAL_CURRENCIES.map((c) => (
                       <option key={c.code} value={c.code}>
@@ -576,11 +579,14 @@ function PlatformShell() {
       />
 
       <OfflineIndicator />
+      <PWAUpdatePrompt />
+      {(activeView === 'studio' || activeView === 'marketplace') && <BackToTop />}
 
       {toast && (
         <div
           role="status"
-          className="fixed bottom-5 right-5 z-50 max-w-sm rounded-lg border border-[#D4AF37]/50 bg-[#14141D] px-4 py-3 text-xs text-[#F5E4B2] shadow-2xl"
+          className="fixed right-4 z-50 max-w-[calc(100vw-2rem)] rounded-lg border border-[#D4AF37]/50 bg-[#14141D] px-4 py-3 text-xs text-[#F5E4B2] shadow-2xl sm:right-5 sm:max-w-sm"
+          style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
         >
           {toast}
         </div>

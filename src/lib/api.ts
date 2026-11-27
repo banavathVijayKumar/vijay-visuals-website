@@ -61,6 +61,9 @@ export async function apiFetch<T = unknown>(
 
       const res = await fetch(url, {
         ...options,
+        // Never let the browser or a service worker reuse private/account,
+        // OTP, checkout or other API responses.
+        cache: 'no-store',
         signal: controller.signal,
         headers,
         body,

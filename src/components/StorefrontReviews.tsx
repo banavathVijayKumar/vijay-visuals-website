@@ -27,6 +27,7 @@ interface StorefrontReviewsProps {
   initialReviews: ReviewRecord[];
   googleReviewUrl?: string;
   googlePlaceId?: string;
+  isDemoStore?: boolean;
   onNotify: (msg: string) => void;
 }
 
@@ -38,6 +39,7 @@ export function StorefrontReviews({
   initialReviews,
   googleReviewUrl,
   googlePlaceId,
+  isDemoStore = false,
   onNotify,
 }: StorefrontReviewsProps) {
   const { profile, openAuthModal } = useAuth();
@@ -307,22 +309,26 @@ export function StorefrontReviews({
   };
 
   return (
-    <section id="store-reviews" className="max-w-7xl mx-auto px-6 py-12 space-y-8">
+    <section id="store-reviews" className="max-w-7xl mx-auto scroll-mt-36 px-4 py-12 space-y-8 sm:px-6 md:scroll-mt-24">
       {/* Section Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-[#20202E] pb-6">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#D4AF37]/15 text-[#ECC86A] border border-[#D4AF37]/30">
               <ShieldCheck className="w-3.5 h-3.5" />
-              100% Authentic Customer Reviews
+              {isDemoStore ? 'Demo · sample reviews' : '100% Authentic Customer Reviews'}
             </span>
-            <span className="text-xs text-[#8E8EA2]">Zero Fake Reviews Policy</span>
+            <span className="text-xs text-[#8E8EA2]">
+              {isDemoStore ? 'Illustrative data only' : 'Zero Fake Reviews Policy'}
+            </span>
           </div>
           <h2 className="font-luxury text-2xl md:text-3xl font-bold text-white tracking-tight">
-            Customer Reviews & Ratings
+            {isDemoStore ? 'Sample Reviews & Ratings' : 'Customer Reviews & Ratings'}
           </h2>
           <p className="text-xs text-[#9E9EB2] mt-1">
-            Real feedback from verified purchasers and customers of {businessName}.
+            {isDemoStore
+              ? 'Seeded preview content for this demo storefront; not feedback from real customers.'
+              : `Real feedback from verified purchasers and customers of ${businessName}.`}
           </p>
         </div>
 
@@ -373,7 +379,7 @@ export function StorefrontReviews({
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{verifiedCount} Verified Purchases ({verifiedPercentage}%)</span>
             </span>
-            <span className="text-[#8E8EA2]">Anti-Fraud Active</span>
+            <span className="text-[#8E8EA2]">{isDemoStore ? 'Demo data' : 'Anti-Fraud Active'}</span>
           </div>
         </div>
 

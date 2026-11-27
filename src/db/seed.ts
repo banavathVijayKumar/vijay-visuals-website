@@ -70,12 +70,12 @@ export async function ensurePlatformSeeded() {
         storageGb: 25,
         featuresJson: JSON.stringify([
           'Full e-commerce storefront with categories, variants, stock alerts & coupons',
-          'Cart, wishlist, COD/UPI & Razorpay checkout, GST invoices & order tracking',
+          'Cart, wishlist, COD/UPI & Cashfree checkout, GST invoices & order tracking',
           'Wholesale B2B tiers, customer reviews, sales reports & refund tracking',
           'Includes all Business Website SEO, custom domain DNS & CRM capabilities',
         ]),
         thirdPartyDisclosure:
-          'Razorpay transaction MDR, custom domain registration/renewal, courier shipping charges, and WhatsApp/SMS API conversation fees apply directly from third-party providers.',
+          'Cashfree transaction MDR, custom domain registration/renewal, courier shipping charges, and WhatsApp/SMS API conversation fees apply directly from third-party providers.',
       },
       {
         code: 'addon-premium-template',
@@ -249,7 +249,7 @@ export async function ensurePlatformSeeded() {
           'Owner, Customer & Delivery Partner dashboards',
         ]),
         thirdPartyDisclosure:
-          'Custom domain registration, third-party payment gateway MDR fees (Razorpay/Stripe), WhatsApp Business API messaging charges, and external SMTP/cloud hosting fees are billed separately by their respective providers and are never promised free forever.',
+          'Custom domain registration, third-party payment gateway MDR fees (Cashfree), WhatsApp Business API messaging charges, and external SMTP/cloud hosting fees are billed separately by their respective providers and are never promised free forever.',
       },
       {
         code: 'website-plus-pwa',
@@ -264,7 +264,7 @@ export async function ensurePlatformSeeded() {
           'Everything in Website-Only Business Package',
           'Branded Progressive Web App (custom app name, icon, splash theme & manifest)',
           'Installable on supported Android Chrome & iOS Safari browsers (not a Google Play Store native app)',
-          'Offline page caching & synchronized customer login',
+          'Offline app-shell caching; live catalog, login and checkout require a connection',
           'Server-side PWA license verification',
         ]),
         thirdPartyDisclosure:
@@ -317,7 +317,7 @@ export async function ensurePlatformSeeded() {
         featuresJson: JSON.stringify([
           'Bespoke UX architecture & custom ERP / POS integrations',
           'Dedicated multi-branch inventory & wholesale B2B pricing tiers',
-          'Custom WhatsApp Business Cloud API & Razorpay webhook deployment',
+          'Custom WhatsApp Business Cloud API & Cashfree webhook deployment',
           'Priority engineering SLA with Vijay Visuals',
         ]),
         thirdPartyDisclosure:

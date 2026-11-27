@@ -67,7 +67,9 @@ async function assertTenantAccess(req: AuthRequest, tenantId: number) {
     .from(staffMembers)
     .where(and(eq(staffMembers.tenantId, tenantId), eq(staffMembers.email, dbUser.email), eq(staffMembers.active, true)))
     .limit(1);
-  if (staffRow) {
+  // Business OS exposes finance/CRM data. Store managers and support agents
+  // retain day-to-day access; inventory clerks and unknown roles are denied.
+  if (staffRow && (staffRow.staffRole === 'store_manager' || staffRow.staffRole === 'support_agent')) {
     return { ok: true as const, tenant, isOwnerOrAdmin: false, staffRole: staffRow.staffRole };
   }
   return {
@@ -1236,6 +1238,11 @@ STRICT RULES:
       const tenantId = Number(req.params.tenantId);
       const access = await assertTenantAccess(req, tenantId);
       if (!access.ok) return res.status(access.status).json({ error: access.error });
+      if (!access.isOwnerOrAdmin) {
+        return res
+          .status(403)
+          .json({ error: 'Business Owner or Super Admin access required for full export.' });
+      }
 
       const [
         tenantProducts,

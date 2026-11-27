@@ -54,6 +54,7 @@ import {
   TenantModules,
   TenantRecord,
 } from '../types/platform';
+import { isDemoStoreSlug } from '../data/demo';
 import { PWAInstallButton } from './PWAControls';
 import { StorefrontMapPreview } from './StorefrontMapPreview';
 import { StorefrontReviews } from './StorefrontReviews';
@@ -849,8 +850,21 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     <div className="min-h-screen pb-20" style={{ backgroundColor: '#08080A' }}>
       {/* Storefront Top Strip & Section Navigation */}
       <div className="border-b border-[#1E1E2A] bg-[#0C0C12] sticky top-0 z-30 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2.5 sm:gap-4">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-3 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <a
+              href="#store-home"
+              aria-label={`${tenant.name} home`}
+              className="inline-flex min-h-11 min-w-0 items-center gap-2 md:hidden"
+            >
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-[#08080A] font-luxury"
+                style={{ backgroundColor: tenant.primaryColor }}
+              >
+                {tenant.logoText}
+              </span>
+              <span className="truncate text-xs font-semibold text-white">{tenant.name}</span>
+            </a>
             <nav aria-label="Storefront sections" className="hidden md:flex items-center gap-4 text-xs text-[#B8B8C8]">
               <a href="#store-home" className="hover:text-[#ECC86A]">Home</a>
               {(modules.ecommerce || products.length > 0) && (
@@ -867,37 +881,39 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
             </nav>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2.5">
             {pwaLicenseValid && (
               <PWAInstallButton appLabel={`Install ${tenant.pwaShortName || tenant.name}`} compact />
             )}
             {modules.bookings && (
               <button
                 type="button"
+                aria-label="Book a slot"
                 onClick={() => {
                   setBookName(profile?.name || '');
                   setBookPhone(profile?.phone || '');
                   setBookingOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#2A2A38] text-xs text-[#E8E8ED] hover:border-[#D4AF37]"
+                className="inline-flex min-h-11 items-center gap-1.5 px-2.5 sm:px-3 rounded-md border border-[#2A2A38] text-xs text-[#E8E8ED] hover:border-[#D4AF37]"
               >
                 <Calendar className="w-3.5 h-3.5 text-[#D4AF37]" />
-                <span>Book Slot</span>
+                <span className="hidden sm:inline">Book Slot</span>
               </button>
             )}
             <button
               type="button"
+              aria-label="Open AI support"
               onClick={() => setChatOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#2A2A38] text-xs text-[#E8E8ED] hover:border-[#D4AF37]"
+              className="inline-flex min-h-11 items-center gap-1.5 px-2.5 sm:px-3 rounded-md border border-[#2A2A38] text-xs text-[#E8E8ED] hover:border-[#D4AF37]"
             >
               <Bot className="w-3.5 h-3.5 text-[#D4AF37]" />
-              <span>AI Support</span>
+              <span className="hidden sm:inline">AI Support</span>
             </button>
             {modules.cartCheckout && (
               <button
                 type="button"
                 onClick={() => setCartOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-1.5 rounded-md text-xs font-semibold text-[#08080A]"
+                className="inline-flex min-h-11 items-center gap-2 px-3 sm:px-4 rounded-md text-xs font-semibold text-[#08080A]"
                 style={{ backgroundColor: tenant.primaryColor }}
               >
                 <ShoppingBag className="w-3.5 h-3.5" />
@@ -906,11 +922,28 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
             )}
           </div>
         </div>
+
+        {/* Mobile section chips keep navigation visible without a bottom nav. */}
+        <nav aria-label="Storefront quick sections" className="border-t border-[#1E1E2A] md:hidden">
+          <div className="no-scrollbar flex gap-2 overflow-x-auto px-3 py-2">
+            <a href="#store-home" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#D4AF37]/45 bg-[#D4AF37]/10 px-3 text-xs font-semibold text-[#ECC86A]">Home</a>
+            {(modules.ecommerce || products.length > 0) && (
+              <a href="#store-catalog" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#2A2A38] px-3 text-xs text-[#D4D4E2]">Menu / Catalog</a>
+            )}
+            {modules.gallery && galleryItems.length > 0 && (
+              <a href="#store-gallery" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#2A2A38] px-3 text-xs text-[#D4D4E2]">Gallery</a>
+            )}
+            {modules.reviews && (
+              <a href="#store-reviews" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#2A2A38] px-3 text-xs text-[#D4D4E2]">Reviews</a>
+            )}
+            <a href="#store-contact" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#2A2A38] px-3 text-xs text-[#D4D4E2]">Contact</a>
+          </div>
+        </nav>
       </div>
 
       {/* Storefront Hero Banner */}
-      <section id="store-home" className="border-b border-[#1D1D28]">
-        <div className="max-w-7xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+      <section id="store-home" className="scroll-mt-36 border-b border-[#1D1D28] md:scroll-mt-24">
+        <div className="max-w-7xl mx-auto px-4 py-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch sm:px-6">
           <div className="lg:col-span-6 flex flex-col justify-center">
             <div className="flex items-center gap-3 mb-4">
               {tenant.logoImage ? (
@@ -947,6 +980,11 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                 )}
               </div>
             </div>
+            {isDemoStoreSlug(tenant.slug) && (
+              <span className="mb-3 inline-flex w-fit items-center rounded-full border border-[#D4AF37]/50 bg-[#D4AF37]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#ECC86A]">
+                Demo · sample storefront
+              </span>
+            )}
             <h1
               className="text-3xl md:text-4xl font-bold text-white mb-2 text-balance"
               style={{ fontFamily: tenant.fontFamily === 'Cinzel' ? 'Cinzel, serif' : 'Plus Jakarta Sans, sans-serif' }}
@@ -1055,7 +1093,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
       {/* Catalog Controls & Product Grid (shown when ecommerce enabled or products exist) */}
       {(modules.ecommerce || products.length > 0) && (
-        <section id="store-catalog" className="max-w-7xl mx-auto px-6 pt-8 pb-4">
+        <section id="store-catalog" className="max-w-7xl mx-auto scroll-mt-36 px-4 pt-8 pb-4 sm:px-6 md:scroll-mt-24">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
             <div className="flex flex-wrap items-center gap-2">
               {categories.map((cat) => (
@@ -1155,8 +1193,17 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                     className="rounded-xl border border-[#20202D] bg-[#0E0E14] overflow-hidden flex flex-col"
                   >
                     <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`View ${product.name} details`}
                       className="aspect-[4/3] bg-[#14141D] relative cursor-pointer"
                       onClick={() => openProductDetail(product)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          openProductDetail(product);
+                        }
+                      }}
                     >
                       <img
                         src={product.imageUrl || tenant.bannerImage || getCategoryFallbackBanner(tenant.category)}
@@ -1326,7 +1373,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
       {/* Business Photo & Portfolio Gallery + Lightbox */}
       {modules.gallery && galleryItems.length > 0 && (
-        <section id="store-gallery" className="max-w-7xl mx-auto px-6 py-10 border-t border-[#1D1D28]">
+        <section id="store-gallery" className="max-w-7xl mx-auto scroll-mt-36 px-4 py-10 border-t border-[#1D1D28] sm:px-6 md:scroll-mt-24">
           <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
             <div>
               <p className="text-xs font-medium text-[#D4AF37] mb-1 flex items-center gap-1.5">
@@ -1422,12 +1469,13 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           initialReviews={reviews}
           googleReviewUrl={tenant.googleReviewUrl}
           googlePlaceId={tenant.googlePlaceId}
+          isDemoStore={isDemoStoreSlug(tenant.slug)}
           onNotify={onNotify}
         />
       )}
 
       {/* Stage 3 & Stage 5: Published Multi-Branch Map Preview, Direct Contact/Quote Actions & Consent Newsletter */}
-      <section id="store-contact" className="max-w-7xl mx-auto px-6 pb-16 space-y-6">
+      <section id="store-contact" className="max-w-7xl mx-auto scroll-mt-36 px-4 pb-16 space-y-6 sm:px-6 md:scroll-mt-24">
         <StorefrontMapPreview
           slug={tenant.slug}
           tenantName={tenant.name}
@@ -1628,10 +1676,10 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
       {/* Quote Request Modal */}
       {quoteOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-xl border border-[#2A2A38] bg-[#0D0D13] p-6 space-y-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border border-[#2A2A38] bg-[#0D0D13] p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-luxury text-lg font-bold text-white">Request Quote · {tenant.name}</h3>
-              <button type="button" onClick={() => setQuoteOpen(false)} className="text-[#8E8EA2] hover:text-white">
+              <button type="button" onClick={() => setQuoteOpen(false)} aria-label="Close quote request" className="inline-flex h-11 w-11 items-center justify-center text-[#8E8EA2] hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -2069,7 +2117,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                           <button
                             type="button"
                             onClick={() => updateCartQty(idx, -1)}
-                            className="p-1 rounded border border-[#2A2A38] text-[#B8B8C8]"
+                            className="inline-flex h-11 w-11 items-center justify-center rounded border border-[#2A2A38] text-[#B8B8C8]"
                           >
                             <Minus className="w-3 h-3" />
                           </button>
@@ -2077,7 +2125,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                           <button
                             type="button"
                             onClick={() => updateCartQty(idx, 1)}
-                            className="p-1 rounded border border-[#2A2A38] text-[#B8B8C8]"
+                            className="inline-flex h-11 w-11 items-center justify-center rounded border border-[#2A2A38] text-[#B8B8C8]"
                           >
                             <Plus className="w-3 h-3" />
                           </button>
@@ -2571,13 +2619,16 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
       {/* Storefront AI Customer Support Chatbot (Real Gemini 4 Hydrogen) */}
       {chatOpen && (
-        <div className="fixed bottom-5 right-5 z-50 w-[340px] sm:w-[380px] rounded-xl border border-[#2A2A3A] bg-[#0E0E15] shadow-2xl flex flex-col overflow-hidden">
+        <div
+          className="fixed z-50 w-[min(340px,calc(100vw-2rem))] sm:w-[380px] rounded-xl border border-[#2A2A3A] bg-[#0E0E15] shadow-2xl flex flex-col overflow-hidden"
+          style={{ bottom: 'calc(1.25rem + env(safe-area-inset-bottom, 0px))', right: 'calc(1rem + env(safe-area-inset-right, 0px))' }}
+        >
           <div className="px-4 py-3 border-b border-[#20202D] flex items-center justify-between bg-[#12121B]">
             <div className="flex items-center gap-2 text-xs font-semibold text-white">
               <MessageSquare className="w-4 h-4 text-[#D4AF37]" />
               <span>{tenant.name} AI Support</span>
             </div>
-            <button type="button" onClick={() => setChatOpen(false)} className="text-[#8E8EA2] hover:text-white">
+            <button type="button" onClick={() => setChatOpen(false)} aria-label="Close AI support" className="inline-flex h-11 w-11 items-center justify-center text-[#8E8EA2] hover:text-white">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -2621,7 +2672,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           <div className="w-full max-w-md rounded-xl border border-[#2A2A38] bg-[#0D0D13] p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-luxury text-lg font-bold text-white">Book Appointment · {tenant.name}</h3>
-              <button type="button" onClick={() => setBookingOpen(false)} className="text-[#8E8EA2] hover:text-white">
+              <button type="button" onClick={() => setBookingOpen(false)} aria-label="Close booking form" className="inline-flex h-11 w-11 items-center justify-center text-[#8E8EA2] hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>

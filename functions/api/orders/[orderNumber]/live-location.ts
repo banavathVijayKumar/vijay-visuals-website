@@ -5,7 +5,15 @@
 // ============================================================================
 
 import { requireUser } from '../../_auth';
-import { PagesContext, handleOptions, jsonResponse, sanitizeText } from '../../_shared';
+import {
+  PagesContext,
+  checkRateLimit,
+  getClientIp,
+  handleOptions,
+  jsonResponse,
+  rateLimitResponse,
+  sanitizeText,
+} from '../../_shared';
 import { isMissingTableError } from '../../_tenantAccess';
 
 // `packed` is the D1 representation of the ready_for_pickup milestone
@@ -52,6 +60,17 @@ export async function onRequestGet(
   if (!env.DB) {
     return jsonResponse({ error: 'Order tracking storage is not configured.' }, 503);
   }
+
+  const clientIp = getClientIp(request);
+  const orderLimit = await checkRateLimit(
+    env,
+    `live_location:${clientIp}:${orderNumber}`,
+    30,
+    600
+  );
+  if (!orderLimit.allowed) return rateLimitResponse(orderLimit, 'Too many live-location checks for this order.');
+  const ipLimit = await checkRateLimit(env, `live_location_ip:${clientIp}`, 120, 600);
+  if (!ipLimit.allowed) return rateLimitResponse(ipLimit, 'Too many tracking requests. Please try again later.');
 
   let order: Record<string, any> | null = null;
   try {

@@ -136,11 +136,11 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
   const [templateFilter, setTemplateFilter] = useState('');
 
   // Technical SEO Audit Tool State
-  const [auditTitle, setAuditTitle] = useState('Deccan Royal Couture — Handloom Bridal Sarees in Hyderabad');
+  const [auditTitle, setAuditTitle] = useState('Your Business Name — Product or Service in Your City');
   const [auditDesc, setAuditDesc] = useState(
-    'Shop authentic Kanchipuram and Banarasi bridal silk sarees directly from Hyderabad weavers with verified checkout, nationwide shipping, and COD.'
+    'Describe your products, service area, delivery or booking options, and policies in plain language.'
   );
-  const [auditUrl, setAuditUrl] = useState('https://vijay-visuals-site.pages.dev/site/deccan-royal-couture');
+  const [auditUrl, setAuditUrl] = useState('https://example.com/your-page');
   const [auditTotalImages, setAuditTotalImages] = useState(8);
   const [auditAltImages, setAuditAltImages] = useState(8);
   const [auditLangCount, setAuditLangCount] = useState(3);
@@ -330,7 +330,7 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
                 key={doc.key}
                 type="button"
                 onClick={() => setPolicyOpen(doc.key)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md border border-[#2A2A38] bg-[#0D0D14] text-[#D7D7E4] hover:border-[#D4AF37] hover:text-[#ECC86A] transition-colors"
+                className="inline-flex min-h-11 items-center gap-1.5 px-3 py-2 rounded-md border border-[#2A2A38] bg-[#0D0D14] text-[#D7D7E4] hover:border-[#D4AF37] hover:text-[#ECC86A] transition-colors"
               >
                 <FileText className="w-3.5 h-3.5 text-[#D4AF37]" />
                 <span>{doc.label}</span>
@@ -341,7 +341,7 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
 
         {/* 4-Tab Growth, Discovery & SEO Toolkit */}
         <div className="space-y-6">
-          <div className="flex flex-wrap items-center gap-2 border-b border-[#1E1E2B] pb-3">
+          <div className="no-scrollbar flex gap-2 overflow-x-auto border-b border-[#1E1E2B] pb-3">
             {(
               [
                 { id: 'templates', label: 'Public Template Gallery', icon: Layers },
@@ -357,7 +357,7 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-semibold transition-colors ${
+                  className={`inline-flex min-h-11 shrink-0 items-center gap-2 px-4 py-2 rounded-md text-xs font-semibold transition-colors ${
                     active
                       ? 'bg-[#D4AF37] text-[#08080A]'
                       : 'border border-[#252534] bg-[#0E0E15] text-[#A9A9BC] hover:text-white hover:border-[#3A3A4E]'
@@ -384,11 +384,12 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
                   </p>
                 </div>
                 <input
+                  aria-label="Filter website templates by industry"
                   type="text"
                   value={templateFilter}
                   onChange={(e) => setTemplateFilter(e.target.value)}
                   placeholder="Filter industries (e.g., Restaurant, Salon)..."
-                  className="rounded-md border border-[#282838] bg-[#0D0D14] px-3 py-2 text-xs text-white placeholder-[#6D6D82] focus:border-[#D4AF37] focus:outline-none w-full sm:w-64"
+                  className="min-h-11 rounded-md border border-[#282838] bg-[#0D0D14] px-3 py-2 text-xs text-white placeholder-[#6D6D82] focus:border-[#D4AF37] focus:outline-none w-full sm:w-64"
                 />
               </div>
 
@@ -416,7 +417,7 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
                     <button
                       type="button"
                       onClick={() => onNavigate('builder')}
-                      className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-md border border-[#D4AF37]/45 text-[#ECC86A] hover:bg-[#D4AF37] hover:text-[#08080A] text-xs font-semibold transition-colors"
+                      className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 py-2 rounded-md border border-[#D4AF37]/45 text-[#ECC86A] hover:bg-[#D4AF37] hover:text-[#08080A] text-xs font-semibold transition-colors"
                     >
                       <span>Use Theme in Builder</span>
                       <ArrowRight className="w-3.5 h-3.5" />

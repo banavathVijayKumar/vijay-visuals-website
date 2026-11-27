@@ -67,6 +67,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setHourlyRemainingSeconds(remainingPasswordResetHourlyBlockSeconds(restoredBlockUntil));
   }, [isOpen, initialMode]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const modal = document.getElementById('vv-auth-modal');
+      if (!modal) return;
+      const focusable = Array.from(
+        modal.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => el.offsetParent !== null);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
+
   // Live countdowns derived from real server timestamps. The hourly block counts
   // down from the actual window end instead of restarting at a fake 60 seconds.
   useEffect(() => {
@@ -445,19 +475,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#0E0E16] border border-[#2B2B3C] rounded-2xl max-w-md w-full p-6 shadow-2xl relative text-xs">
+      <div
+        id="vv-auth-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="vv-auth-modal-heading"
+        className="max-h-[92vh] w-full max-w-md overflow-y-auto bg-[#0E0E16] border border-[#2B2B3C] rounded-2xl p-6 shadow-2xl relative text-xs"
+      >
         <div className="flex items-center justify-between pb-4 border-b border-[#1E1E2C] mb-4">
           <div className="flex items-center gap-3">
             <VijayVisualsLogo variant="icon" size="sm" mode="dark" />
             <div>
-              <h3 className="font-luxury font-bold text-white text-base">{heading}</h3>
+              <h3 id="vv-auth-modal-heading" className="font-luxury font-bold text-white text-base">{heading}</h3>
               <p className="text-[11px] text-[#868698]">Secure Vijay Visuals Account</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-[#848496] hover:text-white"
+            className="inline-flex h-11 w-11 items-center justify-center text-[#848496] hover:text-white"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -491,7 +527,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
 
               {/* 6 Distinct OTP Input Cells */}
-              <div className="flex justify-center gap-2 py-2">
+              <div className="no-scrollbar flex max-w-full justify-center gap-1.5 overflow-x-auto py-2 sm:gap-2">
                 {otpDigits.map((digit, idx) => (
                   <input
                     key={idx}
@@ -506,7 +542,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     onChange={(e) => handleOtpDigitChange(idx, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(idx, e)}
                     onPaste={handleOtpPaste}
-                    className="w-11 h-13 text-center text-xl font-bold bg-[#14141E] border border-[#2B2B3C] focus:border-[#DFBA5A] focus:ring-1 focus:ring-[#DFBA5A] rounded-lg text-white font-mono transition-all"
+                    className="h-12 w-10 shrink-0 text-center text-xl font-bold bg-[#14141E] border border-[#2B2B3C] focus:border-[#DFBA5A] focus:ring-1 focus:ring-[#DFBA5A] rounded-lg text-white font-mono transition-all sm:h-13 sm:w-11"
                     required
                   />
                 ))}

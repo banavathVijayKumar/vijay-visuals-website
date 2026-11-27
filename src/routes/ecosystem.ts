@@ -15,7 +15,6 @@ import {
   sellerPayoutAccounts,
   sellerTransfers,
   staffAttendance,
-  staffMembers,
   suppliers,
   tenantPlugins,
   tenants,
@@ -63,16 +62,13 @@ async function assertTenantOwnership(req: AuthRequest, tenantId: number) {
   if (dbUser.role === 'super_admin' || tenant.ownerUserId === dbUser.id) {
     return { ok: true as const, tenant };
   }
-  const staff = await db
-    .select()
-    .from(staffMembers)
-    .where(and(eq(staffMembers.tenantId, tenantId), eq(staffMembers.email, dbUser.email), eq(staffMembers.active, true)))
-    .limit(1);
-  if (staff.length > 0) return { ok: true as const, tenant };
+  // This router includes finance, payouts, CRM, payroll, and automation.
+  // Despite the historical helper name, staff members are no longer granted
+  // owner-level access to those modules.
   return {
     ok: false as const,
     status: 403,
-    error: 'Tenant isolation enforced: you cannot access another business’s private data.',
+    error: 'Business Owner or Super Admin access required for this module.',
   };
 }
 
