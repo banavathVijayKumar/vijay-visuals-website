@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { PagesContext, handleOptions, jsonResponse } from '../_shared';
+import { resolveSupabaseBootstrap } from '../_previewSupabase';
 import { getSupabaseAdminConfig, probeSupabaseAdminClient } from './_supabaseAdmin';
 
 const PLACEHOLDER_URLS = new Set(['https://your-project.supabase.co', 'https://your_project_ref.supabase.co']);
@@ -55,9 +56,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   // Read ONLY public Supabase browser client credentials from Cloudflare env/secrets.
   // Never read or return SUPABASE_SERVICE_ROLE_KEY or any private backend key.
-  const rawUrl = String(env.SUPABASE_URL || env.VITE_SUPABASE_URL || '');
-  const supabaseUrl = normalizeSupabaseUrl(rawUrl);
-  const supabaseAnonKey = String(env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim();
+  const bootstrap = resolveSupabaseBootstrap(env);
+  const supabaseUrl = normalizeSupabaseUrl(bootstrap.url);
+  const supabaseAnonKey = bootstrap.anonKey.trim();
 
   const configured = isValidSupabaseUrl(supabaseUrl) && isValidAnonKey(supabaseAnonKey);
   // Boolean-only server diagnostics. The service-role/secret key value is never

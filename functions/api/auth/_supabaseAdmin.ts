@@ -7,6 +7,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { CloudflareEnv } from '../_shared';
+import { resolveSupabaseBootstrap } from '../_previewSupabase';
 
 export type AdminKeyFormat = 'jwt' | 'secret_text' | 'opaque';
 
@@ -65,7 +66,7 @@ interface AdminDeps {
 }
 
 export function getSupabaseAdminConfig(env: CloudflareEnv): SupabaseAdminConfig | null {
-  const rawUrl = String(env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').trim();
+  const rawUrl = resolveSupabaseBootstrap(env).url.trim();
   const key = String(env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   if (!rawUrl || !key || key.length < 20) return null;
   if (/your[-_]?(service|secret|role)[-_]?key/i.test(key)) return null;

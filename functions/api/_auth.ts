@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { CloudflareEnv, errorJson } from './_shared';
+import { resolveSupabaseBootstrap } from './_previewSupabase';
 
 export type PlatformRole =
   | 'super_admin'
@@ -65,14 +66,15 @@ export interface WebsiteAccessSuccess {
 export type WebsiteAccessResult = WebsiteAccessSuccess | AuthFailure;
 
 export function getSupabaseConfig(env: CloudflareEnv): { url: string; anonKey: string } | null {
-  const rawUrl = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').trim();
+  const bootstrap = resolveSupabaseBootstrap(env);
+  const rawUrl = bootstrap.url.trim();
   let url = rawUrl.replace(/\/+$/, '');
   try {
     if (rawUrl) url = new URL(rawUrl).origin;
   } catch {
     url = rawUrl.replace(/\/rest\/v1\/?$/i, '').replace(/\/auth\/v1\/?$/i, '').replace(/\/+$/, '');
   }
-  const anonKey = (env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim();
+  const anonKey = bootstrap.anonKey.trim();
   if (!url || !anonKey) return null;
   return { url, anonKey };
 }
