@@ -7,13 +7,22 @@ import {VitePWA} from 'vite-plugin-pwa';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const buildSupabaseUrl = (
-    process.env.VITE_SUPABASE_URL ||
-    env.VITE_SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
-    env.SUPABASE_URL ||
-    ''
-  ).trim();
+  // Cloudflare Pages injects CF_PAGES_BRANCH at build time. All non-main
+  // branches are Preview and must use the independently verified Preview
+  // Supabase project, regardless of a stale dashboard VITE_SUPABASE_URL.
+  const pagesBranch = String(process.env.CF_PAGES_BRANCH || '').trim();
+  const isPreviewPagesBuild =
+    process.env.CF_PAGES === '1' && pagesBranch.length > 0 && pagesBranch !== 'main';
+  const verifiedPreviewSupabaseUrl = 'https://nflqxcrgwxoqvqbveisq.supabase.co';
+  const buildSupabaseUrl = isPreviewPagesBuild
+    ? verifiedPreviewSupabaseUrl
+    : (
+      process.env.VITE_SUPABASE_URL ||
+      env.VITE_SUPABASE_URL ||
+      process.env.SUPABASE_URL ||
+      env.SUPABASE_URL ||
+      ''
+    ).trim();
   const buildSupabaseAnonKey = (
     process.env.VITE_SUPABASE_ANON_KEY ||
     env.VITE_SUPABASE_ANON_KEY ||

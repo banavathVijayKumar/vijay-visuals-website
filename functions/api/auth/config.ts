@@ -1,12 +1,12 @@
 // ============================================================================
 // GET /api/auth/config — Public Supabase Client Bootstrap Config (Cloudflare Pages)
 // Reuses the existing Cloudflare Pages environment/encrypted secrets
-// (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY) for the browser Supabase Auth
+// (SUPABASE_URL / SUPABASE_ANON_KEY, with VITE_* aliases as fallbacks) for the browser Supabase Auth
 // client without ever exposing private server secrets (never service_role).
 // ============================================================================
 
 import { PagesContext, handleOptions, jsonResponse } from '../_shared';
-import { getSupabaseAdminConfig } from './_supabaseAdmin';
+import { getSupabaseAdminConfig, probeSupabaseAdminClient } from './_supabaseAdmin';
 
 const PLACEHOLDER_URLS = new Set(['https://your-project.supabase.co', 'https://your_project_ref.supabase.co']);
 const PLACEHOLDER_KEYS = new Set(['your-anon-key', 'your_supabase_anon_key']);
@@ -55,14 +55,21 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   // Read ONLY public Supabase browser client credentials from Cloudflare env/secrets.
   // Never read or return SUPABASE_SERVICE_ROLE_KEY or any private backend key.
-  const rawUrl = String(env.VITE_SUPABASE_URL || env.SUPABASE_URL || '');
+  const rawUrl = String(env.SUPABASE_URL || env.VITE_SUPABASE_URL || '');
   const supabaseUrl = normalizeSupabaseUrl(rawUrl);
-  const supabaseAnonKey = String(env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || '').trim();
+  const supabaseAnonKey = String(env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '').trim();
 
   const configured = isValidSupabaseUrl(supabaseUrl) && isValidAnonKey(supabaseAnonKey);
-  // Boolean-only server diagnostic. The service-role/secret key value is never
-  // returned to the browser or written to logs.
+  // Boolean-only server diagnostics. The service-role/secret key value is never
+  // returned to the browser or written to logs. The probe only lists one user
+  // and proves that the configured admin credential belongs to this project.
   const admin = getSupabaseAdminConfig(env);
+  const adminProbe = admin ? await probeSupabaseAdminClient(env) : null;
+  const adminDiagnostics = {
+    hasServerAdminCredential: Boolean(admin),
+    serverAdminKeyFormat: admin?.keyFormat || null,
+    serverAdminProjectMatches: adminProbe?.ok === true,
+  };
 
   return jsonResponse(
     configured
@@ -70,15 +77,13 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
           configured: true,
           supabaseUrl,
           supabaseAnonKey,
-          hasServerAdminCredential: Boolean(admin),
-          serverAdminKeyFormat: admin?.keyFormat || null,
+          ...adminDiagnostics,
         }
       : {
           configured: false,
           supabaseUrl: '',
           supabaseAnonKey: '',
-          hasServerAdminCredential: Boolean(admin),
-          serverAdminKeyFormat: admin?.keyFormat || null,
+          ...adminDiagnostics,
         },
     200,
     { 'Cache-Control': 'no-store' }
