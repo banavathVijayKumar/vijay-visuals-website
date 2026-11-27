@@ -91,6 +91,11 @@ export interface CloudflareEnv {
   RESEND_VERIFIED_SENDER_DOMAINS?: string;
   /** Resend/Svix webhook signing secret (whsec_...) used to verify raw-body signatures. */
   RESEND_WEBHOOK_SECRET?: string;
+  /** Preview-only Gmail OAuth secrets for customer OTP delivery. Never expose values. */
+  GMAIL_OAUTH_CLIENT_ID?: string;
+  GMAIL_OAUTH_CLIENT_SECRET?: string;
+  GMAIL_OAUTH_REFRESH_TOKEN?: string;
+  GMAIL_SENDER_EMAIL?: string;
   WHATSAPP_CLOUD_API_TOKEN?: string;
   WHATSAPP_PHONE_NUMBER_ID?: string;
   /** Explicitly configured, Meta-approved template used for enquiry notifications. */

@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { PagesContext, handleOptions, jsonResponse } from './_shared';
+import { isGmailOAuthConfigured } from './_gmailOAuth';
 import { getTrimmedEnvVar } from './payments/_cashfree';
 
 export async function onRequestOptions(): Promise<Response> {
@@ -42,6 +43,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
   const hasResend = Boolean(env.RESEND_API_KEY);
+  const hasGmailOAuth = isGmailOAuthConfigured(env);
   const hasWhatsApp = Boolean(env.WHATSAPP_CLOUD_API_TOKEN && env.WHATSAPP_PHONE_NUMBER_ID);
 
   return jsonResponse({
@@ -61,6 +63,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     hasRegistrarApi: Boolean(env.DOMAIN_REGISTRAR_PROVIDER && env.DOMAIN_REGISTRAR_API_KEY),
     hasSmtp,
     hasResend,
+    hasGmailOAuth,
     hasWhatsApp,
     hasGoogleMaps: Boolean(env.GOOGLE_MAPS_API_KEY || env.VITE_GOOGLE_MAPS_API_KEY),
     integrations: {
@@ -77,6 +80,8 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       smtpEmail: hasSmtp,
       resend: hasResend,
       resendEmail: hasResend,
+      gmailOAuth: hasGmailOAuth,
+      gmailOtp: hasGmailOAuth,
     },
     serverTime: nowIso,
     timestamp: nowIso,

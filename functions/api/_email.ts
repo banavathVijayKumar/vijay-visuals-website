@@ -1,11 +1,12 @@
 // ============================================================================
 // VIJAY VISUALS — TRANSACTIONAL EMAIL SERVICE (CLOUDFLARE PAGES EDGE)
-// Powered by Resend API with durable D1 notification audit logging.
-// 100% Web-Standard Fetch (No Node.js SMTP/TLS dependencies).
+// Resend/SendGrid for platform mail; Preview Gmail OAuth for customer OTP mail.
+// Durable D1 notification audit logging. 100% Web-Standard Fetch.
 // ZERO secrets exposed in logs or API responses.
 // ============================================================================
 
 import { CloudflareEnv, escapeHtml, sanitizeText } from './_shared';
+import { isGmailOAuthConfigured, sendGmailOAuthMessage } from './_gmailOAuth';
 
 export interface EmailSendOptions {
   to: string;
@@ -244,11 +245,17 @@ export async function sendTransactionalEmail(
     }
   }
 
+  // Registration OTP mail may use the dedicated Preview Gmail OAuth sender.
+  // All other mail stays on the existing provider path so Production is unchanged.
+  const registrationOtpEvent =
+    eventType === 'registration_otp' || eventType === 'registration_otp_resend';
+  const gmailOtpConfigured =
+    audience === 'customer' && registrationOtpEvent && isGmailOAuthConfigured(env);
   const resendApiKey = (env.RESEND_API_KEY || '').trim();
   const sendgridApiKey = (env.SENDGRID_API_KEY || '').trim();
 
   // If no email provider secret is configured
-  if (!resendApiKey && !sendgridApiKey) {
+  if (!gmailOtpConfigured && !resendApiKey && !sendgridApiKey) {
     const notice = 'Transactional email provider (RESEND_API_KEY) is not yet configured in Cloudflare Pages secrets.';
     if (env.DB) {
       try {
@@ -287,8 +294,23 @@ export async function sendTransactionalEmail(
   let providerMessageId = '';
   let errorDetail = '';
 
-  // 1. Resend API Dispatch
-  if (resendApiKey) {
+  // 1. Preview-only Gmail OAuth dispatch for customer OTP mail.
+  if (gmailOtpConfigured) {
+    try {
+      const gmailResult = await sendGmailOAuthMessage(env, { to: cleanEmail, subject, html, text });
+      if (gmailResult.ok) {
+        deliveryStatus = 'sent';
+        providerMessageId = gmailResult.messageId || `gmail_${Date.now()}`;
+      } else {
+        deliveryStatus = 'failed';
+        errorDetail = gmailResult.error || 'Gmail OAuth dispatch failed.';
+      }
+    } catch {
+      deliveryStatus = 'failed';
+      errorDetail = 'Gmail OAuth dispatch failed.';
+    }
+  } else if (resendApiKey) {
+    // 2. Resend API Dispatch
     const sender = resolveEmailSender(env, {
       audience,
       tenantBrandName,
@@ -332,7 +354,7 @@ export async function sendTransactionalEmail(
       errorDetail = err?.message || 'Resend network communication error';
     }
   } else if (sendgridApiKey) {
-    // 2. Fallback to SendGrid if configured
+    // 3. Fallback to SendGrid if configured
     const sender = resolveEmailSender(env, {
       audience,
       tenantBrandName,
