@@ -64,6 +64,18 @@ function evaluateCoupon(
   return { valid: true, discountInr: discount };
 }
 
+/** Legacy tracking lookups are phone-last-4 verified, not identity verified. */
+function maskCustomerName(name: string): string {
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return 'Customer';
+  return parts
+    .map((part) => (part.length <= 1 ? part : part[0] + '*'.repeat(Math.max(1, part.length - 1))))
+    .join(' ');
+}
+
 export async function onRequestGet(context: PagesContext): Promise<Response> {
   const { request, env } = context;
   if (!env.DB) return errorJson('Database binding is not configured.', 503);
@@ -104,7 +116,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     return json({
       order: {
         orderNumber: order.order_number,
-        customerName: order.customer_name,
+        // Never expose the raw name to a last-4 phone lookup. The canonical
+        // /api/orders/track/:orderNumber endpoint remains the verified path.
+        customerNameMasked: maskCustomerName(String(order.customer_name || '')),
         totalInr: order.total_inr,
         discountInr: order.discount_inr,
         paymentMethod: order.payment_method,

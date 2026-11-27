@@ -15,6 +15,7 @@ import {
 } from './_email';
 import { sendWhatsAppNotification } from './_whatsapp';
 import { releaseReservedStock, reservationLines } from './_stockReservation';
+import { dispatchLifecycleNotification } from './_lifecycleNotifications';
 import { resolveTenantPublicUrl } from './_tenantUrl';
 import {
   PagesContext,
@@ -487,6 +488,15 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       : await env.DB.prepare('SELECT * FROM store_orders WHERE order_number = ? LIMIT 1')
           .bind(orderNumber)
           .first<Record<string, any>>();
+
+    // Owner in-app alert: durable, provider-independent, never a real contact.
+    await dispatchLifecycleNotification(env, {
+      websiteId: pub.website_id,
+      eventType: 'new_order_owner_alert',
+      subject: `New order #${orderNumber}`,
+      message: `New order #${orderNumber} received for ₹${(total || 0).toLocaleString('en-IN')} (${orderLines.length} item(s)). Review and accept it in the owner dashboard.`,
+      recipientUserId: pub.owner_id || null,
+    });
 
     // Dispatch Order Received Notifications (Resend Email & WhatsApp)
     const formattedAmount = `₹${(total || 0).toLocaleString('en-IN')}`;

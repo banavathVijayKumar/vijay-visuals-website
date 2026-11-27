@@ -43,6 +43,8 @@ import { apiFetch } from '../lib/api';
 import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
 import { readAndOptimizeImageFile } from '../lib/imageUpload';
 import { formatVerifiedPaymentLabel, maskPaymentReference } from '../lib/paymentDisplay';
+import { canViewDashboardTab, getAllowedDashboardTabs } from '../lib/dashboardAccess';
+import type { DashboardRoleTab } from '../lib/dashboardAccess';
 import { useAuth } from '../hooks/useAuth';
 import {
   AppointmentRecord,
@@ -94,7 +96,7 @@ interface DashboardsHubProps {
   onNotify: (msg: string) => void;
 }
 
-type RoleTab = 'owner' | 'delivery' | 'customer' | 'super_admin';
+type RoleTab = DashboardRoleTab;
 
 interface PackageFeature {
   name: string;
@@ -232,6 +234,16 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 }) => {
   const { profile, ownedTenants, openAuthModal, refreshProfile } = useAuth();
   const [roleTab, setRoleTab] = useState<RoleTab>('owner');
+
+  // Tabs are derived from the authenticated profile, not from client state.
+  const allowedTabs = useMemo(
+    () => getAllowedDashboardTabs(profile?.role, ownedTenants.length),
+    [profile?.role, ownedTenants.length]
+  );
+  const canViewTab = useCallback(
+    (tab: RoleTab) => canViewDashboardTab(allowedTabs, tab),
+    [allowedTabs]
+  );
 
   // --- BUSINESS OWNER STATE ---
   const [selectedTenantId, setSelectedTenantId] = useState<number | null>(null);
@@ -472,6 +484,13 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     }
   }, [profile, ownedTenants, selectedTenantId]);
 
+  // Never leave a hidden workspace selected if the session role changes.
+  useEffect(() => {
+    if (profile && !canViewTab(roleTab)) {
+      setRoleTab(allowedTabs[0] || 'customer');
+    }
+  }, [profile, roleTab, canViewTab, allowedTabs]);
+
   const loadOwnerOverview = useCallback(async (tenantId: number) => {
     try {
       const data = await apiFetch<typeof ownerData>(`/api/owner/tenants/${tenantId}/overview`);
@@ -679,11 +698,11 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
   useEffect(() => {
     if (!profile) return;
-    if (roleTab === 'owner' && selectedTenantId) loadOwnerOverview(selectedTenantId);
-    if (roleTab === 'delivery') loadDeliveryPortal();
-    if (roleTab === 'customer') loadCustomerDashboard();
-    if (roleTab === 'super_admin' && profile.role === 'super_admin') loadSuperAdmin();
-  }, [profile, roleTab, selectedTenantId, loadOwnerOverview, loadDeliveryPortal, loadCustomerDashboard, loadSuperAdmin]);
+    if (roleTab === 'owner' && canViewTab('owner') && selectedTenantId) loadOwnerOverview(selectedTenantId);
+    if (roleTab === 'delivery' && canViewTab('delivery')) loadDeliveryPortal();
+    if (roleTab === 'customer' && canViewTab('customer')) loadCustomerDashboard();
+    if (roleTab === 'super_admin' && canViewTab('super_admin')) loadSuperAdmin();
+  }, [profile, roleTab, canViewTab, selectedTenantId, loadOwnerOverview, loadDeliveryPortal, loadCustomerDashboard, loadSuperAdmin]);
 
   if (!profile) {
     return (
@@ -1266,27 +1285,31 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
             <p className="text-[11px] text-[#D4AF37] capitalize">{profile.role.replace('_', ' ')}</p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setRoleTab('owner')}
-            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md text-xs font-medium transition-colors ${
-              roleTab === 'owner' ? 'bg-[#1D1A10] text-[#ECC86A] border border-[#D4AF37]/40' : 'text-[#A5A5B8] hover:text-white'
-            }`}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>Business Owner Dashboard</span>
-          </button>
+          {canViewTab('owner') && (
+            <button
+              type="button"
+              onClick={() => setRoleTab('owner')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md text-xs font-medium transition-colors ${
+                roleTab === 'owner' ? 'bg-[#1D1A10] text-[#ECC86A] border border-[#D4AF37]/40' : 'text-[#A5A5B8] hover:text-white'
+              }`}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Business Owner Dashboard</span>
+            </button>
+          )}
 
-          <button
-            type="button"
-            onClick={() => setRoleTab('delivery')}
-            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md text-xs font-medium transition-colors ${
-              roleTab === 'delivery' ? 'bg-[#1D1A10] text-[#ECC86A] border border-[#D4AF37]/40' : 'text-[#A5A5B8] hover:text-white'
-            }`}
-          >
-            <Truck className="w-4 h-4" />
-            <span>Delivery Partner Portal</span>
-          </button>
+          {canViewTab('delivery') && (
+            <button
+              type="button"
+              onClick={() => setRoleTab('delivery')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-md text-xs font-medium transition-colors ${
+                roleTab === 'delivery' ? 'bg-[#1D1A10] text-[#ECC86A] border border-[#D4AF37]/40' : 'text-[#A5A5B8] hover:text-white'
+              }`}
+            >
+              <Truck className="w-4 h-4" />
+              <span>Delivery Partner Portal</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -1299,7 +1322,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
             <span>Customer Dashboard</span>
           </button>
 
-          {profile.role === 'super_admin' && (
+          {canViewTab('super_admin') && (
             <button
               type="button"
               onClick={() => setRoleTab('super_admin')}
@@ -1333,7 +1356,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
         {/* Main Workspace Panel */}
         <main className="lg:col-span-9 space-y-6">
           {/* ================= BUSINESS OWNER DASHBOARD (MODULE 5) ================= */}
-          {roleTab === 'owner' && (
+          {roleTab === 'owner' && canViewTab('owner') && (
             <>
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -2998,7 +3021,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
           )}
 
           {/* ================= DELIVERY PARTNER PORTAL (MODULE 3) ================= */}
-          {roleTab === 'delivery' && (
+          {roleTab === 'delivery' && canViewTab('delivery') && (
             <div className="space-y-6">
               <div>
                 <p className="text-xs text-[#D4AF37]">Module 3 · Delivery Assignment, Pickup & Earnings</p>
@@ -3165,7 +3188,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
           )}
 
           {/* ================= CUSTOMER DASHBOARD (MODULE 4) ================= */}
-          {roleTab === 'customer' && (
+          {roleTab === 'customer' && canViewTab('customer') && (
             <div className="space-y-6">
               <div>
                 <p className="text-xs text-[#D4AF37]">Customer Workspace · Website Management, Packages &amp; Orders</p>
@@ -3897,12 +3920,12 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
           )}
 
           {/* ================= SUPER ADMIN CONSOLE (MODULE 6 & 11) ================= */}
-          {roleTab === 'super_admin' && profile.role === 'super_admin' && !adminData && (
+          {roleTab === 'super_admin' && canViewTab('super_admin') && !adminData && (
             <div className="rounded-xl border border-[#20202D] bg-[#0D0D13] p-8 text-xs text-[#8E8EA2]">
               Loading Super Admin metrics...
             </div>
           )}
-          {roleTab === 'super_admin' && profile.role === 'super_admin' && adminData && (
+          {roleTab === 'super_admin' && canViewTab('super_admin') && adminData && (
             <div className="space-y-6">
               <div>
                 <p className="text-xs text-[#D4AF37]">Module 6 & 11 · Global Platform Governance</p>

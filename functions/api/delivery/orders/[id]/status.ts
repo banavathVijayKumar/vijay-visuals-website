@@ -11,11 +11,33 @@ import {
   sanitizeText,
   writeAuditLog,
 } from '../../../_shared';
-import { checkDeliveryOrderAccess } from '../../_deliveryAccess';
+import { checkAssignedDeliveryAccess } from '../../_assignmentAccess';
+import { dispatchLifecycleNotification } from '../../../_lifecycleNotifications';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
 }
+
+const UI_TO_DB_ORDER_STATUS: Record<string, string> = {
+  ready_for_pickup: 'packed',
+  out_for_delivery: 'out_for_delivery',
+  delivered: 'delivered',
+  returned: 'returned',
+};
+
+const UI_TO_ASSIGNMENT_STATUS: Record<string, string> = {
+  ready_for_pickup: 'assigned',
+  out_for_delivery: 'in_transit',
+  delivered: 'delivered',
+  returned: 'returned',
+};
+
+const UI_TO_NOTIFICATION_EVENT: Record<string, string> = {
+  ready_for_pickup: 'order_ready_for_pickup',
+  out_for_delivery: 'order_out_for_delivery',
+  delivered: 'order_delivered',
+  returned: 'order_returned',
+};
 
 export async function onRequestPatch(
   context: PagesContext<{ id: string }>
@@ -39,19 +61,15 @@ export async function onRequestPatch(
   // store_orders.order_status has a D1 CHECK that does not include
   // ready_for_pickup. Persist the DB-compatible equivalent while keeping the
   // UI milestone in the response and audit log.
-  const UI_TO_DB_ORDER_STATUS: Record<string, string> = {
-    ready_for_pickup: 'packed',
-    out_for_delivery: 'out_for_delivery',
-    delivered: 'delivered',
-    returned: 'returned',
-  };
   if (!validStatuses.includes(nextStatus)) {
     return jsonResponse({ error: 'Invalid delivery status.' }, 400);
   }
 
   try {
     const existingOrder = await env.DB.prepare(
-      'SELECT id, website_id, payment_method, payment_status, order_status FROM store_orders WHERE id = ? LIMIT 1'
+      `SELECT id, website_id, payment_method, payment_status, order_status,
+              customer_email, customer_phone, customer_user_id
+       FROM store_orders WHERE id = ? LIMIT 1`
     )
       .bind(orderId)
       .first<{
@@ -60,13 +78,21 @@ export async function onRequestPatch(
         payment_method: string;
         payment_status: string;
         order_status: string;
+        customer_email?: string;
+        customer_phone?: string;
+        customer_user_id?: string;
       }>();
 
     if (!existingOrder) {
       return jsonResponse({ error: 'Order not found.' }, 404);
     }
 
-    const access = await checkDeliveryOrderAccess(env, auth.user, String(existingOrder.website_id || ''));
+    const access = await checkAssignedDeliveryAccess(
+      env,
+      auth.user,
+      String(existingOrder.website_id || ''),
+      orderId
+    );
     if (!access.authorized) {
       return jsonResponse(
         { error: 'Only the assigned delivery partner or business owner can update this order.' },
@@ -97,13 +123,37 @@ export async function onRequestPatch(
       .bind(UI_TO_DB_ORDER_STATUS[nextStatus], orderId)
       .run();
 
+    if (access.assignmentId) {
+      const endState = nextStatus === 'delivered' || nextStatus === 'returned';
+      await env.DB.prepare(
+        `UPDATE delivery_assignments
+         SET status = ?, ${endState ? 'last_lat = NULL, last_lng = NULL,' : ''} updated_at = datetime('now')
+         WHERE id = ? AND order_id = ?`
+      )
+        .bind(UI_TO_ASSIGNMENT_STATUS[nextStatus], access.assignmentId, orderId)
+        .run();
+    }
+
     await writeAuditLog(env, {
       actorId: auth.user.id,
       actorRole: auth.user.platformRole,
       action: 'update_delivery_status',
       targetType: 'order',
       targetId: String(orderId),
-      details: { status: nextStatus },
+      details: {
+        status: nextStatus,
+        assignmentId: access.assignmentId,
+        partnerId: access.partnerId,
+      },
+    });
+
+    await dispatchLifecycleNotification(env, {
+      websiteId: String(existingOrder.website_id || ''),
+      eventType: UI_TO_NOTIFICATION_EVENT[nextStatus],
+      subject: `Order #${orderId} — ${nextStatus}`,
+      message: `Delivery milestone for order #${orderId}: ${nextStatus}.`,
+      recipientUserId: String(existingOrder.customer_user_id || '') || null,
+      recipientContact: String(existingOrder.customer_email || existingOrder.customer_phone || ''),
     });
 
     return jsonResponse({ success: true, status: nextStatus });

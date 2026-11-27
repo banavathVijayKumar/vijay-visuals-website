@@ -11,7 +11,8 @@ import {
   sanitizeText,
   writeAuditLog,
 } from '../../../_shared';
-import { checkDeliveryOrderAccess } from '../../_deliveryAccess';
+import { checkAssignedDeliveryAccess } from '../../_assignmentAccess';
+import { dispatchLifecycleNotification } from '../../../_lifecycleNotifications';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -46,16 +47,31 @@ export async function onRequestPatch(
 
   try {
     const existingOrder = await env.DB.prepare(
-      'SELECT id, website_id, payment_method, payment_status FROM store_orders WHERE id = ? LIMIT 1'
+      `SELECT id, website_id, payment_method, payment_status,
+              customer_email, customer_phone, customer_user_id
+       FROM store_orders WHERE id = ? LIMIT 1`
     )
       .bind(orderId)
-      .first<{ id: number; website_id: string; payment_method: string; payment_status: string }>();
+      .first<{
+        id: number;
+        website_id: string;
+        payment_method: string;
+        payment_status: string;
+        customer_email?: string;
+        customer_phone?: string;
+        customer_user_id?: string;
+      }>();
 
     if (!existingOrder) {
       return jsonResponse({ error: 'Order not found.' }, 404);
     }
 
-    const access = await checkDeliveryOrderAccess(env, auth.user, String(existingOrder.website_id || ''));
+    const access = await checkAssignedDeliveryAccess(
+      env,
+      auth.user,
+      String(existingOrder.website_id || ''),
+      orderId
+    );
     if (!access.authorized) {
       return jsonResponse(
         { error: 'Only the assigned delivery partner or business owner can record delivery proof.' },
@@ -73,11 +89,33 @@ export async function onRequestPatch(
     const paymentUpdate = codCollected ? `, payment_status = 'paid'` : '';
     await env.DB.prepare(
       `UPDATE store_orders
-       SET order_status = 'delivered'${paymentUpdate}, notes = notes || ? || datetime('now'), updated_at = datetime('now')
+       SET order_status = 'delivered'${paymentUpdate}, updated_at = datetime('now')
        WHERE id = ?`
     )
-      .bind(`\n[POD verified by ${recipientName || 'Recipient'} (${podCode}) at ]`, orderId)
+      .bind(orderId)
       .run();
+
+    if (access.assignmentId) {
+      await env.DB.prepare(
+        `UPDATE delivery_assignments
+         SET status = 'delivered',
+             proof_of_delivery_note = ?,
+             proof_of_delivery_url = ?,
+             cod_collected = ?,
+             last_lat = NULL,
+             last_lng = NULL,
+             updated_at = datetime('now')
+         WHERE id = ? AND order_id = ?`
+      )
+        .bind(
+          `Verified by ${recipientName || 'Recipient'} (${podCode})`,
+          '',
+          codCollected ? 1 : 0,
+          access.assignmentId,
+          orderId
+        )
+        .run();
+    }
 
     await writeAuditLog(env, {
       actorId: auth.user.id,
@@ -85,7 +123,30 @@ export async function onRequestPatch(
       action: 'record_pod',
       targetType: 'order',
       targetId: String(orderId),
-      details: { recipientName, podCode, codCollected },
+      details: {
+        recipientName,
+        podCode,
+        codCollected,
+        assignmentId: access.assignmentId,
+        partnerId: access.partnerId,
+      },
+    });
+
+    await dispatchLifecycleNotification(env, {
+      websiteId: String(existingOrder.website_id || ''),
+      eventType: 'proof_of_delivery_recorded',
+      subject: `Proof of delivery #${orderId}`,
+      message: `Order #${orderId} delivered. POD reference ${podCode || 'recorded'}${codCollected ? '; COD collected.' : '.'}`,
+      recipientUserId: String(existingOrder.customer_user_id || '') || null,
+      recipientContact: String(existingOrder.customer_email || existingOrder.customer_phone || ''),
+    });
+    await dispatchLifecycleNotification(env, {
+      websiteId: String(existingOrder.website_id || ''),
+      eventType: 'order_delivered',
+      subject: `Order #${orderId} delivered`,
+      message: `Order #${orderId} was marked delivered with proof of delivery.`,
+      recipientUserId: String(existingOrder.customer_user_id || '') || null,
+      recipientContact: String(existingOrder.customer_email || existingOrder.customer_phone || ''),
     });
 
     return jsonResponse({ success: true, status: 'delivered', podCode });

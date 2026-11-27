@@ -54,11 +54,11 @@ const BYPASS_EXACT = new Set(['/robots.txt', '/sitemap.xml']);
 
 /**
  * Cloudflare Pages does not apply _redirects to requests served by Functions.
- * These two exact no-slash SPA entry paths are intercepted by this middleware,
+ * These exact no-slash SPA entry paths are intercepted by this middleware,
  * so they need an explicit shell response. Trailing-slash variants and all
  * other routes keep their existing behavior.
  */
-const SPA_SHELL_EXACT_ROUTES = new Set(['/demo', '/dashboards']);
+const SPA_SHELL_EXACT_ROUTES = new Set(['/demo', '/dashboards', '/builder']);
 
 export function shouldServeSpaShellDirectly(
   rawPathname: string,

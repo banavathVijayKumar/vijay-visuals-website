@@ -55,32 +55,37 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       });
     }
 
-    // 2. Load assigned or active delivery orders
-    const partnerIds = partners.map((p) => p.id);
+    // 2. Load only orders with a real delivery_assignments row for this rider.
+    // D1 store_orders has no delivery_partner_id column; unassigned orders must
+    // never be presented as "Assigned Deliveries".
+    const partnerIds = partners.map((p) => String(p.id));
     let ordersRes: Array<Record<string, any>> = [];
 
     if (auth.user.isSuperAdmin) {
       const ords = await env.DB.prepare(
-        `SELECT * FROM store_orders
-         WHERE order_status IN ('packed', 'ready_for_pickup', 'out_for_delivery')
-         ORDER BY id DESC LIMIT 50`
+        `SELECT o.*, da.delivery_partner_user_id AS assignment_partner_id
+         FROM store_orders o
+         JOIN delivery_assignments da ON da.order_id = o.id AND da.website_id = o.website_id
+         ORDER BY o.id DESC LIMIT 50`
       ).all<Record<string, any>>();
       ordersRes = ords.results || [];
-    } else {
+    } else if (partnerIds.length > 0) {
       // Tenant isolation: only websites where this caller holds an active
-      // delivery_partner membership may be listed. Never fall back to a global
-      // status filter, which leaked ready/out-for-delivery orders across tenants.
+      // delivery_partner membership may be listed, and only rows assigned to
+      // that specific rider.
       const websiteIds = Array.from(
         new Set(partnerRows.map((p) => String(p.website_id || '')).filter(Boolean))
       );
       if (websiteIds.length > 0) {
         const websitePlaceholders = websiteIds.map(() => '?').join(',');
-        const partnerPlaceholders = partnerIds.length > 0 ? partnerIds.map(() => '?').join(',') : "''";
+        const partnerPlaceholders = partnerIds.map(() => '?').join(',');
         const ords = await env.DB.prepare(
-          `SELECT * FROM store_orders
-           WHERE website_id IN (${websitePlaceholders})
-             AND (delivery_partner_id IN (${partnerPlaceholders}) OR delivery_partner_id IS NULL)
-           ORDER BY id DESC LIMIT 50`
+          `SELECT o.*, da.delivery_partner_user_id AS assignment_partner_id
+           FROM store_orders o
+           JOIN delivery_assignments da ON da.order_id = o.id AND da.website_id = o.website_id
+           WHERE o.website_id IN (${websitePlaceholders})
+             AND da.delivery_partner_user_id IN (${partnerPlaceholders})
+          ORDER BY o.id DESC LIMIT 50`
         )
           .bind(...websiteIds, ...partnerIds)
           .all<Record<string, any>>();
@@ -89,7 +94,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     }
 
     for (const o of ordersRes) {
-      assignedOrders.push(mapOrderRowToUi(o, 1));
+      const mapped = mapOrderRowToUi(o, 1) as Record<string, any>;
+      mapped.deliveryPartnerId = Number(o.assignment_partner_id) || null;
+      assignedOrders.push(mapped);
     }
 
     return jsonResponse({ partners, assignedOrders });

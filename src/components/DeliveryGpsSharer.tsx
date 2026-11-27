@@ -35,14 +35,26 @@ export const DeliveryGpsSharer: React.FC<DeliveryGpsSharerProps> = ({
     }
   }, []);
 
+  // Clearing server-side coordinates is what actually stops customer visibility.
+  // The local watcher alone is not sufficient.
+  const clearServerLocation = useCallback(() => {
+    void apiFetch(`/api/delivery/orders/${orderId}/location`, {
+      method: 'POST',
+      body: JSON.stringify({ sharingEnabled: false }),
+    }).catch(() => {});
+  }, [orderId]);
+
   const stopSharing = useCallback(
     (reason?: string) => {
       clearWatcher();
+      clearServerLocation();
+      lastCoordsRef.current = null;
       setSharing(false);
       setPausedByBackground(false);
+      setLastSent(null);
       if (reason) setStatusNote(reason);
     },
-    [clearWatcher]
+    [clearWatcher, clearServerLocation]
   );
 
   // Automatically stop GPS tracking when order is no longer in transit

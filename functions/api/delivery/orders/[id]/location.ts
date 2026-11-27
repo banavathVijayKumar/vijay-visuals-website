@@ -1,7 +1,8 @@
 // ============================================================================
-// POST /api/delivery/orders/:id/location — Consent-gated delivery GPS ping
+// POST /api/delivery/orders/:id/location — Consent-gated delivery GPS state
 // Only the assigned delivery partner, the business owner, or a super admin may
-// upload coordinates, and only while the order is ready for pickup / in transit.
+// update location. Coordinates live on delivery_assignments; stopping sharing
+// clears them immediately so customer views cannot keep showing live movement.
 // ============================================================================
 
 import { requireUser } from '../../../_auth';
@@ -15,7 +16,8 @@ import {
   sanitizeText,
   writeAuditLog,
 } from '../../../_shared';
-import { isMissingTableError } from '../../../_tenantAccess';
+import { checkAssignedDeliveryAccess } from '../../_assignmentAccess';
+import { parseRecordedAt } from '../../_locationState';
 
 // `packed` is the D1 representation of the ready_for_pickup milestone
 // (store_orders.order_status CHECK), so both labels are accepted here.
@@ -36,26 +38,33 @@ function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number)
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function mapPingRow(row: Record<string, any>, tenantId: number): Record<string, unknown> {
-  return {
-    id: Number(row.id) || 0,
-    orderId: Number(row.order_id) || 0,
-    tenantId,
-    deliveryPartnerId: row.delivery_partner_id == null ? null : Number(row.delivery_partner_id),
-    latitude: Number(row.latitude),
-    longitude: Number(row.longitude),
-    accuracyMeters: Number(row.accuracy_meters) || 0,
-    batterySaverMode: Boolean(row.battery_saver_mode),
-    consentGranted: row.consent_granted == null ? true : Boolean(row.consent_granted),
-    recordedAt: String(row.recorded_at || ''),
-  };
-}
-
 function migrationRequired(): Response {
   return jsonResponse(
     { error: 'Delivery location storage is not available on this deployment.', code: 'MIGRATION_REQUIRED' },
     503
   );
+}
+
+function mapAssignmentPing(
+  assignment: Record<string, any>,
+  tenantId: number,
+  accuracyMeters = 0
+): Record<string, unknown> {
+  return {
+    id: Number(assignment.id) || 0,
+    orderId: Number(assignment.order_id) || 0,
+    tenantId,
+    deliveryPartnerId:
+      assignment.delivery_partner_user_id == null
+        ? null
+        : Number(assignment.delivery_partner_user_id),
+    latitude: Number(assignment.last_lat),
+    longitude: Number(assignment.last_lng),
+    accuracyMeters,
+    batterySaverMode: true,
+    consentGranted: true,
+    recordedAt: String(assignment.updated_at || ''),
+  };
 }
 
 export async function onRequestPost(context: PagesContext<{ id: string }>): Promise<Response> {
@@ -85,8 +94,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
     order = await env.DB.prepare('SELECT * FROM store_orders WHERE id = ? LIMIT 1')
       .bind(orderId)
       .first<Record<string, any>>();
-  } catch (err) {
-    if (isMissingTableError(err)) return migrationRequired();
+  } catch {
     return jsonResponse({ error: 'Unable to read order.' }, 500);
   }
   if (!order) return jsonResponse({ error: 'Order not found.' }, 404);
@@ -103,42 +111,58 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
   }
   const tenantId = Number(pub?.rowid || 0);
 
-  let authorized = auth.user.isSuperAdmin;
-  if (
-    !authorized &&
-    pub &&
-    (pub.owner_id === auth.user.id || pub.owner_id === auth.user.authSubject)
-  ) {
-    authorized = true;
-  }
-
-  let partnerId: number | null = null;
-  if (!authorized) {
-    // D1 has no delivery_partners table; active tenant_memberships rows are the
-    // existing source of truth for assigned delivery partners (see /api/delivery/portal).
-    try {
-      const partner = await env.DB.prepare(
-        `SELECT id, user_id, email FROM tenant_memberships
-         WHERE website_id = ? AND role = 'delivery_partner' AND status = 'active'
-           AND (user_id = ? OR user_id = ? OR email = ?)
-         LIMIT 1`
-      )
-        .bind(String(order.website_id || ''), auth.user.id, auth.user.authSubject, auth.user.email)
-        .first<{ id?: number; user_id?: string; email?: string }>();
-      if (partner) {
-        authorized = true;
-        partnerId = Number(partner.id) || null;
-      }
-    } catch {
-      // Optional membership table may not be migrated; stay unauthorized.
-    }
-  }
-
-  if (!authorized) {
+  const access = await checkAssignedDeliveryAccess(
+    env,
+    auth.user,
+    String(order.website_id || ''),
+    orderId
+  );
+  if (!access.authorized) {
     return jsonResponse(
       { error: 'Only the assigned delivery partner or business owner can update delivery location.' },
       403
     );
+  }
+  if (!access.assignment || !access.assignmentId) {
+    return jsonResponse(
+      { error: 'This order has no active delivery assignment.', code: 'NO_DELIVERY_ASSIGNMENT' },
+      409
+    );
+  }
+
+  const body = await parseJsonBody<{
+    sharingEnabled?: boolean;
+    latitude?: number;
+    longitude?: number;
+    accuracyMeters?: number;
+    batterySaverMode?: boolean;
+    consentGranted?: boolean;
+  }>(request);
+  if (!body) return jsonResponse({ error: 'Invalid JSON request payload.' }, 400);
+
+  // Explicit stop: clear stored coordinates immediately. The customer endpoint
+  // reads this same row, so live movement stops at the source.
+  if (body.sharingEnabled === false) {
+    try {
+      await env.DB.prepare(
+        `UPDATE delivery_assignments
+         SET last_lat = NULL, last_lng = NULL, updated_at = datetime('now')
+         WHERE id = ? AND order_id = ?`
+      )
+        .bind(access.assignmentId, orderId)
+        .run();
+      await writeAuditLog(env, {
+        actorId: auth.user.id,
+        actorRole: auth.user.platformRole,
+        action: 'delivery_location_sharing_stopped',
+        targetType: 'order',
+        targetId: String(orderId),
+        details: { assignmentId: access.assignmentId, partnerId: access.partnerId },
+      });
+      return jsonResponse({ sharingEnabled: false, latestPing: null });
+    } catch {
+      return migrationRequired();
+    }
   }
 
   const status = sanitizeText(order.order_status, 40);
@@ -150,15 +174,6 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       409
     );
   }
-
-  const body = await parseJsonBody<{
-    latitude?: number;
-    longitude?: number;
-    accuracyMeters?: number;
-    batterySaverMode?: boolean;
-    consentGranted?: boolean;
-  }>(request);
-  if (!body) return jsonResponse({ error: 'Invalid JSON request payload.' }, 400);
 
   const latitude = body.latitude;
   const longitude = body.longitude;
@@ -185,62 +200,42 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
     return jsonResponse({ error: 'Explicit GPS location sharing consent is required.' }, 400);
   }
   const batterySaverMode = body.batterySaverMode === undefined ? true : body.batterySaverMode;
+  const accuracyMeters = Math.round(accuracyRaw);
 
   try {
     // Battery/network guard: skip redundant writes within 8s if movement < 25m.
-    const lastPing = await env.DB.prepare(
-      `SELECT id, latitude, longitude, accuracy_meters, battery_saver_mode, consent_granted, recorded_at
-       FROM delivery_location_pings
-       WHERE order_id = ?
-       ORDER BY recorded_at DESC, id DESC
-       LIMIT 1`
-    )
-      .bind(orderId)
-      .first<Record<string, any>>();
-
-    if (lastPing) {
-      const ageMs = Date.now() - new Date(String(lastPing.recorded_at)).getTime();
-      const distMeters = haversineMeters(
-        Number(lastPing.latitude),
-        Number(lastPing.longitude),
-        latitude,
-        longitude
-      );
-      if (Number.isFinite(ageMs) && ageMs < 8000 && distMeters < 25) {
+    const lastLat = access.assignment.last_lat == null ? null : Number(access.assignment.last_lat);
+    const lastLng = access.assignment.last_lng == null ? null : Number(access.assignment.last_lng);
+    const lastRecordedAt = parseRecordedAt(String(access.assignment.updated_at || ''));
+    if (lastLat != null && lastLng != null && lastRecordedAt != null) {
+      const ageMs = Date.now() - lastRecordedAt;
+      const distMeters = haversineMeters(lastLat, lastLng, latitude, longitude);
+      if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 8000 && distMeters < 25) {
         return jsonResponse({
-          ping: mapPingRow(lastPing, tenantId),
+          ping: mapAssignmentPing(access.assignment, tenantId, accuracyMeters),
           deduplicated: true,
           reason: 'Skipped redundant update (< 25m movement within 8s for battery efficiency).',
         });
       }
     }
 
-    const res = await env.DB.prepare(
-      `INSERT INTO delivery_location_pings
-         (order_id, website_id, delivery_partner_id, latitude, longitude,
-          accuracy_meters, battery_saver_mode, consent_granted, recorded_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))`
+    await env.DB.prepare(
+      `UPDATE delivery_assignments
+       SET last_lat = ?, last_lng = ?, updated_at = datetime('now')
+       WHERE id = ? AND order_id = ?`
     )
-      .bind(
-        orderId,
-        String(order.website_id || ''),
-        partnerId,
-        latitude,
-        longitude,
-        Math.round(accuracyRaw),
-        batterySaverMode ? 1 : 0
-      )
+      .bind(latitude, longitude, access.assignmentId, orderId)
       .run();
 
-    const pingId = Number(res?.meta?.last_row_id || 0);
     const ping = {
-      id: pingId,
+      id: access.assignmentId,
       orderId,
       tenantId,
-      deliveryPartnerId: partnerId,
+      deliveryPartnerId:
+        access.partnerId ?? (Number(access.assignment.delivery_partner_user_id) || null),
       latitude,
       longitude,
-      accuracyMeters: Math.round(accuracyRaw),
+      accuracyMeters,
       batterySaverMode,
       consentGranted: true,
       recordedAt: new Date().toISOString(),
@@ -252,12 +247,17 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       action: 'delivery_location_ping',
       targetType: 'order',
       targetId: String(orderId),
-      details: { latitude, longitude, accuracyMeters: ping.accuracyMeters },
+      details: {
+        latitude,
+        longitude,
+        accuracyMeters,
+        assignmentId: access.assignmentId,
+        partnerId: access.partnerId,
+      },
     });
 
     return jsonResponse({ ping, deduplicated: false }, 201);
-  } catch (err) {
-    if (isMissingTableError(err)) return migrationRequired();
-    return jsonResponse({ error: 'Unable to record delivery location ping.' }, 500);
+  } catch {
+    return migrationRequired();
   }
 }

@@ -1,7 +1,7 @@
 // ============================================================================
 // GET /api/orders/:orderNumber/live-location — Conditional live delivery polling
-// Returns real consent-based GPS pings only while an order is in transit.
-// Public tracking route (the client polls only while the tracker tab is visible).
+// Returns consent-based delivery location only while an order is in transit.
+// A stale ping is exposed only as lastKnownPing, never as a live claim.
 // ============================================================================
 
 import { requireUser } from '../../_auth';
@@ -14,7 +14,7 @@ import {
   rateLimitResponse,
   sanitizeText,
 } from '../../_shared';
-import { isMissingTableError } from '../../_tenantAccess';
+import { isFreshLocation } from '../../delivery/_locationState';
 
 // `packed` is the D1 representation of the ready_for_pickup milestone
 // (store_orders.order_status CHECK), so both labels are accepted here.
@@ -34,18 +34,22 @@ function buildDirectionsUrl(lat?: number | null, lng?: number | null, address?: 
   return 'https://www.google.com/maps';
 }
 
-function mapPingRow(row: Record<string, any>, tenantId: number): Record<string, unknown> {
+function mapAssignmentPing(
+  row: Record<string, any>,
+  tenantId: number
+): Record<string, unknown> {
   return {
     id: Number(row.id) || 0,
     orderId: Number(row.order_id) || 0,
     tenantId,
-    deliveryPartnerId: row.delivery_partner_id == null ? null : Number(row.delivery_partner_id),
-    latitude: Number(row.latitude),
-    longitude: Number(row.longitude),
-    accuracyMeters: Number(row.accuracy_meters) || 0,
-    batterySaverMode: Boolean(row.battery_saver_mode),
-    consentGranted: row.consent_granted == null ? true : Boolean(row.consent_granted),
-    recordedAt: String(row.recorded_at || ''),
+    deliveryPartnerId:
+      row.delivery_partner_user_id == null ? null : Number(row.delivery_partner_user_id),
+    latitude: Number(row.last_lat),
+    longitude: Number(row.last_lng),
+    accuracyMeters: 0,
+    batterySaverMode: true,
+    consentGranted: true,
+    recordedAt: String(row.updated_at || ''),
   };
 }
 
@@ -77,10 +81,7 @@ export async function onRequestGet(
     order = await env.DB.prepare('SELECT * FROM store_orders WHERE UPPER(order_number) = ? LIMIT 1')
       .bind(orderNumber)
       .first<Record<string, any>>();
-  } catch (err) {
-    if (isMissingTableError(err)) {
-      return jsonResponse({ error: 'Order storage is not available on this deployment.', code: 'MIGRATION_REQUIRED' }, 503);
-    }
+  } catch {
     return jsonResponse({ error: 'Unable to fetch live delivery location.' }, 500);
   }
   if (!order) return jsonResponse({ error: 'Order not found.' }, 404);
@@ -184,6 +185,8 @@ export async function onRequestGet(
       pollingAllowed: false,
       recommendedPollIntervalMs: 0,
       latestPing: null,
+      lastKnownPing: null,
+      stale: false,
       storeBranch,
       message:
         status === 'delivered'
@@ -192,22 +195,29 @@ export async function onRequestGet(
     });
   }
 
+  let lastKnownPing: Record<string, unknown> | null = null;
   let latestPing: Record<string, unknown> | null = null;
+  let stale = false;
   try {
-    const ping = await env.DB.prepare(
-      `SELECT id, order_id, delivery_partner_id, latitude, longitude, accuracy_meters,
-              battery_saver_mode, consent_granted, recorded_at
-       FROM delivery_location_pings
-       WHERE order_id = ?
-       ORDER BY recorded_at DESC, id DESC
+    const assignment = await env.DB.prepare(
+      `SELECT id, order_id, delivery_partner_user_id, last_lat, last_lng, updated_at
+       FROM delivery_assignments
+       WHERE order_id = ? AND website_id = ? AND last_lat IS NOT NULL AND last_lng IS NOT NULL
        LIMIT 1`
     )
-      .bind(Number(order.id) || 0)
+      .bind(Number(order.id) || 0, websiteId)
       .first<Record<string, any>>();
-    latestPing = ping ? mapPingRow(ping, tenantId) : null;
+
+    if (assignment) {
+      lastKnownPing = mapAssignmentPing(assignment, tenantId);
+      stale = !isFreshLocation(String(assignment.updated_at || ''));
+      latestPing = stale ? null : lastKnownPing;
+    }
   } catch {
-    // delivery_location_pings is optional; an empty ping collection is honest.
+    // Missing delivery_assignments means no location can be proven.
+    lastKnownPing = null;
     latestPing = null;
+    stale = false;
   }
 
   const mapsConfigured = Boolean(
@@ -221,9 +231,13 @@ export async function onRequestGet(
     recommendedPollIntervalMs: 20000,
     mapsConfigured,
     latestPing,
+    lastKnownPing,
+    stale,
     storeBranch,
     message: latestPing
       ? 'Live rider coordinates updated with rider consent.'
-      : 'Waiting for delivery partner to enable consent-based GPS sharing.',
+      : stale
+        ? 'Last location update is stale — live location is unavailable. The rider must share a fresh update.'
+        : 'Waiting for delivery partner to enable consent-based GPS sharing.',
   });
 }

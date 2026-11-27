@@ -2115,18 +2115,9 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                       Total Due: <strong className="font-mono-tabular text-[#ECC86A]">₹{confirmedOrder.total.toLocaleString('en-IN')}</strong>
                     </p>
                     <p className="text-xs text-amber-200/80">
-                      Payment was not completed. Your order has been securely saved as pending payment. You can retry payment anytime.
+                      Payment was not completed. Your order has been securely saved as pending payment. Contact support with this tracking ID for payment assistance; no payment has been recorded as successful.
                     </p>
                     <div className="flex gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConfirmedOrder(null);
-                        }}
-                        className="px-3.5 py-2 rounded-md bg-gold-gradient text-[#08080A] font-semibold"
-                      >
-                        Retry Payment
-                      </button>
                       <button
                         type="button"
                         onClick={() => {

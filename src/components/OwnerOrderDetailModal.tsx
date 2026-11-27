@@ -365,7 +365,7 @@ export const OwnerOrderDetailModal: React.FC<OwnerOrderDetailModalProps> = ({
         {/* Actions Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-[#1E1E2B]">
           <div className="flex flex-wrap items-center gap-1.5">
-            {order.status === 'placed' && (
+            {(order.status === 'placed' || order.status === 'pending') && (
               <button
                 type="button"
                 disabled={busy}

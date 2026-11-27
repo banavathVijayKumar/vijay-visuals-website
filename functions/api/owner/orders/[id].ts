@@ -16,6 +16,7 @@ import {
   mapOrderRowToUi,
   requireTenantOwnerAccess,
 } from '../../_tenantAccess';
+import { dispatchLifecycleNotification } from '../../_lifecycleNotifications';
 
 const UI_TO_DB_ORDER_STATUS: Record<string, string> = {
   placed: 'placed',
@@ -92,9 +93,43 @@ export async function onRequestPatch(
     reason?: string;
     rejectionReason?: string;
     refundNotes?: string;
+    deliveryPartnerId?: number | string | null;
   }>(request);
   if (!body) {
     return jsonResponse({ error: 'Invalid JSON request body.' }, 400);
+  }
+
+  // Delivery assignment is persisted in delivery_assignments (the D1 source of
+  // truth). Validate the rider before any order write so a failed assignment
+  // cannot be reported as successful by the owner UI.
+  let deliveryPartnerId: number | null | undefined;
+  let deliveryPartnerName = '';
+  if (Object.prototype.hasOwnProperty.call(body, 'deliveryPartnerId')) {
+    const rawPartnerId = body.deliveryPartnerId;
+    if (rawPartnerId === null || rawPartnerId === '' || rawPartnerId === undefined) {
+      deliveryPartnerId = null;
+    } else {
+      const parsedPartnerId = Number(rawPartnerId);
+      if (!Number.isInteger(parsedPartnerId) || parsedPartnerId <= 0) {
+        return jsonResponse({ error: 'Invalid delivery partner.' }, 400);
+      }
+      const member = await env.DB.prepare(
+        `SELECT id, full_name, email, status
+         FROM tenant_memberships
+         WHERE id = ? AND website_id = ? AND role = 'delivery_partner' AND status = 'active'
+         LIMIT 1`
+      )
+        .bind(parsedPartnerId, String(existing.website_id))
+        .first<{ id?: number; full_name?: string; email?: string }>();
+      if (!member) {
+        return jsonResponse(
+          { error: 'The selected delivery partner is not active for this website.' },
+          403
+        );
+      }
+      deliveryPartnerId = parsedPartnerId;
+      deliveryPartnerName = String(member.full_name || member.email || 'Delivery Partner');
+    }
   }
 
   // Handle Action Shortcuts (Accept, Reject, Refund)
@@ -216,6 +251,44 @@ export async function onRequestPatch(
     }
   }
 
+  if (deliveryPartnerId !== undefined) {
+    if (deliveryPartnerId === null) {
+      await env.DB.prepare(
+        'DELETE FROM delivery_assignments WHERE order_id = ? AND website_id = ?'
+      )
+        .bind(orderId, String(existing.website_id))
+        .run();
+    } else {
+      const codAmount =
+        String(existing.payment_method || '').toLowerCase() === 'cod'
+          ? Math.max(0, Math.round(Number(existing.total_inr || 0)))
+          : 0;
+      await env.DB.prepare(
+        `INSERT INTO delivery_assignments
+           (website_id, order_id, delivery_partner_user_id, partner_name, status,
+            cod_amount_inr, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'assigned', ?, datetime('now'), datetime('now'))
+         ON CONFLICT(order_id) DO UPDATE SET
+           website_id = excluded.website_id,
+           delivery_partner_user_id = excluded.delivery_partner_user_id,
+           partner_name = excluded.partner_name,
+           status = 'assigned',
+           cod_amount_inr = excluded.cod_amount_inr,
+           last_lat = NULL,
+           last_lng = NULL,
+           updated_at = datetime('now')`
+      )
+        .bind(
+          String(existing.website_id),
+          orderId,
+          String(deliveryPartnerId),
+          deliveryPartnerName,
+          codAmount
+        )
+        .run();
+    }
+  }
+
   const updated = await env.DB.prepare('SELECT * FROM store_orders WHERE id = ? LIMIT 1')
     .bind(orderId)
     .first<Record<string, any>>();
@@ -232,10 +305,41 @@ export async function onRequestPatch(
       paymentStatus: nextPaymentStatus,
       returnReason: nextReturnReason,
       action: body.action || null,
+      deliveryPartnerId: deliveryPartnerId === undefined ? null : deliveryPartnerId,
     },
   });
 
-  return jsonResponse({
-    order: updated ? mapOrderRowToUi(updated, Number(access.row.rowid || 0)) : null,
+  const ownerEventType =
+    body.action === 'reject' || nextOrderStatus === 'cancelled'
+      ? 'order_cancelled'
+      : body.action === 'accept'
+        ? 'order_accepted'
+        : 'order_status_updated';
+  await dispatchLifecycleNotification(env, {
+    websiteId: String(existing.website_id),
+    eventType: ownerEventType,
+    subject: `Order #${orderId} — ${ownerEventType}`,
+    message: `Order #${orderId} is now ${nextOrderStatus}.`,
+    recipientUserId: String(existing.customer_user_id || '') || null,
+    recipientContact: String(existing.customer_email || existing.customer_phone || ''),
   });
+
+  if (deliveryPartnerId !== undefined && deliveryPartnerId !== null) {
+    await dispatchLifecycleNotification(env, {
+      websiteId: String(existing.website_id),
+      eventType: 'order_assigned',
+      subject: `Delivery assignment #${orderId}`,
+      message: `Order #${orderId} assigned to ${deliveryPartnerName || 'delivery partner'}.`,
+      recipientUserId: String(deliveryPartnerId),
+    });
+  }
+
+  const mappedOrder = updated
+    ? (mapOrderRowToUi(updated, Number(access.row.rowid || 0)) as Record<string, any> | null)
+    : null;
+  if (mappedOrder && deliveryPartnerId !== undefined) {
+    mappedOrder.deliveryPartnerId = deliveryPartnerId;
+  }
+
+  return jsonResponse({ order: mappedOrder });
 }

@@ -18,6 +18,8 @@ interface LiveLocationResponse {
   recommendedPollIntervalMs: number;
   mapsConfigured?: boolean;
   latestPing: DeliveryLocationPingRecord | null;
+  lastKnownPing?: DeliveryLocationPingRecord | null;
+  stale?: boolean;
   storeBranch: {
     branchName: string;
     fullAddress: string;
@@ -123,8 +125,9 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
   };
 
   const currentStepIdx = result ? STEPS.indexOf(result.order.status) : -1;
-  const mapCenter = liveLoc?.latestPing
-    ? { lat: liveLoc.latestPing.latitude, lng: liveLoc.latestPing.longitude }
+  const displayedPing = liveLoc?.latestPing ?? liveLoc?.lastKnownPing ?? null;
+  const mapCenter = displayedPing
+    ? { lat: displayedPing.latitude, lng: displayedPing.longitude }
     : liveLoc?.storeBranch?.latitude != null && liveLoc.storeBranch.longitude != null
       ? { lat: liveLoc.storeBranch.latitude, lng: liveLoc.storeBranch.longitude }
       : null;
@@ -293,15 +296,19 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                             <Pin background="#D4AF37" glyphColor="#08080A" borderColor="#ffffff" />
                           </AdvancedMarker>
                         )}
-                        {liveLoc.latestPing && (
+                        {displayedPing && (
                           <AdvancedMarker
                             position={{
-                              lat: liveLoc.latestPing.latitude,
-                              lng: liveLoc.latestPing.longitude,
+                              lat: displayedPing.latitude,
+                              lng: displayedPing.longitude,
                             }}
-                            title="Delivery Partner Live Position"
+                            title={liveLoc.stale ? 'Delivery Partner Last Known Position (stale)' : 'Delivery Partner Live Position'}
                           >
-                            <Pin background="#10B981" glyphColor="#ffffff" borderColor="#064E3B" />
+                            <Pin
+                              background={liveLoc.stale ? '#B45309' : '#10B981'}
+                              glyphColor="#ffffff"
+                              borderColor={liveLoc.stale ? '#78350F' : '#064E3B'}
+                            />
                           </AdvancedMarker>
                         )}
                       </GoogleMap>
@@ -310,11 +317,13 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 ) : null}
 
                 <div className="px-4 py-2.5 text-[11px] text-[#9E9EB2] flex flex-wrap items-center justify-between gap-2">
-                  <span>{liveLoc.message}</span>
-                  {liveLoc.latestPing && (
-                    <span className="font-mono-tabular text-emerald-300">
-                      Updated {new Date(liveLoc.latestPing.recordedAt).toLocaleTimeString()} (±
-                      {liveLoc.latestPing.accuracyMeters}m)
+                  <span className={liveLoc.stale ? 'text-amber-300' : undefined}>{liveLoc.message}</span>
+                  {displayedPing && (
+                    <span
+                      className={`font-mono-tabular ${liveLoc.stale ? 'text-amber-300' : 'text-emerald-300'}`}
+                    >
+                      {liveLoc.stale ? 'Last update' : 'Updated'} {new Date(displayedPing.recordedAt).toLocaleTimeString()}
+                      {!liveLoc.stale && ` (±${displayedPing.accuracyMeters}m)`}
                     </span>
                   )}
                 </div>

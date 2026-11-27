@@ -5,6 +5,7 @@
 # must return HTTP 404 instead of a 200 copy of index.html.
 /site/*                       /index.html  200
 /builder                      /index.html  200
+/builder/                     /index.html  200
 /builder/*                    /index.html  200
 /marketplace                  /index.html  200
 /marketplace/*                /index.html  200

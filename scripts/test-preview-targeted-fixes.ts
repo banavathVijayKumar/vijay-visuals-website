@@ -46,23 +46,29 @@ const DEMO_SLUGS = [
 // 1. Routing
 // ---------------------------------------------------------------------------
 
-await test('exact no-slash SPA entries are recognized only for /demo and /dashboards', () => {
+await test('exact no-slash SPA entries are recognized only for /demo, /dashboards and /builder', () => {
   assert.equal(shouldServeSpaShellDirectly('/demo'), true);
   assert.equal(shouldServeSpaShellDirectly('/dashboards'), true);
+  assert.equal(shouldServeSpaShellDirectly('/builder'), true);
   assert.equal(shouldServeSpaShellDirectly('/demo?lang=te'), true);
+  assert.equal(shouldServeSpaShellDirectly('/builder?lang=te'), true);
   assert.equal(shouldServeSpaShellDirectly('/demo/', 'GET'), false);
   assert.equal(shouldServeSpaShellDirectly('/dashboards/', 'HEAD'), false);
+  assert.equal(shouldServeSpaShellDirectly('/builder/', 'GET'), false);
+  assert.equal(shouldServeSpaShellDirectly('/marketplace'), false);
+  assert.equal(shouldServeSpaShellDirectly('/ai'), false);
   assert.equal(shouldServeSpaShellDirectly('/admin'), false);
   assert.equal(shouldServeSpaShellDirectly('/api/admin/overview'), false);
   assert.equal(shouldServeSpaShellDirectly('/site/deccan-royal-couture'), false);
   assert.equal(shouldServeSpaShellDirectly('/demo', 'POST'), false);
+  assert.equal(shouldServeSpaShellDirectly('/builder', 'POST'), false);
 });
 
 await test('no-slash routes fetch the canonical shell directly instead of redirecting', async () => {
   const shellHtml =
     '<!doctype html><html lang="en"><head><title>Vijay Visuals</title></head><body><div id="root"></div></body></html>';
 
-  for (const pathname of ['/demo', '/dashboards']) {
+  for (const pathname of ['/demo', '/dashboards', '/builder']) {
     const shellRequests: string[] = [];
     const nextRequests: Array<string | null> = [];
     const context = {
@@ -104,7 +110,7 @@ await test('no-slash routes fetch the canonical shell directly instead of redire
 });
 
 await test('trailing-slash routes keep the existing static rewrite path', async () => {
-  for (const pathname of ['/demo/', '/dashboards/']) {
+  for (const pathname of ['/demo/', '/dashboards/', '/builder/']) {
     const shellRequests: string[] = [];
     const nextRequests: Array<string | null> = [];
     const context = {
@@ -147,18 +153,23 @@ await test('static rewrites cover both slash forms and client router accepts bot
   assert.match(redirects, /^\/demo\/\s+\/index\.html\s+200$/m);
   assert.match(redirects, /^\/dashboards\s+\/index\.html\s+200$/m);
   assert.match(redirects, /^\/dashboards\/\s+\/index\.html\s+200$/m);
+  assert.match(redirects, /^\/builder\s+\/index\.html\s+200$/m);
+  assert.match(redirects, /^\/builder\/\s+\/index\.html\s+200$/m);
 
   const app = read('src/App.tsx');
   assert.match(app, /pathname\.startsWith\('\/demo'\)/);
   assert.match(app, /pathname\.startsWith\('\/dashboards'\)/);
+  assert.match(app, /pathname\.startsWith\('\/builder'\)/);
 });
 
 await test('direct-shell branch cannot bypass API or private admin routes', () => {
   const middleware = read('functions/_middleware.ts');
   assert.match(middleware, /isPlatformHost && shouldServeSpaShellDirectly\(url\.pathname, request\.method\)/);
-  assert.match(middleware, /SPA_SHELL_EXACT_ROUTES = new Set\(\['\/demo', '\/dashboards'\]\)/);
+  assert.match(middleware, /SPA_SHELL_EXACT_ROUTES = new Set\(\['\/demo', '\/dashboards', '\/builder'\]\)/);
   assert.doesNotMatch(middleware, /SPA_SHELL_EXACT_ROUTES[^\n]*'\/admin'/);
   assert.doesNotMatch(middleware, /SPA_SHELL_EXACT_ROUTES[^\n]*'\/api/);
+  assert.doesNotMatch(middleware, /SPA_SHELL_EXACT_ROUTES[^\n]*'\/marketplace'/);
+  assert.doesNotMatch(middleware, /SPA_SHELL_EXACT_ROUTES[^\n]*'\/ai'/);
 });
 
 // ---------------------------------------------------------------------------
