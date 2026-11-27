@@ -29,6 +29,7 @@ import {
 import { BUSINESS_CATEGORIES, GLOBAL_CURRENCIES } from '../data/content';
 import { TEMPLATES_DATA, BusinessTemplate } from '../lib/templatesData';
 import { apiFetch } from '../lib/api';
+import { getTenantFontStack } from '../lib/fontStacks';
 import { PLAN_TIERS, type PlanTier } from '@/functions/api/_planTiers';
 import { CustomerLogoCustomizer } from './CustomerLogoCustomizer';
 import { generateSlugFromName, validateSlug } from '../lib/slug';
@@ -1927,7 +1928,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                   )}
                   <span
                     className="text-sm font-bold text-white truncate"
-                    style={{ fontFamily: fontFamily === 'Cinzel' ? 'Cinzel, serif' : 'Plus Jakarta Sans, sans-serif' }}
+                    style={{ fontFamily: getTenantFontStack(fontFamily) }}
                   >
                     {name || 'Your Business Name'}
                   </span>
@@ -1956,7 +1957,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                   <p className="text-[10px] uppercase tracking-wider text-white/80 mb-1">{category}</p>
                   <h3
                     className="text-xl md:text-2xl font-bold text-white mb-1"
-                    style={{ fontFamily: fontFamily === 'Cinzel' ? 'Cinzel, serif' : 'Plus Jakarta Sans, sans-serif' }}
+                    style={{ fontFamily: getTenantFontStack(fontFamily) }}
                   >
                     {name || 'Your Brand'}
                   </h3>

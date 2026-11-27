@@ -489,7 +489,10 @@ function PlatformShell() {
         )}
 
         {activeView === 'storefront' && activeSlug && (
-          <ErrorBoundary sectionName={isPublicTenantHost ? 'Website' : 'Storefront View'}>
+          <ErrorBoundary
+            sectionName={isPublicTenantHost ? 'Website' : 'Storefront View'}
+            publicHost={isPublicTenantHost}
+          >
             <StorefrontView
               slug={activeSlug}
               lang={lang}

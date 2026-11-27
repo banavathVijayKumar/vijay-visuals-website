@@ -1,11 +1,300 @@
 // Seeded preview storefronts from src/db/seed.ts. These are demo catalogs,
-// not verified live businesses. Keep sample data clearly labeled in the UI.
-export const DEMO_STORE_SLUGS = new Set([
-  'deccan-royal-couture',
-  'nocturne-audio-tech',
-  'nizam-heritage-kitchen',
-  'telangana-harvest-organics',
-]);
+// not verified live businesses. They are frontend-only fallback data: no demo
+// tenant, product, review or order is written to any remote database.
+import type {
+  CouponRecord,
+  ProductRecord,
+  ReviewRecord,
+  TenantRecord,
+} from '../types/platform';
+
+export interface DemoStorefrontData {
+  tenant: TenantRecord;
+  products: ProductRecord[];
+  coupons: CouponRecord[];
+  reviews: ReviewRecord[];
+}
+
+const DEMO_MODULES = {
+  ecommerce: true,
+  cartCheckout: true,
+  gallery: true,
+  bookings: false,
+  whatsappOrder: false,
+  reviews: true,
+  wishlist: true,
+  coupons: true,
+  wholesale: false,
+};
+
+function demoProduct(
+  id: number,
+  tenantId: number,
+  category: string,
+  name: string,
+  description: string,
+  price: number,
+  imageUrl: string,
+  rating: string
+): ProductRecord {
+  return {
+    id,
+    tenantId,
+    category,
+    subcategory: 'sample',
+    name,
+    description: `${description} Illustrative demo item; not a real product for sale.`,
+    price,
+    compareAtPrice: 0,
+    wholesalePrice: 0,
+    minWholesaleQty: 1,
+    stock: 25,
+    lowStockThreshold: 3,
+    imageUrl,
+    images: [],
+    videoUrl: '',
+    variantsJson: '[]',
+    specs: 'Sample catalog data only',
+    sku: `DEMO-${Math.abs(id)}`,
+    barcode: '',
+    featured: true,
+    bestseller: false,
+    rating,
+    reviewCount: 0,
+    active: true,
+  };
+}
+
+const DEMO_STOREFRONTS: Readonly<Record<string, DemoStorefrontData>> = {
+  'deccan-royal-couture': {
+    tenant: {
+      id: -101,
+      websiteId: 'demo-deccan-royal-couture',
+      ownerUserId: null,
+      name: 'Deccan Royal Couture',
+      slug: 'deccan-royal-couture',
+      category: 'clothing',
+      templateId: 'obsidian-luxury',
+      templateName: 'Obsidian Luxury',
+      tagline: 'Illustrative bridal couture catalog · demo only',
+      heroHeadline: 'Royal Couture, Clearly Presented',
+      heroSubheadline: 'Sample catalog for the website-builder preview. No live store or checkout.',
+      ctaText: 'Explore Sample Collection',
+      description: 'A safe, explicitly labeled sample catalog used only to demonstrate storefront layout and white-label presentation.',
+      logoText: 'DRC',
+      bannerImage: '/demo-store-fashion.jpg',
+      primaryColor: '#D4AF37',
+      accentColor: '#121016',
+      fontFamily: 'Cinzel',
+      customDomain: '',
+      seoTitle: 'Deccan Royal Couture — Demo Sample Storefront',
+      seoDescription: 'Illustrative sample storefront. Not a live business or checkout destination.',
+      currency: 'INR',
+      phone: '',
+      whatsapp: '',
+      address: 'Sample catalog · Hyderabad (demo)',
+      businessHours: 'Demo hours only',
+      deliveryInfo: 'Illustrative only — no orders are accepted',
+      returnPolicy: 'Sample policy — not applicable',
+      enabledModules: DEMO_MODULES,
+      published: false,
+      status: 'demo_sample',
+      planTier: 'website_only',
+      pwaEnabled: false,
+      pwaAppName: '',
+      pwaShortName: '',
+      pwaThemeColor: '#121016',
+      pwaLicenseKey: '',
+      aiCreditsLimit: 0,
+      aiCreditsUsed: 0,
+      deliveryFee: 0,
+      deliveryCommissionPct: 0,
+      codEnabled: false,
+      upiId: '',
+      cashfreeOnlineReady: false,
+    },
+    products: [
+      demoProduct(-1011, -101, 'Signature', 'Banarasi Silhouette', 'Handloom-inspired ceremonial drape sample', 18900, '/demo-store-fashion.jpg', '4.9'),
+      demoProduct(-1012, -101, 'Bridal', 'Zari Border Set', 'Festive zari detailing sample', 12900, '/demo-store-fashion.jpg', '4.8'),
+      demoProduct(-1013, -101, 'Contemporary', 'Tailored Reception Look', 'Modern ceremonial tailoring sample', 9800, '/demo-store-fashion.jpg', '4.7'),
+    ],
+    coupons: [
+      { id: -101, tenantId: -101, code: 'DEMO10', discountType: 'percent', discountValue: 10, minOrder: 0, active: true },
+    ],
+    reviews: [
+      {
+        id: -1001,
+        tenantId: -101,
+        websiteId: 'demo-deccan-royal-couture',
+        productId: -1011,
+        productName: 'Banarasi Silhouette',
+        customerName: 'Sample reviewer',
+        rating: 5,
+        title: 'Illustrative review',
+        comment: 'Sample feedback text for the demo layout. Not feedback from a real customer.',
+        verifiedPurchase: false,
+        moderationStatus: 'published',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+  },
+  'nocturne-audio-tech': {
+    tenant: {
+      id: -102,
+      websiteId: 'demo-nocturne-audio-tech',
+      ownerUserId: null,
+      name: 'Nocturne Audio & Tech',
+      slug: 'nocturne-audio-tech',
+      category: 'electronics',
+      templateId: 'slate-precision',
+      templateName: 'Slate Precision',
+      tagline: 'Illustrative creator hardware catalog · demo only',
+      heroHeadline: 'Creator Hardware, Clearly Presented',
+      heroSubheadline: 'Sample catalog for the website-builder preview. No live store or checkout.',
+      ctaText: 'Explore Sample Catalog',
+      description: 'A safe, explicitly labeled sample catalog used only to demonstrate storefront layout and white-label presentation.',
+      logoText: 'NAT',
+      bannerImage: '/demo-store-electronics.jpg',
+      primaryColor: '#E5B94C',
+      accentColor: '#0E131A',
+      fontFamily: 'Plus Jakarta Sans',
+      customDomain: '',
+      seoTitle: 'Nocturne Audio & Tech — Demo Sample Storefront',
+      seoDescription: 'Illustrative sample storefront. Not a live business or checkout destination.',
+      currency: 'INR',
+      phone: '',
+      whatsapp: '',
+      address: 'Sample catalog · Hyderabad (demo)',
+      businessHours: 'Demo hours only',
+      deliveryInfo: 'Illustrative only — no orders are accepted',
+      returnPolicy: 'Sample policy — not applicable',
+      enabledModules: DEMO_MODULES,
+      published: false,
+      status: 'demo_sample',
+      planTier: 'website_only',
+      pwaEnabled: false,
+      pwaAppName: '',
+      pwaShortName: '',
+      pwaThemeColor: '#0E131A',
+      pwaLicenseKey: '',
+      aiCreditsLimit: 0,
+      aiCreditsUsed: 0,
+      deliveryFee: 0,
+      deliveryCommissionPct: 0,
+      codEnabled: false,
+      upiId: '',
+      cashfreeOnlineReady: false,
+    },
+    products: [
+      demoProduct(-1021, -102, 'Audio', 'Studio Monitor Pair', 'Reference monitor sample', 42900, '/demo-store-electronics.jpg', '4.9'),
+      demoProduct(-1022, -102, 'Headphones', 'ANC Headphones', 'Noise-cancelling headset sample', 24900, '/demo-store-electronics.jpg', '4.8'),
+      demoProduct(-1023, -102, 'Wearables', 'Creator Smart Watch', 'Connected wearable sample', 15900, '/demo-store-electronics.jpg', '4.6'),
+    ],
+    coupons: [
+      { id: -102, tenantId: -102, code: 'DEMO10', discountType: 'percent', discountValue: 10, minOrder: 0, active: true },
+    ],
+    reviews: [
+      {
+        id: -1002,
+        tenantId: -102,
+        websiteId: 'demo-nocturne-audio-tech',
+        productId: -1021,
+        productName: 'Studio Monitor Pair',
+        customerName: 'Sample reviewer',
+        rating: 5,
+        title: 'Illustrative review',
+        comment: 'Sample feedback text for the demo layout. Not feedback from a real customer.',
+        verifiedPurchase: false,
+        moderationStatus: 'published',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+  },
+  'nizam-heritage-kitchen': {
+    tenant: {
+      id: -103,
+      websiteId: 'demo-nizam-heritage-kitchen',
+      ownerUserId: null,
+      name: 'Nizam Heritage Kitchen',
+      slug: 'nizam-heritage-kitchen',
+      category: 'restaurant',
+      templateId: 'culinary-warm',
+      templateName: 'Culinary Warm',
+      tagline: 'Illustrative heritage kitchen menu · demo only',
+      heroHeadline: 'Heritage Flavors, Clearly Presented',
+      heroSubheadline: 'Sample menu for the website-builder preview. No live store or checkout.',
+      ctaText: 'Explore Sample Menu',
+      description: 'A safe, explicitly labeled sample catalog used only to demonstrate storefront layout and white-label presentation.',
+      logoText: 'NHK',
+      bannerImage: '/demo-store-dining.jpg',
+      primaryColor: '#D99B26',
+      accentColor: '#16110D',
+      fontFamily: 'Cinzel',
+      customDomain: '',
+      seoTitle: 'Nizam Heritage Kitchen — Demo Sample Storefront',
+      seoDescription: 'Illustrative sample storefront. Not a live business or checkout destination.',
+      currency: 'INR',
+      phone: '',
+      whatsapp: '',
+      address: 'Sample catalog · Hyderabad (demo)',
+      businessHours: 'Demo hours only',
+      deliveryInfo: 'Illustrative only — no orders are accepted',
+      returnPolicy: 'Sample policy — not applicable',
+      enabledModules: DEMO_MODULES,
+      published: false,
+      status: 'demo_sample',
+      planTier: 'website_only',
+      pwaEnabled: false,
+      pwaAppName: '',
+      pwaShortName: '',
+      pwaThemeColor: '#16110D',
+      pwaLicenseKey: '',
+      aiCreditsLimit: 0,
+      aiCreditsUsed: 0,
+      deliveryFee: 0,
+      deliveryCommissionPct: 0,
+      codEnabled: false,
+      upiId: '',
+      cashfreeOnlineReady: false,
+    },
+    products: [
+      demoProduct(-1031, -103, 'Signature', 'Dum Biryani Sample', 'Slow-cooked biryani sample', 649, '/demo-store-dining.jpg', '4.9'),
+      demoProduct(-1032, -103, 'Breads', 'Butter Naan Sample', 'Tandoor-baked flatbread sample', 149, '/demo-store-dining.jpg', '4.7'),
+      demoProduct(-1033, -103, 'Desserts', 'Cardamom Sweet Sample', 'Fusion dessert sample', 299, '/demo-store-dining.jpg', '4.8'),
+    ],
+    coupons: [
+      { id: -103, tenantId: -103, code: 'DEMO10', discountType: 'percent', discountValue: 10, minOrder: 0, active: true },
+    ],
+    reviews: [
+      {
+        id: -1003,
+        tenantId: -103,
+        websiteId: 'demo-nizam-heritage-kitchen',
+        productId: -1031,
+        productName: 'Dum Biryani Sample',
+        customerName: 'Sample reviewer',
+        rating: 5,
+        title: 'Illustrative review',
+        comment: 'Sample feedback text for the demo layout. Not feedback from a real customer.',
+        verifiedPurchase: false,
+        moderationStatus: 'published',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+  },
+};
+
+export const DEMO_STORE_SLUGS = new Set(Object.keys(DEMO_STOREFRONTS));
 
 export const isDemoStoreSlug = (slug: string | null | undefined): boolean =>
   Boolean(slug && DEMO_STORE_SLUGS.has(slug));
+
+/** Returns an isolated copy of explicitly labeled demo data, never a real tenant. */
+export function getDemoStorefront(
+  slug: string | null | undefined
+): DemoStorefrontData | null {
+  if (!slug) return null;
+  const entry = DEMO_STOREFRONTS[slug];
+  if (!entry) return null;
+  return JSON.parse(JSON.stringify(entry)) as DemoStorefrontData;
+}

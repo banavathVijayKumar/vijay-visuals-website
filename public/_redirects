@@ -9,10 +9,12 @@
 /marketplace                  /index.html  200
 /marketplace/*                /index.html  200
 /demo                         /index.html  200
+/demo/                        /index.html  200
 /demo/*                       /index.html  200
 /ai                           /index.html  200
 /ai/*                         /index.html  200
 /dashboards                   /index.html  200
+/dashboards/                  /index.html  200
 /dashboards/*                 /index.html  200
 /admin                        /index.html  200
 /admin/*                      /index.html  200

@@ -52,6 +52,25 @@ interface TenantHeadMetadata {
 const BYPASS_PREFIXES = ['/api/', '/assets/', '/favicon', '/manifest', '/sw.js', '/workbox-'];
 const BYPASS_EXACT = new Set(['/robots.txt', '/sitemap.xml']);
 
+/**
+ * Cloudflare Pages does not apply _redirects to requests served by Functions.
+ * These two exact no-slash SPA entry paths are intercepted by this middleware,
+ * so they need an explicit shell response. Trailing-slash variants and all
+ * other routes keep their existing behavior.
+ */
+const SPA_SHELL_EXACT_ROUTES = new Set(['/demo', '/dashboards']);
+
+export function shouldServeSpaShellDirectly(
+  rawPathname: string,
+  method = 'GET'
+): boolean {
+  const pathname = String(rawPathname || '').split(/[?#]/)[0] || '/';
+  return (
+    (method === 'GET' || method === 'HEAD') &&
+    SPA_SHELL_EXACT_ROUTES.has(pathname)
+  );
+}
+
 function parseJsonObject(raw: unknown): Record<string, unknown> {
   if (typeof raw === 'string') {
     try {
@@ -217,12 +236,29 @@ export function replacePlatformHeadMetadata(
   return replaceHeadMetadata(html, tenantTitle, tenantHeadInjection, true);
 }
 
+async function fetchPlatformShell(context: PagesContext, url: URL): Promise<Response> {
+  const shellUrl = new URL('/', url);
+  const assets = (context.env as { ASSETS?: { fetch: (request: Request) => Promise<Response> } }).ASSETS;
+  if (assets && typeof assets.fetch === 'function') {
+    return assets.fetch(
+      new Request(shellUrl.toString(), {
+        method: context.request.method,
+        headers: context.request.headers,
+      })
+    );
+  }
+  return context.next('/');
+}
+
 async function platformHtmlResponse(
   context: PagesContext,
   url: URL,
-  pathname: string
+  pathname: string,
+  useShellAsset = false
 ): Promise<Response | null> {
-  const response = await context.next();
+  const response = useShellAsset
+    ? await fetchPlatformShell(context, url)
+    : await context.next();
   if (!(response.headers.get('Content-Type') || '').toLowerCase().includes('text/html')) {
     return response;
   }
@@ -392,6 +428,13 @@ export async function onRequest(context: PagesContext): Promise<Response> {
   const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
   const storefrontSlug = getStorefrontSlug(pathname);
   const isPlatformHost = isPlatformHostname(hostname, env);
+
+  // No-slash SPA entries are already inside a Pages Function, where _redirects
+  // is not applied. Serve the canonical platform shell directly with the same
+  // metadata/security treatment as the trailing-slash variants.
+  if (isPlatformHost && shouldServeSpaShellDirectly(url.pathname, request.method)) {
+    return (await platformHtmlResponse(context, url, pathname, true)) ?? next();
+  }
 
   // API endpoints, static assets and SEO files always bypass HTML rewriting.
   if (

@@ -37,6 +37,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
+import { getTenantFontStack } from '../lib/fontStacks';
 import { initiateCashfreeStorefrontCheckout } from '../lib/cashfreeClient';
 import { requestSingleGpsPosition, reverseGeocodeViaProxy } from '../lib/mapsClient';
 import { applyStorefrontMetadata } from '../lib/storefrontMetadata';
@@ -54,7 +55,7 @@ import {
   TenantModules,
   TenantRecord,
 } from '../types/platform';
-import { isDemoStoreSlug } from '../data/demo';
+import { getDemoStorefront } from '../data/demo';
 import { PWAInstallButton } from './PWAControls';
 import { StorefrontMapPreview } from './StorefrontMapPreview';
 import { StorefrontReviews } from './StorefrontReviews';
@@ -148,6 +149,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
   const [pwaLicenseValid, setPwaLicenseValid] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [demoSample, setDemoSample] = useState(false);
 
   // Filters & Modes
   const [search, setSearch] = useState('');
@@ -254,13 +256,29 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     let active = true;
     setLoading(true);
     setError(null);
+    setDemoSample(false);
+
+    // Explicitly labeled, frontend-only sample data for the preview storefronts
+    // advertised on the homepage. It is never written to a database and never
+    // overrides a real published tenant with the same slug.
+    const sampleStorefront = getDemoStorefront(slug);
+    let usingDemoFallback = false;
+
+    const tenantRequest = apiFetch<{
+      tenant: TenantRecord;
+      products: ProductRecord[];
+      coupons: CouponRecord[];
+      reviews: ReviewRecord[];
+    }>(`/api/tenants/${encodeURIComponent(slug)}`).catch((err) => {
+      if (sampleStorefront) {
+        usingDemoFallback = true;
+        return sampleStorefront;
+      }
+      throw err;
+    });
+
     Promise.all([
-      apiFetch<{
-        tenant: TenantRecord;
-        products: ProductRecord[];
-        coupons: CouponRecord[];
-        reviews: ReviewRecord[];
-      }>(`/api/tenants/${encodeURIComponent(slug)}`),
+      tenantRequest,
       apiFetch<{ valid: boolean }>(`/api/tenants/${encodeURIComponent(slug)}/pwa-license`).catch(() => ({
         valid: false,
       })),
@@ -273,24 +291,33 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
         if (!storeData || !storeData.tenant || typeof storeData.tenant.name !== 'string') {
           throw new Error('This storefront is not published or its data could not be loaded.');
         }
+        setDemoSample(usingDemoFallback);
         setTenant(storeData.tenant);
         const liveProducts = Array.isArray(storeData.products) ? storeData.products : [];
         setProducts(liveProducts);
         setCoupons(Array.isArray(storeData.coupons) ? storeData.coupons : []);
         setReviews(Array.isArray(storeData.reviews) ? storeData.reviews : []);
-        setPwaLicenseValid(Boolean(pwaData?.valid));
-        setSeoConfig(seoData?.seo || null);
 
-        // Select first genuinely configured payment method
-        if (storeData.tenant.codEnabled) {
+        if (usingDemoFallback) {
+          // Never grant a demo catalog live PWA, SEO, checkout or write powers.
+          setPwaLicenseValid(false);
+          setSeoConfig(null);
           setPaymentMethod('cod');
-        } else if (storeData.tenant.upiId) {
-          setPaymentMethod('upi_reference');
-        } else if (storeData.tenant.cashfreeOnlineReady) {
-          setPaymentMethod('cashfree_online');
+        } else {
+          setPwaLicenseValid(Boolean(pwaData?.valid));
+          setSeoConfig(seoData?.seo || null);
+
+          // Select first genuinely configured payment method
+          if (storeData.tenant.codEnabled) {
+            setPaymentMethod('cod');
+          } else if (storeData.tenant.upiId) {
+            setPaymentMethod('upi_reference');
+          } else if (storeData.tenant.cashfreeOnlineReady) {
+            setPaymentMethod('cashfree_online');
+          }
         }
 
-        // Hydrate saved cart from localStorage against live server product prices & stock
+        // Hydrate saved cart from localStorage against the loaded catalog
         try {
           const savedRaw = window.localStorage.getItem(`vv_cart_${slug}`);
           const savedItems: Array<{ productId: number; quantity: number; variant: string }> = savedRaw
@@ -315,15 +342,16 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
         setChatMessages([
           {
             role: 'assistant',
-            text:
-              lang === 'te'
+            text: usingDemoFallback
+              ? `Demo sample catalog for ${storeData.tenant.name}. Ordering and account writes are disabled in this preview.`
+              : lang === 'te'
                 ? `నమస్కారం! ${storeData.tenant.name} AI సహాయకుడిని. ఉత్పత్తులు, ధరలు లేదా ఆర్డర్ల గురించి అడగండి.`
                 : `Welcome to ${storeData.tenant.name}. Ask me about services, products, pricing, or enquiry details.`,
           },
         ]);
 
         // Dynamically point manifest link to this tenant's licensed manifest when active
-        if (pwaData.valid) {
+        if (!usingDemoFallback && pwaData.valid) {
           let link = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
           if (!link) {
             link = document.createElement('link');
@@ -491,6 +519,14 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     return p.price;
   };
 
+  // Sample catalogs are presentation-only. Every remote write path is blocked
+  // before it can reach an API, database, payment provider or messaging service.
+  const blockDemoWrite = (): boolean => {
+    if (!demoSample) return false;
+    onNotify('This is a sample storefront. Ordering and form submissions are disabled in the preview.');
+    return true;
+  };
+
   const addToCart = (product: ProductRecord, variant = '') => {
     const qtyToAdd = wholesaleMode ? (product.minWholesaleQty || 1) : 1;
     let defaultVariant = variant;
@@ -573,6 +609,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockDemoWrite()) return;
     if (!tenant || cart.length === 0) return;
 
     const hasConfiguredMethod =
@@ -709,6 +746,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockDemoWrite()) return;
     if (!selectedProduct || !reviewName.trim() || !reviewComment.trim()) return;
     try {
       const res = await apiFetch<{ review: ReviewRecord; averageRating: string; reviewCount: number }>(
@@ -743,6 +781,16 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     const text = chatInput.trim();
     setChatMessages((prev) => [...prev, { role: 'user', text }]);
     setChatInput('');
+    if (demoSample) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          text: 'This is a sample storefront preview. Live AI support is disabled; no message was sent.',
+        },
+      ]);
+      return;
+    }
     setChatBusy(true);
     try {
       const res = await apiFetch<{ reply: string }>('/api/ai/support-chat', {
@@ -980,14 +1028,14 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                 )}
               </div>
             </div>
-            {isDemoStoreSlug(tenant.slug) && (
+            {demoSample && (
               <span className="mb-3 inline-flex w-fit items-center rounded-full border border-[#D4AF37]/50 bg-[#D4AF37]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#ECC86A]">
-                Demo · sample storefront
+                Demo · sample storefront · no checkout or form submissions
               </span>
             )}
             <h1
               className="text-3xl md:text-4xl font-bold text-white mb-2 text-balance"
-              style={{ fontFamily: tenant.fontFamily === 'Cinzel' ? 'Cinzel, serif' : 'Plus Jakarta Sans, sans-serif' }}
+              style={{ fontFamily: getTenantFontStack(tenant.fontFamily) }}
             >
               {tenant.heroHeadline && tenant.heroHeadline !== tenant.name
                 ? tenant.heroHeadline
@@ -1469,7 +1517,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           initialReviews={reviews}
           googleReviewUrl={tenant.googleReviewUrl}
           googlePlaceId={tenant.googlePlaceId}
-          isDemoStore={isDemoStoreSlug(tenant.slug)}
+          isDemoStore={demoSample}
           onNotify={onNotify}
         />
       )}
@@ -1605,6 +1653,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           <form
             onSubmit={async (e) => {
               e.preventDefault();
+              if (blockDemoWrite()) return;
               if (!newsConsent) {
                 onNotify('Please check the explicit consent box before subscribing.');
                 return;
@@ -1686,6 +1735,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (blockDemoWrite()) return;
                 const phoneCheck = validateIndiaWhatsAppNumber(quotePhone.trim());
                 if (!phoneCheck.ok) {
                   onNotify(phoneCheck.error || 'Enter a valid Indian WhatsApp number.');
@@ -2679,6 +2729,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (blockDemoWrite()) return;
                 setBookingBusy(true);
                 try {
                   await apiFetch(`/api/tenants/${tenant.slug}/appointments`, {

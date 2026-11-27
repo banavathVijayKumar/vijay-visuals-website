@@ -72,6 +72,13 @@ export function StorefrontReviews({
   const [reportReason, setReportReason] = useState('');
   const [reporting, setReporting] = useState(false);
 
+  // Demo reviews are seeded illustrations; never write them back to any API.
+  const blockDemoReviewWrite = (): boolean => {
+    if (!isDemoStore) return false;
+    onNotify('Sample reviews are read-only in this preview.');
+    return true;
+  };
+
   // Calculated aggregates
   const totalReviews = reviews.length;
   const averageRating = useMemo(() => {
@@ -139,6 +146,7 @@ export function StorefrontReviews({
 
   // Open Write Modal
   const openWriteModal = (preselectedProductId?: number) => {
+    if (blockDemoReviewWrite()) return;
     if (!profile) {
       onNotify('Please sign in to share a verified customer review.');
       openAuthModal('signin');
@@ -157,6 +165,7 @@ export function StorefrontReviews({
 
   // Open Edit Modal
   const openEditModal = (review: ReviewRecord) => {
+    if (blockDemoReviewWrite()) return;
     setActiveReviewForAction(review);
     setFormRating(review.rating);
     setFormHoverRating(0);
@@ -170,6 +179,7 @@ export function StorefrontReviews({
   // Submit Review
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockDemoReviewWrite()) return;
     if (!profile) {
       openAuthModal('signin');
       return;
@@ -217,6 +227,7 @@ export function StorefrontReviews({
   // Save Edited Review
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockDemoReviewWrite()) return;
     if (!activeReviewForAction) return;
     if (formComment.trim().length < 5) {
       onNotify('Please write a review comment of at least 5 characters.');
@@ -262,6 +273,7 @@ export function StorefrontReviews({
 
   // Delete Review
   const handleDeleteReview = async (reviewId: number) => {
+    if (blockDemoReviewWrite()) return;
     if (!window.confirm('Are you sure you want to delete your review? This action cannot be undone.')) {
       return;
     }
@@ -283,6 +295,7 @@ export function StorefrontReviews({
   // Submit Report
   const handleSubmitReport = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blockDemoReviewWrite()) return;
     if (!activeReviewForAction || reportReason.trim().length < 5) {
       onNotify('Please provide a reason of at least 5 characters.');
       return;
@@ -335,10 +348,15 @@ export function StorefrontReviews({
         <button
           type="button"
           onClick={() => openWriteModal()}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#D4AF37] text-[#08080A] text-xs font-bold hover:bg-[#E5BF45] transition-all shadow-lg shadow-[#D4AF37]/10"
+          disabled={isDemoStore}
+          className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold transition-all shadow-lg ${
+            isDemoStore
+              ? 'cursor-not-allowed border border-[#3A3A4E] bg-[#16161F] text-[#8E8EA2]'
+              : 'bg-[#D4AF37] text-[#08080A] hover:bg-[#E5BF45] shadow-[#D4AF37]/10'
+          }`}
         >
           <Plus className="w-4 h-4" />
-          Write a Review
+          {isDemoStore ? 'Reviews Read-Only (Demo)' : 'Write a Review'}
         </button>
       </div>
 

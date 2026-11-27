@@ -20,7 +20,8 @@
     "test:cashfree-webhook-freshness": "tsx scripts/test-cashfree-webhook-freshness.ts",
     "test:cashfree-security": "node scripts/test-cashfree-security.cjs",
     "test:cashfree-architecture": "tsx scripts/test-cashfree-only-architecture.ts",
-    "test:sandbox-payment": "tsx scripts/test-sandbox-payment-flow.ts"
+    "test:sandbox-payment": "tsx scripts/test-sandbox-payment-flow.ts",
+    "test:preview-targeted-fixes": "tsx scripts/test-preview-targeted-fixes.ts"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",

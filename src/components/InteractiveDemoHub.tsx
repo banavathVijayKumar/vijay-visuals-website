@@ -330,6 +330,12 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
           </div>
         </div>
 
+        <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-950/20 p-4 text-xs text-[#D6C7A0] leading-relaxed">
+          <strong className="text-amber-300">Simulation only.</strong> The storefront, catalog, merchant figures,
+          orders, domain name, SSL state, and deployment/publishing actions below are illustrative. No domain,
+          certificate, publication, payment, refund, or email is created or configured by this demo.
+        </div>
+
         {/* ------------------------------------------------------------------ */}
         {/* SIMULATED DEMO STOREFRONT CONTAINER                                */}
         {/* ------------------------------------------------------------------ */}
@@ -348,15 +354,15 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
                 <span className="w-2.5 h-2.5 rounded-full bg-[#D69E2E]" />
                 <span className="w-2.5 h-2.5 rounded-full bg-[#38A169]" />
                 <span className="ml-2 font-mono text-[11px] text-[#A5A5B8]">
-                  https://royal-kitchen.vijayvisuals.in
+                  simulated://demo-storefront (no domain configured)
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-400 border border-amber-500/30">
                   SIMULATED DEMO ENVIRONMENT
                 </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-500/30">
-                  SSL Active
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-900 text-slate-300 border border-slate-600/50">
+                  NO DOMAIN · NO SSL · NOT DEPLOYED
                 </span>
               </div>
             </div>
@@ -510,7 +516,7 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>Order Confirmed &amp; Tracking Active</span>
+                      <span>Simulated Order Confirmation (No Real Order)</span>
                     </div>
                     <span className="font-mono text-xs text-white">{placedOrder.orderId}</span>
                   </div>
@@ -548,32 +554,32 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
                     This is the back-office dashboard you receive to manage products, orders, and delivery riders.
                   </p>
                 </div>
-                <span className="px-2.5 py-1 rounded bg-[#D4AF37]/15 text-[#D4AF37] border border-[#D4AF37]/30 text-[10px] font-bold">
-                  Live Sync
+                <span className="px-2.5 py-1 rounded bg-amber-950/40 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                  SAMPLE DATA · NO LIVE SYNC
                 </span>
               </div>
 
               {/* KPI Summary Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="rounded-lg border border-[#20202E] bg-[#111118] p-3 text-center">
-                  <span className="text-[10px] text-[#868698] block">Today's Revenue</span>
+                  <span className="text-[10px] text-[#868698] block">Sample Revenue (Illustrative)</span>
                   <span className="text-base font-bold text-white mt-0.5 block">
                     ₹{placedOrder ? (12480 + placedOrder.amount).toLocaleString('en-IN') : '12,480'}
                   </span>
                 </div>
                 <div className="rounded-lg border border-[#20202E] bg-[#111118] p-3 text-center">
-                  <span className="text-[10px] text-[#868698] block">Active Orders</span>
+                  <span className="text-[10px] text-[#868698] block">Sample Active Orders</span>
                   <span className="text-base font-bold text-[#D4AF37] mt-0.5 block">
                     {placedOrder ? 4 : 3} Orders
                   </span>
                 </div>
                 <div className="rounded-lg border border-[#20202E] bg-[#111118] p-3 text-center">
-                  <span className="text-[10px] text-[#868698] block">Delivered Today</span>
+                  <span className="text-[10px] text-[#868698] block">Sample Deliveries</span>
                   <span className="text-base font-bold text-emerald-400 mt-0.5 block">28 Completed</span>
                 </div>
                 <div className="rounded-lg border border-[#20202E] bg-[#111118] p-3 text-center">
                   <span className="text-[10px] text-[#868698] block">Catalog Status</span>
-                  <span className="text-base font-bold text-white mt-0.5 block">6 Live Items</span>
+                  <span className="text-base font-bold text-white mt-0.5 block">6 Sample Items</span>
                 </div>
               </div>
 
@@ -581,7 +587,7 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
               <div className="rounded-xl border border-[#222232] bg-[#0E0E15] overflow-hidden">
                 <div className="px-4 py-2.5 border-b border-[#1E1E2C] flex items-center justify-between text-xs font-semibold text-white">
                   <span>Incoming Store Orders</span>
-                  <span className="text-[10px] text-[#7A7A8E]">Real-time Dispatch</span>
+                  <span className="text-[10px] text-[#7A7A8E]">Simulated Dispatch · No Delivery Created</span>
                 </div>
                 <div className="divide-y divide-[#181824] text-xs">
                   {placedOrder && (
@@ -644,28 +650,28 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
             <h2>Transparent Domain &amp; Customer Website Delivery Architecture</h2>
           </div>
           <p className="text-xs text-[#9E9EB2] max-w-3xl leading-relaxed">
-            Vijay Visuals believes in 100% transparency. We never invent fake domain availability or promise features that require manual configuration. Here is exactly how customer websites are routed and delivered:
+            Vijay Visuals believes in 100% transparency. We never invent fake domain availability or promise features that require manual configuration. This demo shows the intended delivery flow; nothing on this page provisions a domain, certificate, publication, or deployment:
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
             <div className="rounded-xl border border-[#242436] bg-[#111118] p-4 space-y-2">
               <span className="text-[10px] font-bold text-[#D4AF37] uppercase tracking-wider block">
-                1. Immediate Default Delivery
+                1. Platform Preview Path
               </span>
-              <p className="text-xs font-semibold text-white">Temporary Platform Path URL</p>
+              <p className="text-xs font-semibold text-white">Preview URL (Not a Published Domain)</p>
               <code className="text-[11px] font-mono text-[#ECC86A] bg-black/40 px-2 py-1 rounded block truncate">
-                /site/&lt;your-slug&gt; (platform preview)
+                /site/&lt;your-slug&gt; (platform preview only)
               </code>
               <p className="text-[11px] text-[#7E7E92]">
-                Active immediately upon clicking Publish. No DNS waiting or registrar setup required.
+                This demo publishes nothing. A real delivery URL requires an entitled account, a published website record, and verified DNS/TLS.
               </p>
             </div>
 
             <div className="rounded-xl border border-[#242436] bg-[#111118] p-4 space-y-2">
               <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider block">
-                2. Free Platform Subdomain
+                2. Customer-Owned Domain
               </span>
-              <p className="text-xs font-semibold text-white">Custom Domain (Customer-Owned)</p>
+              <p className="text-xs font-semibold text-white">Custom Domain (Not Bundled)</p>
               <code className="text-[11px] font-mono text-blue-300 bg-black/40 px-2 py-1 rounded block truncate">
                 https://&lt;your-owned-domain&gt;
               </code>
@@ -676,14 +682,14 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
 
             <div className="rounded-xl border border-[#242436] bg-[#111118] p-4 space-y-2">
               <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">
-                3. Your Own Custom Domain
+                3. Verified Custom Domain
               </span>
               <p className="text-xs font-semibold text-white">Independent Brand Domain</p>
               <code className="text-[11px] font-mono text-emerald-300 bg-black/40 px-2 py-1 rounded block truncate">
                 https://www.yourbrand.com
               </code>
               <p className="text-[11px] text-[#7E7E92]">
-                You own 100% of your domain. Point a CNAME record to Cloudflare Pages for free automatic SSL &amp; global CDN.
+                You own 100% of your domain. After you configure DNS and certificate issuance succeeds, a verified delivery URL is shown. This demo does not perform either step.
               </p>
             </div>
           </div>
