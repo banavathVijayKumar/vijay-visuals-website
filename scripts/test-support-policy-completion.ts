@@ -74,12 +74,17 @@ await test('standalone policy routes and rewrites remain intact', () => {
   const app = read('src/App.tsx');
   const redirects = read('public/_redirects');
   const seoRules = read('shared/seo.ts');
+  const middleware = read('functions/_middleware.ts');
   for (const route of ['/privacy', '/terms', '/refund', '/shipping', '/cancellation']) {
     assert.ok(app.includes(`'${route}'`), `App must map ${route}`);
     assert.match(redirects, new RegExp(`^${route.replace('/', '\\/')}\\s+\\/index\\.html\\s+200$`, 'm'));
     assert.ok(
       seoRules.includes(`'${route}'`),
       `Middleware platform-route allowlist must include ${route} or Pages returns 404`
+    );
+    assert.ok(
+      middleware.includes(`'${route}'`),
+      `Middleware must serve the SPA shell directly for ${route} or Pages returns 308`
     );
   }
 });

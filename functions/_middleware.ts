@@ -67,6 +67,11 @@ const SPA_SHELL_EXACT_ROUTES = new Set([
   '/ai',
   '/admin',
   '/payments/cashfree/return',
+  '/privacy',
+  '/terms',
+  '/refund',
+  '/shipping',
+  '/cancellation',
 ]);
 
 export function shouldServeSpaShellDirectly(
