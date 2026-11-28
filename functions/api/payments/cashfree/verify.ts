@@ -21,7 +21,7 @@ import {
   customerApprovalBlockedResponse,
   provisionLifetimeEntitlement,
 } from '../../_tenantAccess';
-import { ALLOWED_WEBSITE_PACKAGE_CODES } from '../platform/create-order';
+import { isAuthorizedWebsitePackageCode } from '../../_planTiers';
 import {
   fetchEdgeCashfreeOrder,
   fetchEdgeCashfreeOrderPayments,
@@ -604,7 +604,7 @@ async function handleVerification(context: PagesContext): Promise<Response> {
       }
     }
 
-    const isWebsitePackage = ALLOWED_WEBSITE_PACKAGE_CODES.has(existing.reference_id);
+    const isWebsitePackage = isAuthorizedWebsitePackageCode(existing.reference_id);
 
     if (targetWebsiteId && existing.reference_id) {
       const linkedPayment = await env.DB.prepare(

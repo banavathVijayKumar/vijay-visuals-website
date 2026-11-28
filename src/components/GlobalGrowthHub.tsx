@@ -20,6 +20,8 @@ import { AppView } from '../types/platform';
 interface GlobalGrowthHubProps {
   lang: Lang;
   onNavigate: (view: AppView) => void;
+  /** Explicit legacy-theme handoff; unknown theme IDs fail visibly in App. */
+  onUseTheme?: (themeId: string) => void;
   onNotify: (msg: string) => void;
 }
 
@@ -127,7 +129,7 @@ const POLICY_DOCS: Record<PolicyDocKey, { title: string; points: string[] }> = {
   },
 };
 
-export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNavigate, onNotify }) => {
+export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNavigate, onUseTheme, onNotify }) => {
   const { profile, signInWithGoogle } = useAuth();
   const [activeTab, setActiveTab] = useState<'templates' | 'seo_audit' | 'blog' | 'referral'>('templates');
   const [policyOpen, setPolicyOpen] = useState<PolicyDocKey | null>(null);
@@ -416,7 +418,10 @@ export const GlobalGrowthHub: React.FC<GlobalGrowthHubProps> = ({ lang, onNaviga
                     </div>
                     <button
                       type="button"
-                      onClick={() => onNavigate('builder')}
+                      onClick={() => {
+                        if (onUseTheme) onUseTheme(tpl.id);
+                        else onNavigate('builder');
+                      }}
                       className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 py-2 rounded-md border border-[#D4AF37]/45 text-[#ECC86A] hover:bg-[#D4AF37] hover:text-[#08080A] text-xs font-semibold transition-colors"
                     >
                       <span>Use Theme in Builder</span>

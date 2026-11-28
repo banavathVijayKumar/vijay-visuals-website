@@ -38,13 +38,19 @@ import { useAuth } from '../hooks/useAuth';
 import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
 import {
   AiSetupDraft,
+  CouponRecord,
   CustomPage,
   CustomPageBlock,
   GalleryItem,
+  ProductRecord,
+  ReviewRecord,
+  ServiceRecord,
   TenantLogoConfig,
   TenantModules,
   TenantRecord,
 } from '../types/platform';
+import type { TemplateBuilderSeed } from '../lib/templateTransfer';
+import { StorefrontView } from './StorefrontView';
 
 import fashionBanner from '../assets/images/store_fashion_royal_1795055802960.jpg';
 import electronicsBanner from '../assets/images/store_electronics_audio_1795055804216.jpg';
@@ -54,6 +60,8 @@ import studioBanner from '../assets/images/hero_vijay_studio_1795055804014.jpg';
 
 interface WebsiteBuilderProps {
   initialTenantId?: number | null;
+  templateSeed?: TemplateBuilderSeed | null;
+  onTemplateSeedApplied?: () => void;
   onPublished: (tenant: TenantRecord) => void;
   onOpenStorefront: (slug: string) => void;
   onNotify: (msg: string) => void;
@@ -252,13 +260,17 @@ function defaultModulesForCategory(cat: string): TenantModules {
 
 export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   initialTenantId,
+  templateSeed,
+  onTemplateSeedApplied,
   onPublished,
   onOpenStorefront,
   onNotify,
 }) => {
   const { profile, ownedTenants, openAuthModal, signInWithGoogle, refreshProfile } = useAuth();
-  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop');
+  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const [editingTenantId, setEditingTenantId] = useState<number | null>(null);
+  const [templateSeedSource, setTemplateSeedSource] = useState<string | null>(null);
+  const [formDirty, setFormDirty] = useState(false);
 
   useEffect(() => {
     if (initialTenantId && ownedTenants.length > 0) {
@@ -286,6 +298,9 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   ]);
   const [templateSearch, setTemplateSearch] = useState('');
   const [tagline, setTagline] = useState('Pure Kanchipuram Handlooms & Festive Bridal Wear');
+  const [heroHeadline, setHeroHeadline] = useState('');
+  const [heroSubheadline, setHeroSubheadline] = useState('');
+  const [ctaText, setCtaText] = useState('Explore Collection');
   const [description, setDescription] = useState(
     'Direct from master weavers in Telangana & Tamil Nadu with nationwide doorstep delivery and custom tailoring.'
   );
@@ -320,6 +335,15 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
   const [galleryUploadCategory, setGalleryUploadCategory] = useState('Showcase');
   const [galleryUploading, setGalleryUploading] = useState(false);
+
+  // Local product/service catalogue editor. Preview-only: no API writes are
+  // issued from these controls in this Preview implementation.
+  const [builderProducts, setBuilderProducts] = useState<ProductRecord[]>([]);
+  const [builderServices, setBuilderServices] = useState<ServiceRecord[]>([]);
+  const [builderCoupons, setBuilderCoupons] = useState<CouponRecord[]>([]);
+  const [builderReviews, setBuilderReviews] = useState<ReviewRecord[]>([]);
+  const [catalogTab, setCatalogTab] = useState<'products' | 'services'>('products');
+  const [catalogDirty, setCatalogDirty] = useState(false);
 
   // Plan, PWA & Checkout config
   const [planTier, setPlanTier] = useState<BuilderPlanTier>('website_only');
@@ -439,6 +463,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
         }),
       });
       await loadTenantEditorMeta(editingTenantId);
+      setFormDirty(false);
       onNotify('Saved section order & custom navigation pages to Cloudflare D1.');
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Unable to save layout settings.');
@@ -647,7 +672,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     onNotify('Owner approved! AI blueprint applied to your website editor.');
   };
 
-  const loadExistingTenant = (t: TenantRecord) => {
+  const loadExistingTenant = (t: TenantRecord, silent = false) => {
     setEditingTenantId(t.id);
     setName(t.name);
     setSlug(t.slug);
@@ -658,6 +683,9 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     setTemplateName(t.templateName || '');
     setTemplateFeatures(Array.isArray(t.templateFeatures) ? t.templateFeatures : []);
     setTagline(t.tagline || '');
+    setHeroHeadline(t.heroHeadline || '');
+    setHeroSubheadline(t.heroSubheadline || '');
+    setCtaText(t.ctaText || 'Explore Collection');
     setDescription(t.description || '');
     setLogoText(t.logoText || 'VV');
     setLogoImage(t.logoImage || '');
@@ -712,8 +740,34 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     setSitePublished(t.published !== false);
     if (Array.isArray(t.sectionOrder) && t.sectionOrder.length > 0) setSectionOrder(t.sectionOrder);
     if (Array.isArray(t.customPages) && t.customPages.length > 0) setCustomPages(t.customPages);
-    onNotify(`Loaded "${t.name}" into Website Builder.`);
+    setFormDirty(false);
+    if (!silent) onNotify(`Loaded "${t.name}" into Website Builder.`);
   };
+
+  const applyTemplateSeed = (seed: TemplateBuilderSeed) => {
+    loadExistingTenant(seed.tenant, true);
+    setTemplateSeedSource(seed.sourceLabel);
+    setEditingTenantId(null);
+    setSitePublished(false);
+    setSlugManuallyEdited(true);
+    setBuilderProducts(seed.products.map((product) => ({ ...product })));
+    setBuilderServices(seed.services.map((service) => ({ ...service })));
+    setBuilderCoupons(seed.coupons.map((coupon) => ({ ...coupon })));
+    setBuilderReviews(seed.reviews.map((review) => ({ ...review })));
+    setCatalogDirty(false);
+    setFormDirty(true);
+    setFormError(null);
+    onNotify(
+      `Loaded exact ${seed.templateName} design into an independent local copy. ${seed.transferNotes[0] || ''}`
+    );
+    onTemplateSeedApplied?.();
+  };
+
+  useEffect(() => {
+    if (templateSeed) applyTemplateSeed(templateSeed);
+    // Handoff is consumed once by App; applying again requires a new request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateSeed]);
 
   const applyIndustryTemplate = (tpl: BusinessTemplate) => {
     setTemplateId(tpl.id);
@@ -728,6 +782,95 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
       setDescription(tpl.description);
     }
     onNotify(`Applied "${tpl.category}" template (${tpl.name}).`);
+  };
+
+  const updateProduct = (id: number, patch: Partial<ProductRecord>) => {
+    setBuilderProducts((prev) => prev.map((product) => (product.id === id ? { ...product, ...patch } : product)));
+    setCatalogDirty(true);
+  };
+
+  const addProduct = () => {
+    const localId = -(Date.now() % 100000000);
+    setBuilderProducts((prev) => [
+      ...prev,
+      {
+        id: localId,
+        tenantId: editingTenantId ?? -1,
+        category: category || 'General',
+        subcategory: 'New',
+        name: 'New product',
+        description: 'Describe this product clearly.',
+        price: 0,
+        compareAtPrice: 0,
+        wholesalePrice: 0,
+        minWholesaleQty: 1,
+        stock: 10,
+        lowStockThreshold: 2,
+        imageUrl: '',
+        images: [],
+        videoUrl: '',
+        variantsJson: '[]',
+        specs: '',
+        sku: '',
+        barcode: '',
+        featured: false,
+        bestseller: false,
+        rating: '5.0',
+        reviewCount: 0,
+        active: true,
+      },
+    ]);
+    setCatalogDirty(true);
+  };
+
+  const removeProduct = (id: number) => {
+    setBuilderProducts((prev) => prev.filter((product) => product.id !== id));
+    setCatalogDirty(true);
+  };
+
+  const updateService = (id: number, patch: Partial<ServiceRecord>) => {
+    setBuilderServices((prev) => prev.map((service) => (service.id === id ? { ...service, ...patch } : service)));
+    setCatalogDirty(true);
+  };
+
+  const addService = () => {
+    const localId = -(Date.now() % 100000000);
+    setBuilderServices((prev) => [
+      ...prev,
+      {
+        id: localId,
+        tenantId: editingTenantId ?? -1,
+        name: 'New service',
+        description: 'Describe this service clearly.',
+        category: 'General',
+        price: 0,
+        compareAtPrice: 0,
+        durationMinutes: 0,
+        sortOrder: prev.length,
+        imageUrl: '',
+        active: true,
+      },
+    ]);
+    setCatalogDirty(true);
+  };
+
+  const removeService = (id: number) => {
+    setBuilderServices((prev) => prev.filter((service) => service.id !== id));
+    setCatalogDirty(true);
+  };
+
+  const uploadCatalogImage = async (
+    file: File | undefined,
+    apply: (dataUrl: string) => void
+  ) => {
+    if (!file) return;
+    try {
+      const dataUrl = await optimizeImageFileToDataUrl(file, 800);
+      apply(dataUrl);
+      setCatalogDirty(true);
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Invalid catalog image.');
+    }
   };
 
   const handleUploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -797,6 +940,122 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   const suggestedSlugFromName = useMemo(() => generateSlugFromName(name), [name]);
   const slugValidation = useMemo(() => validateSlug(slug), [slug]);
   const sanitizedSlug = slugValidation.valid ? slugValidation.normalized : slugValidation.normalized || suggestedSlugFromName;
+
+  const previewTenant = useMemo<TenantRecord>(
+    () => ({
+      id: editingTenantId ?? -1,
+      websiteId: `builder-preview-${editingTenantId || 'local'}`,
+      ownerUserId: profile?.id ?? null,
+      name,
+      slug: sanitizedSlug || 'your-store',
+      category,
+      templateId,
+      templateName,
+      templateFeatures,
+      tagline,
+      heroHeadline,
+      heroSubheadline,
+      ctaText,
+      description,
+      logoText,
+      logoImage,
+      logoConfig,
+      bannerImage,
+      galleryItems,
+      galleryImages: galleryItems.map((item) => item.url),
+      primaryColor,
+      accentColor,
+      fontFamily,
+      customDomain,
+      seoTitle,
+      seoDescription,
+      currency,
+      language,
+      phone,
+      whatsapp,
+      address,
+      businessHours,
+      deliveryInfo,
+      returnPolicy,
+      socialLinks,
+      enabledModules,
+      sectionOrder,
+      customPages,
+      published: false,
+      status: sitePublished && editingTenantId ? 'active' : 'unpublished',
+      planTier,
+      pwaEnabled,
+      pwaAppName,
+      pwaShortName,
+      pwaThemeColor,
+      pwaLicenseKey: '',
+      aiCreditsLimit: 0,
+      aiCreditsUsed: 0,
+      deliveryFee: Number(deliveryFee) || 0,
+      deliveryCommissionPct: 0,
+      codEnabled,
+      upiId,
+      cashfreeOnlineReady: false,
+    }),
+    [
+      editingTenantId,
+      profile?.id,
+      name,
+      sanitizedSlug,
+      category,
+      templateId,
+      templateName,
+      templateFeatures,
+      tagline,
+      heroHeadline,
+      heroSubheadline,
+      ctaText,
+      description,
+      logoText,
+      logoImage,
+      logoConfig,
+      bannerImage,
+      galleryItems,
+      primaryColor,
+      accentColor,
+      fontFamily,
+      customDomain,
+      seoTitle,
+      seoDescription,
+      currency,
+      language,
+      phone,
+      whatsapp,
+      address,
+      businessHours,
+      deliveryInfo,
+      returnPolicy,
+      socialLinks,
+      enabledModules,
+      sectionOrder,
+      customPages,
+      sitePublished,
+      planTier,
+      pwaEnabled,
+      pwaAppName,
+      pwaShortName,
+      pwaThemeColor,
+      deliveryFee,
+      codEnabled,
+      upiId,
+    ]
+  );
+
+  const previewData = useMemo(
+    () => ({
+      tenant: previewTenant,
+      products: builderProducts,
+      services: builderServices,
+      coupons: builderCoupons,
+      reviews: builderReviews,
+    }),
+    [previewTenant, builderProducts, builderServices, builderCoupons, builderReviews]
+  );
 
   useEffect(() => {
     if (!slugValidation.valid) {
@@ -894,6 +1153,9 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
         templateName,
         templateFeatures,
         tagline: tagline.trim(),
+        heroHeadline: heroHeadline.trim(),
+        heroSubheadline: heroSubheadline.trim(),
+        ctaText: ctaText.trim() || 'Explore Collection',
         description: description.trim(),
         logoText: logoText.trim().slice(0, 6) || 'VV',
         logoImage,
@@ -947,6 +1209,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
         setSitePublished(false);
         setSlug(res.tenant.slug);
         setFormError(null);
+        setFormDirty(false);
         onPublished(res.tenant);
         onNotify(`Draft saved for "${res.tenant.name}"! You can customize design, products, and gallery anytime.`);
         return;
@@ -975,6 +1238,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
         setSitePublished(isPublic);
         setSlug(res.tenant.slug);
         setFormError(null);
+        setFormDirty(false);
         onPublished(res.tenant);
         onNotify(
           isPublic
@@ -1145,6 +1409,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
         {/* Left: Configuration Form */}
         <form
           onSubmit={handlePublish}
+          onChangeCapture={() => setFormDirty(true)}
           className="lg:col-span-5 rounded-xl border border-[#222230] bg-[#0D0D13] p-6 space-y-6"
         >
           {/* 01. Business Identity */}
@@ -1306,6 +1571,35 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                   type="text"
                   value={tagline}
                   onChange={(e) => setTagline(e.target.value)}
+                  className="w-full rounded-md border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs text-white"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-[#9D9DB0] mb-1">Hero Headline</label>
+                  <input
+                    type="text"
+                    value={heroHeadline}
+                    onChange={(e) => setHeroHeadline(e.target.value)}
+                    className="w-full rounded-md border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-[#9D9DB0] mb-1">Primary Button Text</label>
+                  <input
+                    type="text"
+                    value={ctaText}
+                    onChange={(e) => setCtaText(e.target.value)}
+                    className="w-full rounded-md border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs text-white"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-[#9D9DB0] mb-1">Hero Supporting Text</label>
+                <textarea
+                  rows={2}
+                  value={heroSubheadline}
+                  onChange={(e) => setHeroSubheadline(e.target.value)}
                   className="w-full rounded-md border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs text-white"
                 />
               </div>
@@ -1837,6 +2131,207 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
             </div>
           </div>
 
+          {/* Real local product/service catalogue editor; writes stay blocked in Preview. */}
+          <div className="border-t border-[#1E1E2B] pt-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-white">Products &amp; Services</h2>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
+                  catalogDirty
+                    ? 'border border-amber-500/40 bg-amber-500/10 text-amber-200'
+                    : 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                }`}
+              >
+                {catalogDirty ? 'Unsaved local catalog changes' : 'Catalog in sync with preview'}
+              </span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-[#8E8EA2]">
+              Add, edit, price and hide items here; the same storefront preview updates immediately. Preview
+              does not persist catalogue rows to D1; explicit write approval is required before saving.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCatalogTab('products')}
+                className={`rounded-md border px-3 py-1.5 text-[11px] ${
+                  catalogTab === 'products'
+                    ? 'border-[#D4AF37] bg-[#1C1A12] text-[#ECC86A]'
+                    : 'border-[#2A2A38] text-[#A3A3B5]'
+                }`}
+              >
+                Products ({builderProducts.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setCatalogTab('services')}
+                className={`rounded-md border px-3 py-1.5 text-[11px] ${
+                  catalogTab === 'services'
+                    ? 'border-[#D4AF37] bg-[#1C1A12] text-[#ECC86A]'
+                    : 'border-[#2A2A38] text-[#A3A3B5]'
+                }`}
+              >
+                Services ({builderServices.length})
+              </button>
+            </div>
+
+            {catalogTab === 'products' ? (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={addProduct}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[#D4AF37]/50 px-3 py-1.5 text-[11px] font-semibold text-[#ECC86A]"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Product
+                </button>
+                {builderProducts.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-[#2A2A38] p-3 text-[11px] text-[#8E8EA2]">
+                    No products in this local copy yet.
+                  </p>
+                ) : (
+                  builderProducts.map((product) => (
+                    <div key={product.id} className="space-y-2 rounded-lg border border-[#242433] bg-[#101018] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <input
+                          type="text"
+                          value={product.name}
+                          onChange={(event) => updateProduct(product.id, { name: event.target.value })}
+                          aria-label="Product name"
+                          className="min-w-0 flex-1 rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1.5 text-xs text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeProduct(product.id)}
+                          aria-label={`Remove ${product.name}`}
+                          className="rounded border border-rose-500/40 p-1.5 text-rose-300"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <input
+                          type="number"
+                          min={0}
+                          value={product.price}
+                          onChange={(event) => updateProduct(product.id, { price: Math.max(0, Number(event.target.value) || 0) })}
+                          aria-label="Product price in rupees"
+                          className="rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1.5 text-[11px] text-white"
+                        />
+                        <input
+                          type="number"
+                          min={0}
+                          value={product.stock}
+                          onChange={(event) => updateProduct(product.id, { stock: Math.max(0, Number(event.target.value) || 0) })}
+                          aria-label="Product stock"
+                          className="rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1.5 text-[11px] text-white"
+                        />
+                        <input
+                          type="text"
+                          value={product.category}
+                          onChange={(event) => updateProduct(product.id, { category: event.target.value })}
+                          aria-label="Product category"
+                          className="rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1.5 text-[11px] text-white"
+                        />
+                        <label className="flex items-center gap-1.5 rounded border border-[#2A2A38] px-2 py-1.5 text-[10px] text-[#B8B8C8]">
+                          <input
+                            type="checkbox"
+                            checked={product.active}
+                            onChange={(event) => updateProduct(product.id, { active: event.target.checked })}
+                          />
+                          Available
+                        </label>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={product.description}
+                        onChange={(event) => updateProduct(product.id, { description: event.target.value })}
+                        aria-label="Product description"
+                        className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1.5 text-[11px] text-white"
+                      />
+                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded border border-[#2A2A38] px-2 py-1.5 text-[10px] text-[#B8B8C8]">
+                        <Upload className="w-3 h-3" />
+                        {product.imageUrl ? 'Replace image' : 'Upload image'}
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          onChange={(event) =>
+                            void uploadCatalogImage(event.target.files?.[0], (imageUrl) =>
+                              updateProduct(product.id, { imageUrl, images: [imageUrl] })
+                            )
+                          }
+                        />
+                      </label>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={addService}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[#D4AF37]/50 px-3 py-1.5 text-[11px] font-semibold text-[#ECC86A]"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Add Service
+                </button>
+                {builderServices.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-[#2A2A38] p-3 text-[11px] text-[#8E8EA2]">
+                    No services in this local copy yet.
+                  </p>
+                ) : (
+                  builderServices.map((service) => (
+                    <div key={service.id} className="space-y-2 rounded-lg border border-[#242433] bg-[#101018] p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <input
+                          type="text"
+                          value={service.name}
+                          onChange={(event) => updateService(service.id, { name: event.target.value })}
+                          aria-label="Service name"
+                          className="min-w-0 flex-1 rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1.5 text-xs text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeService(service.id)}
+                          aria-label={`Remove ${service.name}`}
+                          className="rounded border border-rose-500/40 p-1.5 text-rose-300"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          value={service.price}
+                          onChange={(event) => updateService(service.id, { price: Math.max(0, Number(event.target.value) || 0) })}
+                          aria-label="Service price in rupees"
+                          className="rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1.5 text-[11px] text-white"
+                        />
+                        <label className="flex items-center gap-1.5 rounded border border-[#2A2A38] px-2 py-1.5 text-[10px] text-[#B8B8C8]">
+                          <input
+                            type="checkbox"
+                            checked={service.active}
+                            onChange={(event) => updateService(service.id, { active: event.target.checked })}
+                          />
+                          Available
+                        </label>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={service.description}
+                        onChange={(event) => updateService(service.id, { description: event.target.value })}
+                        aria-label="Service description"
+                        className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1.5 text-[11px] text-white"
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
           {formError && (
             <div
               role="alert"
@@ -1912,151 +2407,81 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
 
         {/* Right: Live Responsive Preview & Layout Controls */}
         <div className="lg:col-span-7 space-y-4">
-          <div className="flex items-center justify-between rounded-lg border border-[#222230] bg-[#0D0D13] px-4 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#222230] bg-[#0D0D13] px-4 py-2.5">
             <div className="flex items-center gap-2 text-xs text-[#A3A3B5]">
               <Globe className="w-3.5 h-3.5 text-[#D4AF37]" />
               <span className="font-mono-tabular">
                 {customDomain || `Platform preview · /site/${sanitizedSlug || 'your-store'}`}
               </span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                  templateSeedSource || formDirty || catalogDirty
+                    ? 'border border-amber-500/40 bg-amber-500/10 text-amber-200'
+                    : editingTenantId
+                      ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                      : 'border border-[#333344] bg-[#15151F] text-[#A3A3B5]'
+                }`}
+              >
+                {templateSeedSource
+                  ? 'Unsaved template copy'
+                  : formDirty || catalogDirty
+                    ? 'Unsaved local changes'
+                    : editingTenantId
+                      ? `Saved draft #${editingTenantId}`
+                      : 'New local draft'}
+              </span>
             </div>
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPreviewDevice('desktop')}
-                className={`p-1.5 rounded ${previewDevice === 'desktop' ? 'bg-[#D4AF37] text-[#08080A]' : 'text-[#8E8EA0]'}`}
-                aria-label="Desktop preview"
-              >
-                <Monitor className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setPreviewDevice('mobile')}
-                className={`p-1.5 rounded ${previewDevice === 'mobile' ? 'bg-[#D4AF37] text-[#08080A]' : 'text-[#8E8EA0]'}`}
-                aria-label="Mobile preview"
-              >
-                <Smartphone className="w-4 h-4" />
-              </button>
+              {(['desktop', 'tablet', 'mobile'] as const).map((device) => (
+                <button
+                  key={device}
+                  type="button"
+                  onClick={() => setPreviewDevice(device)}
+                  className={`p-1.5 rounded ${previewDevice === device ? 'bg-[#D4AF37] text-[#08080A]' : 'text-[#8E8EA0]'}`}
+                  aria-label={`${device} preview`}
+                >
+                  {device === 'desktop' ? (
+                    <Monitor className="w-4 h-4" />
+                  ) : device === 'tablet' ? (
+                    <Tablet className="w-4 h-4" />
+                  ) : (
+                    <Smartphone className="w-4 h-4" />
+                  )}
+                </button>
+              ))}
             </div>
           </div>
 
+          {templateSeedSource && (
+            <div className="rounded-lg border border-[#D4AF37]/25 bg-[#16130B] px-4 py-3 text-[11px] leading-relaxed text-[#D8C99A]">
+              <strong className="text-[#ECC86A]">Loaded from {templateSeedSource}.</strong> This is an
+              independent local copy. The original demo remains unchanged; save and payment approval
+              are required before any site can be published.
+            </div>
+          )}
+
           <div className="flex justify-center">
             <div
-              className={`rounded-xl border border-[#282838] overflow-hidden transition-all duration-200 ${
-                previewDevice === 'mobile' ? 'w-full max-w-[375px]' : 'w-full'
+              className={`overflow-hidden rounded-xl border border-[#282838] bg-[#08080C] transition-all duration-200 ${
+                previewDevice === 'mobile'
+                  ? 'w-full max-w-[390px]'
+                  : previewDevice === 'tablet'
+                    ? 'w-full max-w-[820px]'
+                    : 'w-full'
               }`}
               style={{ backgroundColor: accentColor }}
             >
-              {/* Preview Header */}
-              <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  {logoImage ? (
-                    <img
-                      src={logoImage}
-                      alt={name}
-                      width={36}
-                      height={36}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-9 h-9 rounded object-cover border border-white/20 shrink-0"
-                    />
-                  ) : (
-                    <span
-                      className="w-9 h-9 rounded flex items-center justify-center text-xs font-bold text-[#08080A] shrink-0"
-                      style={{ backgroundColor: primaryColor }}
-                    >
-                      {logoText || 'VV'}
-                    </span>
-                  )}
-                  <span
-                    className="text-sm font-bold text-white truncate"
-                    style={{ fontFamily: getTenantFontStack(fontFamily) }}
-                  >
-                    {name || 'Your Business Name'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] text-white/75 shrink-0">
-                  {enabledModules.ecommerce && <span>Shop</span>}
-                  {enabledModules.gallery && <span>Gallery</span>}
-                  {enabledModules.bookings && <span>Book</span>}
-                </div>
-              </div>
-
-              {/* Preview Hero */}
-              <div className="relative aspect-[16/9] bg-black/50 overflow-hidden">
-                <img
-                  src={bannerImage}
-                  alt={name}
-                  width={1200}
-                  height={675}
-                  loading="lazy"
-                  decoding="async"
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
-                <div className="absolute bottom-5 left-5 right-5">
-                  <p className="text-[10px] uppercase tracking-wider text-white/80 mb-1">{category}</p>
-                  <h3
-                    className="text-xl md:text-2xl font-bold text-white mb-1"
-                    style={{ fontFamily: getTenantFontStack(fontFamily) }}
-                  >
-                    {name || 'Your Brand'}
-                  </h3>
-                  <p className="text-xs text-white/85 max-w-md">{tagline}</p>
-                </div>
-              </div>
-
-              {/* Preview Body */}
-              <div className="p-5 space-y-4">
-                <p className="text-xs text-white/75 leading-relaxed">{description}</p>
-
-                {galleryItems.length > 0 && enabledModules.gallery && (
-                  <div className="space-y-2">
-                    <p className="text-[11px] font-semibold text-white/85">
-                      Gallery Preview ({galleryItems.length} photos)
-                    </p>
-                    <div className="grid grid-cols-4 gap-2">
-                      {galleryItems.slice(0, 4).map((g) => (
-                        <img
-                          key={g.id}
-                          src={g.url}
-                          alt={g.title || 'Preview'}
-                          width={160}
-                          height={160}
-                          loading="lazy"
-                          decoding="async"
-                          className="aspect-square rounded object-cover border border-white/10"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-white/10 text-xs">
-                  <div className="text-white/70 space-y-0.5">
-                    <p>{address}</p>
-                    <p className="text-[11px] text-white/55">
-                      {phone} {businessHours ? `· ${businessHours}` : ''}
-                    </p>
-                  </div>
-                  <span
-                    className="px-3.5 py-1.5 rounded font-semibold text-[#08080A]"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    {enabledModules.cartCheckout ? 'Shop Catalog' : enabledModules.bookings ? 'Book Now' : 'Enquire'}
-                  </span>
-                </div>
-
-                {planTier !== 'website_only' && pwaEnabled && (
-                  <div className="rounded-lg border border-white/15 bg-black/35 p-3 flex items-center justify-between text-[11px] text-white/85">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-3.5 h-3.5" style={{ color: primaryColor }} />
-                      <span>Installable PWA: {pwaAppName || name} ({(pwaShortName || name).slice(0, 12)})</span>
-                    </div>
-                    <span className="text-white/60">Web App</span>
-                  </div>
-                )}
-              </div>
+              <StorefrontView
+                slug={sanitizedSlug || 'your-store'}
+                lang={language}
+                previewData={previewData}
+                previewOnly
+                wishlistIds={[]}
+                onToggleWishlist={() => undefined}
+                onBack={() => undefined}
+                onOpenInvoice={() => undefined}
+                onNotify={onNotify}
+              />
             </div>
           </div>
 

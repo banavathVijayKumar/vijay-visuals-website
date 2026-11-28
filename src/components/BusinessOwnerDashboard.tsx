@@ -28,6 +28,7 @@ import { apiFetch } from '../lib/api';
 import { canAccessBusinessOwnerDashboard } from '../lib/dashboardAccess';
 import { useAuth } from '../hooks/useAuth';
 import { VijayVisualsLogo } from './VijayVisualsLogo';
+import { OwnerTemplatePricing } from './OwnerTemplatePricing';
 
 const OWNER_EMAIL = 'vk66278@gmail.com';
 
@@ -508,6 +509,7 @@ export const BusinessOwnerDashboard: React.FC<BusinessOwnerDashboardProps> = ({
               <Panel title="Requests by status" subtitle="Proposal and offer workflow">
                 <CountGrid values={data.settings.requestsByStatus} />
               </Panel>
+              <OwnerTemplatePricing onNotify={onNotify} />
             </div>
           ) : null}
 

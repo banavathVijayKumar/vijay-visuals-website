@@ -81,6 +81,7 @@ interface StudioLandingProps {
   tenants: TenantRecord[];
   plans: PlatformPlanRecord[];
   onNavigate: (view: AppView) => void;
+  onUseTheme?: (themeId: string) => void;
   onOpenStorefront: (slug: string) => void;
   onOpenTracker: () => void;
   onNotify: (msg: string) => void;
@@ -96,6 +97,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
   tenants,
   plans,
   onNavigate,
+  onUseTheme,
   onOpenStorefront,
   onOpenTracker,
   onNotify,
@@ -1069,7 +1071,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
       </section>
 
       {/* Made in India Trust, Public Template Gallery, Free SEO Audit, Blog & Referral Program */}
-      <GlobalGrowthHub lang={lang} onNavigate={onNavigate} onNotify={onNotify} />
+      <GlobalGrowthHub lang={lang} onNavigate={onNavigate} onUseTheme={onUseTheme} onNotify={onNotify} />
 
       {/* FAQs & Contact Form */}
       <section id="contact" className="py-16 md:py-24 border-b border-[#1D1D26] scroll-mt-24">

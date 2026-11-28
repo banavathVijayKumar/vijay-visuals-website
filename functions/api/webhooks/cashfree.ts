@@ -27,8 +27,7 @@ import {
   finalizeCashfreePlatformRefund,
   provisionLifetimeEntitlement,
 } from '../_tenantAccess';
-import { ALLOWED_WEBSITE_PACKAGE_CODES } from '../plans';
-import { FREE_START_PLAN_CODE } from '../_planTiers';
+import { FREE_START_PLAN_CODE, isAuthorizedWebsitePackageCode } from '../_planTiers';
 import {
   sendTransactionalEmail,
   buildPaymentReceiptEmailHtml,
@@ -866,7 +865,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         try {
           if (existingPayment.entity_type === 'platform_package' && existingPayment.website_id) {
             const planCode = String(existingPayment.reference_id || '').toLowerCase();
-            const isWebsitePackage = (ALLOWED_WEBSITE_PACKAGE_CODES as readonly string[]).includes(planCode);
+            const isWebsitePackage = isAuthorizedWebsitePackageCode(planCode);
             const linkedPayment = await env.DB.prepare(
               'SELECT id, billing_cycle FROM platform_payments WHERE razorpay_order_id = ? LIMIT 1'
             )

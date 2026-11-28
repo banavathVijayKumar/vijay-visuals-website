@@ -5,7 +5,9 @@
 // ============================================================================
 
 import { PagesContext, handleOptions, jsonResponse } from './_shared';
+import { isTemplatePlanCode } from './_planTiers';
 
+/** Backwards-compatible list for older callers; new code should use the shared helper. */
 export const ALLOWED_WEBSITE_PACKAGE_CODES = [
   'free-start',
   'starter-website',
@@ -193,7 +195,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         // Default: strictly website purchase packages
         query = `SELECT rowid as id, code, name, monthly_price_inr, yearly_price_inr, setup_fee_inr, gst_percent, features_json, is_active
                  FROM subscription_plans
-                 WHERE is_active = 1 AND code IN ('free-start', 'starter-website', 'business-website', 'ecommerce-website', 'website-only', 'website-plus-pwa', 'custom-dev-enterprise')
+                 WHERE is_active = 1 AND (code IN ('free-start', 'starter-website', 'business-website', 'ecommerce-website', 'website-only', 'website-plus-pwa', 'custom-dev-enterprise') OR code LIKE 'tpl-%')
                  ORDER BY monthly_price_inr ASC`;
       }
 
@@ -212,11 +214,12 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       if (res.results && res.results.length > 0) {
         const plans = res.results.map((r) => {
           const isSaas = (LEGACY_SAAS_PLAN_CODES as readonly string[]).includes(r.code);
+          const templatePlan = isTemplatePlanCode(r.code);
           return {
             id: r.id || 1,
             code: r.code,
             name: r.name,
-            category: isSaas ? 'saas' : 'website',
+            category: isSaas ? 'saas' : templatePlan ? 'template' : 'website',
             billingCycle: isSaas ? 'monthly' : 'one_time',
             priceInr: Number(r.monthly_price_inr || 0),
             includesPwa: r.code === 'website-plus-pwa' || r.code.includes('pwa'),

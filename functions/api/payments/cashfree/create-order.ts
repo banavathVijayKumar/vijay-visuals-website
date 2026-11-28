@@ -16,7 +16,8 @@ import {
   randomHex,
   sanitizeText,
 } from '../../_shared';
-import { ALLOWED_WEBSITE_PACKAGE_CODES, LEGACY_SAAS_PLAN_CODES } from '../platform/create-order';
+import { LEGACY_SAAS_PLAN_CODES } from '../platform/create-order';
+import { isAuthorizedWebsitePackageCode } from '../../_planTiers';
 import { createEdgeCashfreeOrder, getEdgeCashfreeStatus } from '../_cashfree';
 
 interface PlanRow {
@@ -72,7 +73,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       ? body.purpose
       : 'platform_subscription';
 
-  const isWebsitePackage = ALLOWED_WEBSITE_PACKAGE_CODES.has(planCode);
+  const isWebsitePackage = isAuthorizedWebsitePackageCode(planCode);
   const isLegacySaas = LEGACY_SAAS_PLAN_CODES.has(planCode);
 
   if (purpose === 'website_purchase' && !isWebsitePackage) {

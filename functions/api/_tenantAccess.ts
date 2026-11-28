@@ -11,6 +11,8 @@ import {
   FREE_START_PLAN_CODE,
   FREE_START_TIER,
   PLAN_TIER_SET,
+  isAuthorizedWebsitePackageCode,
+  isTemplatePlanCode,
   type PlanTier,
 } from './_planTiers';
 
@@ -680,7 +682,7 @@ function entitlementFromPlanCode(
   return {
     hasActiveSubscription: true,
     // Legacy SaaS plans never grant website publishing; authorized website packages do.
-    canPublish: AUTHORIZED_WEBSITE_PUBLISHING_PLANS.has(code) || isEnterprise,
+    canPublish: AUTHORIZED_WEBSITE_PUBLISHING_PLANS.has(code) || isTemplatePlanCode(code) || isEnterprise,
     planCode: code,
     planTier: planTierFromPlanCode(code),
     pwaEnabled: isPwa || isEnterprise,

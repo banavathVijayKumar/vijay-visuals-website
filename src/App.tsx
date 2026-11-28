@@ -9,6 +9,7 @@ import { applyPlatformMetadata } from './lib/platformMetadata';
 import { getStorefrontSlug } from '../shared/seo';
 import { Navbar } from './components/Navbar';
 import { StudioLanding } from './components/StudioLanding';
+import { TemplateMarketplace } from './components/TemplateMarketplace';
 import { WebsiteBuilder } from './components/WebsiteBuilder';
 import { StorefrontView } from './components/StorefrontView';
 import { DashboardsHub } from './components/DashboardsHub';
@@ -27,6 +28,11 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { NotFoundView } from './components/NotFoundView';
 import { PolicyView, type PolicyPageKey } from './components/PolicyView';
 import { parseTenantDeliveryHostname } from '../shared/tenantHost';
+import {
+  resolveTemplateHandoff,
+  type TemplateBuilderSeed,
+  type TemplateHandoffRequest,
+} from './lib/templateTransfer';
 
 const VALID_LANGS = new Set<string>(SUPPORTED_LANGUAGES.map((l) => l.code));
 const VALID_CURRENCIES = new Set<string>(GLOBAL_CURRENCIES.map((c) => c.code));
@@ -133,6 +139,7 @@ function PlatformShell() {
   const [toast, setToast] = useState<string | null>(null);
   const [mapsQuotaExceeded, setMapsQuotaExceeded] = useState(false);
   const [builderTenantId, setBuilderTenantId] = useState<number | null>(null);
+  const [builderTemplateSeed, setBuilderTemplateSeed] = useState<TemplateBuilderSeed | null>(null);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -310,6 +317,21 @@ function PlatformShell() {
     [lang]
   );
 
+  const startTemplateHandoff = useCallback(
+    (request: TemplateHandoffRequest) => {
+      const resolved = resolveTemplateHandoff(request);
+      if (!resolved.ok) {
+        showToast(resolved.error);
+        return;
+      }
+      setBuilderTenantId(null);
+      setBuilderTemplateSeed(resolved.seed);
+      navigateTo('builder');
+      showToast(`Template loaded: ${resolved.seed.templateName}. Edit this independent local copy.`);
+    },
+    [navigateTo, showToast]
+  );
+
   // Handle Cashfree Hosted Checkout Return & Auto-Verification
   useEffect(() => {
     try {
@@ -460,7 +482,7 @@ function PlatformShell() {
       )}
 
       <div className="flex-1">
-        {(activeView === 'studio' || activeView === 'marketplace') && (
+        {activeView === 'studio' && (
           <ErrorBoundary sectionName="Platform Overview">
             <StudioLanding
               mode={activeView}
@@ -472,8 +494,20 @@ function PlatformShell() {
               tenants={tenants}
               plans={plans}
               onNavigate={(v) => navigateTo(v)}
+              onUseTheme={(themeId) => startTemplateHandoff({ source: 'theme-gallery', themeId })}
               onOpenStorefront={(slug) => navigateTo('storefront', slug)}
               onOpenTracker={() => setTrackerOpen(true)}
+              onNotify={showToast}
+            />
+          </ErrorBoundary>
+        )}
+
+        {activeView === 'marketplace' && (
+          <ErrorBoundary sectionName="Template Marketplace">
+            <TemplateMarketplace
+              plans={plans}
+              onUseTemplate={(templateId) => startTemplateHandoff({ source: 'marketplace', templateId })}
+              onOpenStorefront={(slug) => navigateTo('storefront', slug)}
               onNotify={showToast}
             />
           </ErrorBoundary>
@@ -508,6 +542,8 @@ function PlatformShell() {
           <ErrorBoundary sectionName="Website Builder">
             <WebsiteBuilder
               initialTenantId={builderTenantId}
+              templateSeed={builderTemplateSeed}
+              onTemplateSeedApplied={() => setBuilderTemplateSeed(null)}
               onPublished={() => {
                 loadPublicData();
               }}
@@ -531,6 +567,11 @@ function PlatformShell() {
               onBack={() => navigateTo('marketplace')}
               onGoDashboards={() => navigateTo('dashboards')}
               onOpenInvoice={(order, tenantName) => setInvoiceState({ order, tenantName })}
+              onUseTemplate={
+                activeSlug
+                  ? () => startTemplateHandoff({ source: 'demo-storefront', slug: activeSlug })
+                  : undefined
+              }
               onNotify={showToast}
             />
           </ErrorBoundary>

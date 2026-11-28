@@ -292,11 +292,24 @@ function StorefrontLogo({
   return badge(badgeSize);
 }
 
+export interface StorefrontPreviewData {
+  tenant: TenantRecord;
+  products: ProductRecord[];
+  services?: ServiceRecord[];
+  coupons?: CouponRecord[];
+  reviews?: ReviewRecord[];
+}
+
 interface StorefrontViewProps {
   slug: string;
   lang: Lang;
   /** True when rendered on a delivered customer domain/subdomain. */
   publicHost?: boolean;
+  /** Local, write-blocked builder preview. No API requests are made in this mode. */
+  previewData?: StorefrontPreviewData | null;
+  previewOnly?: boolean;
+  useTemplateLabel?: string;
+  onUseTemplate?: () => void;
   wishlistIds: number[];
   onToggleWishlist: (productId: number) => void;
   onBack: () => void;
@@ -309,6 +322,10 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
   slug,
   lang,
   publicHost = false,
+  previewData = null,
+  previewOnly = false,
+  useTemplateLabel = 'Use This Template',
+  onUseTemplate,
   wishlistIds,
   onToggleWishlist,
   onBack,
@@ -433,6 +450,40 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     setError(null);
     setDemoSample(false);
 
+    // Builder preview path: use the exact local design/catalog state and make
+    // no network requests. All write actions stay blocked through demoSample.
+    if (previewData) {
+      const previewTenant = previewData.tenant;
+      if (!previewTenant || typeof previewTenant.name !== 'string') {
+        setError('The builder preview data is incomplete.');
+        setLoading(false);
+        return () => {
+          active = false;
+        };
+      }
+      setDemoSample(true);
+      setTenant(previewTenant);
+      setProducts(Array.isArray(previewData.products) ? previewData.products : []);
+      setServices(Array.isArray(previewData.services) ? previewData.services : []);
+      setCoupons(Array.isArray(previewData.coupons) ? previewData.coupons : []);
+      setReviews(Array.isArray(previewData.reviews) ? previewData.reviews : []);
+      setPwaLicenseValid(false);
+      setSeoConfig(null);
+      setPaymentMethod('cod');
+      setCart([]);
+      setCartHydrated(true);
+      setChatMessages([
+        {
+          role: 'assistant',
+          text: `Builder preview of ${previewTenant.name}. This is the same storefront renderer used by live sites; ordering, chat and form writes are disabled.`,
+        },
+      ]);
+      setLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
     // Explicitly labeled, frontend-only sample data for the preview storefronts
     // advertised on the homepage. It is never written to a database and never
     // overrides a real published tenant with the same slug.
@@ -555,12 +606,12 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
         link.href = '/manifest.webmanifest';
       }
     };
-  }, [slug, lang]);
+  }, [slug, lang, previewData]);
 
   // Stage 3 Module 4: Tenant-owned SEO metadata on every storefront route,
   // including /site/{slug} on the unchanged platform host.
   useEffect(() => {
-    if (!tenant) return;
+    if (!tenant || previewOnly) return;
     return applyStorefrontMetadata(document, {
       name: tenant.name,
       slug: tenant.slug,
@@ -586,11 +637,11 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
       localBusinessType: seoConfig?.localBusinessType,
       products,
     });
-  }, [tenant, products, seoConfig, publicHost]);
+  }, [tenant, products, seoConfig, publicHost, previewOnly]);
 
   // Persist cart to localStorage across refreshes
   useEffect(() => {
-    if (!cartHydrated) return;
+    if (!cartHydrated || previewOnly) return;
     try {
       const compact = cart.map((c) => ({
         productId: c.product.id,
@@ -1257,9 +1308,23 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
               </div>
             </div>
             {demoSample && (
-              <span className="mb-3 inline-flex w-fit items-center rounded-full border border-[#D4AF37]/50 bg-[#D4AF37]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#ECC86A]">
-                Demo · sample storefront · no checkout or form submissions
-              </span>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="inline-flex w-fit items-center rounded-full border border-[#D4AF37]/50 bg-[#D4AF37]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#ECC86A]">
+                  {previewOnly
+                    ? 'Builder preview · local copy · no writes'
+                    : 'Demo · sample storefront · no checkout or form submissions'}
+                </span>
+                {!previewOnly && onUseTemplate && (
+                  <button
+                    type="button"
+                    onClick={onUseTemplate}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/60 bg-[#D4AF37] px-3 py-1 text-[11px] font-bold text-[#08080A] hover:opacity-90"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    {useTemplateLabel}
+                  </button>
+                )}
+              </div>
             )}
             <h1
               className="text-3xl md:text-4xl font-bold text-white mb-2 text-balance"
