@@ -163,7 +163,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
           aiCreditsIncluded: Number(p.monthly_ai_credits || 0),
           storageGb: Math.round(Number(p.storage_quota_mb || 250) / 1024),
           featuresJson: String(p.features_json || '[]'),
-          thirdPartyDisclosure: 'GST 18% applicable. Custom domain fees paid directly to customer registrar.',
+          thirdPartyDisclosure: 'Applicable taxes will be confirmed before payment. Domain registration and renewal are paid directly to the registrar.',
           active: Boolean(p.is_active),
         });
       });

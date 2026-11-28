@@ -907,10 +907,10 @@ export function StorefrontReviews({
               <div className="rounded-lg bg-[#14141E] border border-[#20202E] p-3 text-[11px] text-[#A5A5B8] space-y-1">
                 <p className="flex items-center gap-1.5 text-emerald-400 font-semibold">
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  Verified Purchase Guarantee
+                  Verified purchase badges where enabled
                 </p>
                 <p>
-                  If you have a completed order from this store, our system will automatically verify and stamp your review with a Verified Purchase badge.
+                  Reviews may receive a Verified Purchase badge when a completed order from this store matches the reviewer. The badge is not shown otherwise.
                 </p>
               </div>
 

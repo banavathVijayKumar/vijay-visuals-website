@@ -445,7 +445,7 @@ const INITIAL_TICKETS: SupportTicket[] = [
     status: 'in_progress',
     messages: [
       { id: 'm1', sender: 'customer', text: 'I added the CNAME record for jewels.rohan.in pointing to cname.vijayvisuals.com. Can you confirm verification?', timestamp: '2026-11-06T12:00:00Z' },
-      { id: 'm2', sender: 'support', text: 'Hello Rohan! Our platform edge has detected your DNS record. Automatic SSL provisioning is currently in progress and will complete within 30 minutes.', timestamp: '2026-11-06T12:20:00Z' },
+      { id: 'm2', sender: 'support', text: 'Hello Rohan! Our platform edge has detected your DNS record. SSL issuance depends on DNS propagation and provider validation; no completion time is guaranteed.', timestamp: '2026-11-06T12:20:00Z' },
     ],
     created_at: '2026-11-06T12:00:00Z',
   },

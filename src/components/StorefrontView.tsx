@@ -799,7 +799,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
   // before it can reach an API, database, payment provider or messaging service.
   const blockDemoWrite = (): boolean => {
     if (!demoSample) return false;
-    onNotify('This is a sample storefront. Ordering and form submissions are disabled in the preview.');
+    onNotify('Illustrative demo — not a real business. Orders, payments, messages and form submissions are disabled.');
     return true;
   };
 
@@ -1296,29 +1296,32 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                 {tenant.address && (
                   <>
                     <span className="mx-2">·</span>
-                    <span>{tenant.address}</span>
+                    <span>{demoSample ? 'Sample address (fictional): ' : ''}{tenant.address}</span>
                   </>
                 )}
                 {tenant.businessHours && (
                   <p className="text-[11px] text-[#B8B8C8] mt-0.5 flex items-center gap-1">
                     <Clock className="w-3 h-3 text-[#D4AF37]" />
-                    <span>{tenant.businessHours}</span>
+                    <span>{demoSample ? 'Sample hours (fictional): ' : ''}{tenant.businessHours}</span>
                   </p>
                 )}
               </div>
             </div>
             {demoSample && (
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <span className="inline-flex w-fit items-center rounded-full border border-[#D4AF37]/50 bg-[#D4AF37]/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#ECC86A]">
-                  {previewOnly
-                    ? 'Builder preview · local copy · no writes'
-                    : 'Demo · sample storefront · no checkout or form submissions'}
-                </span>
+              <div className="mb-4 rounded-lg border border-amber-500/60 bg-amber-950/30 p-3" role="note">
+                <p className="text-[12px] font-bold uppercase tracking-wide text-amber-300">
+                  Illustrative Demo — Not a real business
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-[#D8C99A]">
+                  The entire storefront is sample data. Phone, address, opening hours, delivery, return policy,
+                  reviews and products are fictional. Orders, payments, messages and form submissions are disabled.
+                  {previewOnly ? ' Builder preview · local copy · no writes.' : ''}
+                </p>
                 {!previewOnly && onUseTemplate && (
                   <button
                     type="button"
                     onClick={onUseTemplate}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/60 bg-[#D4AF37] px-3 py-1 text-[11px] font-bold text-[#08080A] hover:opacity-90"
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#D4AF37]/60 bg-[#D4AF37] px-3 py-1 text-[11px] font-bold text-[#08080A] hover:opacity-90"
                   >
                     <Sparkles className="w-3 h-3" />
                     {useTemplateLabel}
@@ -1374,25 +1377,39 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
             {(tenant.phone || tenant.whatsapp) && (
               <div className="flex flex-wrap items-center gap-2.5 mb-5 text-xs">
                 {tenant.phone && (
-                  <a
-                    href={`tel:${tenant.phone.replace(/\s+/g, '')}`}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md border border-[#2A2A38] bg-[#101018] text-white hover:border-[#D4AF37]"
-                  >
-                    <Phone className="w-3.5 h-3.5" style={{ color: tenant.primaryColor }} />
-                    <span>{tenant.phone}</span>
-                  </a>
+                  demoSample ? (
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md border border-amber-500/40 bg-amber-950/20 text-amber-200">
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>Sample phone (fictional — not for calls): {tenant.phone}</span>
+                    </span>
+                  ) : (
+                    <a
+                      href={`tel:${tenant.phone.replace(/\s+/g, '')}`}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md border border-[#2A2A38] bg-[#101018] text-white hover:border-[#D4AF37]"
+                    >
+                      <Phone className="w-3.5 h-3.5" style={{ color: tenant.primaryColor }} />
+                      <span>{tenant.phone}</span>
+                    </a>
+                  )
                 )}
                 {tenant.whatsapp && (
-                  <a
-                    href={buildWhatsAppUrl(tenant.whatsapp, tenant.phone, tenant.currency, tenant.name)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md font-semibold text-[#08080A]"
-                    style={{ backgroundColor: tenant.primaryColor }}
-                  >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    <span>WhatsApp Order / Enquiry</span>
-                  </a>
+                  demoSample ? (
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md border border-amber-500/40 bg-amber-950/20 text-amber-200">
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>Sample WhatsApp (fictional — messaging disabled)</span>
+                    </span>
+                  ) : (
+                    <a
+                      href={buildWhatsAppUrl(tenant.whatsapp, tenant.phone, tenant.currency, tenant.name)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md font-semibold text-[#08080A]"
+                      style={{ backgroundColor: tenant.primaryColor }}
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>WhatsApp Order / Enquiry</span>
+                    </a>
+                  )
                 )}
               </div>
             )}
@@ -1518,7 +1535,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                     ? Math.round(((product.compareAtPrice - product.price) / product.compareAtPrice) * 100)
                     : 0;
                 const waProductUrl =
-                  modules.whatsappOrder && tenant.whatsapp
+                  modules.whatsappOrder && tenant.whatsapp && !demoSample
                     ? buildWhatsAppUrl(
                         tenant.whatsapp,
                         tenant.phone,
@@ -1838,7 +1855,9 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
               <div className="rounded-xl border border-[#20202E] bg-[#0D0D14] p-4 flex items-start gap-3">
                 <Truck className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-white mb-1">Delivery & Fulfillment</p>
+                  <p className="font-semibold text-white mb-1">
+                    {demoSample ? 'Sample Delivery & Fulfillment (fictional)' : 'Delivery & Fulfillment'}
+                  </p>
                   <p className="text-[#A5A5B8] leading-relaxed">{tenant.deliveryInfo}</p>
                 </div>
               </div>
@@ -1847,7 +1866,9 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
               <div className="rounded-xl border border-[#20202E] bg-[#0D0D14] p-4 flex items-start gap-3">
                 <ShieldCheck className="w-4 h-4 text-[#D4AF37] shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-white mb-1">Return & Cancellation Policy</p>
+                  <p className="font-semibold text-white mb-1">
+                    {demoSample ? 'Sample Return & Cancellation Policy (fictional)' : 'Return & Cancellation Policy'}
+                  </p>
                   <p className="text-[#A5A5B8] leading-relaxed">{tenant.returnPolicy}</p>
                 </div>
               </div>
@@ -1885,43 +1906,65 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
         <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           <div className="lg:col-span-5 space-y-3">
             <p className="text-xs font-semibold text-[#ECC86A]">Connect with {tenant.name}</p>
-            <p className="text-xs text-[#9E9EB2] leading-relaxed">{tenant.address}</p>
+            <p className="text-xs text-[#9E9EB2] leading-relaxed">
+              {demoSample ? 'Sample address (fictional): ' : ''}{tenant.address}
+            </p>
             {tenant.businessHours && (
               <p className="text-xs text-[#C8C8D8] flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-[#D4AF37]" />
-                <span>{tenant.businessHours}</span>
+                <span>{demoSample ? 'Sample hours (fictional): ' : ''}{tenant.businessHours}</span>
               </p>
             )}
             <div className="flex flex-wrap gap-2 text-xs">
               {tenant.phone && (
-                <a
-                  href={`tel:${tenant.phone.replace(/\s+/g, '')}`}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-[#2A2A38] text-white hover:border-[#D4AF37]"
-                >
-                  <Phone className="w-3.5 h-3.5 text-[#D4AF37]" />
-                  <span>Call {tenant.phone}</span>
-                </a>
+                demoSample ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-amber-500/40 bg-amber-950/20 text-amber-200">
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Sample phone (fictional — not for calls)</span>
+                  </span>
+                ) : (
+                  <a
+                    href={`tel:${tenant.phone.replace(/\s+/g, '')}`}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-[#2A2A38] text-white hover:border-[#D4AF37]"
+                  >
+                    <Phone className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    <span>Call {tenant.phone}</span>
+                  </a>
+                )
               )}
               {tenant.whatsapp && (
-                <a
-                  href={buildWhatsAppUrl(tenant.whatsapp, tenant.phone, tenant.currency, tenant.name)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/30"
-                >
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  <span>WhatsApp Enquiry</span>
-                </a>
+                demoSample ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-amber-500/40 bg-amber-950/20 text-amber-200">
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>Sample WhatsApp (fictional — messaging disabled)</span>
+                  </span>
+                ) : (
+                  <a
+                    href={buildWhatsAppUrl(tenant.whatsapp, tenant.phone, tenant.currency, tenant.name)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded border border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/30"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>WhatsApp Enquiry</span>
+                  </a>
+                )
               )}
               <button
                 type="button"
-                onClick={() => setQuoteOpen(true)}
+                onClick={() => {
+                  if (demoSample) {
+                    onNotify('Illustrative demo: quote requests are disabled. No message was sent.');
+                    return;
+                  }
+                  setQuoteOpen(true);
+                }}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded bg-gold-gradient text-[#08080A] font-semibold"
               >
                 <FileText className="w-3.5 h-3.5" />
                 <span>Request Custom Quote</span>
               </button>
-              {seoConfig?.googleMapsUrl && (
+              {seoConfig?.googleMapsUrl && !demoSample && (
                 <a
                   href={seoConfig.googleMapsUrl}
                   target="_blank"
@@ -2290,7 +2333,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                       {selectedProduct.stock <= 0 ? 'Out of Stock' : 'Add to Cart & Checkout'}
                     </button>
                   )}
-                  {modules.whatsappOrder && tenant.whatsapp && (
+                  {modules.whatsappOrder && tenant.whatsapp && !demoSample && (
                     <a
                       href={buildWhatsAppUrl(
                         tenant.whatsapp,
@@ -2306,6 +2349,12 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                       <MessageCircle className="w-4 h-4" />
                       <span>WhatsApp Enquiry</span>
                     </a>
+                  )}
+                  {modules.whatsappOrder && tenant.whatsapp && demoSample && (
+                    <span className="inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-md border border-amber-500/40 text-amber-200 text-xs font-semibold">
+                      <MessageCircle className="w-4 h-4" />
+                      <span>WhatsApp disabled in demo</span>
+                    </span>
                   )}
                 </div>
               </div>
@@ -2449,7 +2498,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                         className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-gold-gradient text-[#08080A] font-semibold"
                       >
                         <Printer className="w-3.5 h-3.5" />
-                        <span>GST Invoice</span>
+                        <span>Payment Receipt</span>
                       </button>
                       <button
                         type="button"
@@ -2905,7 +2954,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                     )}
 
                     {/* WhatsApp Cart Order Share */}
-                    {modules.whatsappOrder && tenant.whatsapp && (
+                    {modules.whatsappOrder && tenant.whatsapp && !demoSample && (
                       <a
                         href={buildWhatsAppUrl(
                           tenant.whatsapp,
@@ -2935,6 +2984,12 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                         <MessageCircle className="w-4 h-4" />
                         <span>Send Order via WhatsApp</span>
                       </a>
+                    )}
+                    {modules.whatsappOrder && tenant.whatsapp && demoSample && (
+                      <span className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-md border border-amber-500/40 text-amber-200 text-xs font-semibold">
+                        <MessageCircle className="w-4 h-4" />
+                        <span>WhatsApp ordering disabled in demo</span>
+                      </span>
                     )}
                   </form>
                 </>

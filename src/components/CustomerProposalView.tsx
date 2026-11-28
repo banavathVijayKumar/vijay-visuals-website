@@ -373,11 +373,9 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
             </div>
 
             <div className="text-right bg-[#14141E] border border-amber-500/30 p-4 rounded-xl">
-              <div className="text-[10px] text-[#8E8EA2] uppercase tracking-wider font-semibold">Selected Tier & Price</div>
+              <div className="text-[10px] text-[#8E8EA2] uppercase tracking-wider font-semibold">Selected Tier & Quoted Amount</div>
               <div className="text-2xl font-extrabold text-[#ECC86A] mt-0.5">{amountFormatted}</div>
-              <div className="text-[10px] text-[#10B981] font-medium">
-                {hasConfirmedGst ? `${proposal.gst_percent}% GST Included · Zero Hidden Costs` : 'Base Package Price · Exclusive of GST (Taxes As Applicable)'}
-              </div>
+              <div className="text-[10px] text-[#10B981] font-medium">Applicable taxes will be confirmed before payment.</div>
             </div>
           </div>
 
@@ -522,8 +520,8 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
               <span className="text-[#8E8EA2]">Total Base Package Development Fee</span>
               <div className="flex items-center gap-4">
                 <span>Base: <strong className="text-white">₹{devFee.toLocaleString('en-IN')}</strong></span>
-                <span>Tax: <strong className="text-white">{hasConfirmedGst ? `₹${gstAmount.toLocaleString('en-IN')} (${proposal.gst_percent}% GST)` : 'Excluded / As Applicable'}</strong></span>
-                <span className="text-sm font-bold text-[#ECC86A]">Grand Total: ₹{totalPayable.toLocaleString('en-IN')}</span>
+                <span className="text-white">Applicable taxes will be confirmed before payment.</span>
+                <span className="text-sm font-bold text-[#ECC86A]">Quoted amount: ₹{totalPayable.toLocaleString('en-IN')}</span>
               </div>
             </div>
           </div>
@@ -553,7 +551,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                     <div>
                       <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">STARTER TIER</span>
                       <h3 className="text-xl font-bold text-white">₹{devFee.toLocaleString('en-IN')}</h3>
-                      <div className="text-[10px] text-[#8E8EA2]">{hasConfirmedGst ? `+${proposal.gst_percent}% GST (₹${totalPayable.toLocaleString('en-IN')} Total)` : 'Base Fee · Taxes As Applicable'}</div>
+                      <div className="text-[10px] text-[#8E8EA2]">Base Fee · Applicable taxes will be confirmed before payment.</div>
                     </div>
                     {selectedTier === 'STARTER' && (
                       <span className="px-2 py-0.5 rounded text-[9px] bg-amber-400 text-black font-bold">Selected</span>
@@ -566,7 +564,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                     <div>✓ Cashfree PG (UPI / QR / Cards)</div>
                     <div>✓ Self-Editing Business Dashboard</div>
                     <div>✓ 30 Days Free Support</div>
-                    <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery: 3–5 Business Days</div>
+                    <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery timeline quoted after scope review</div>
                   </div>
                 </div>
                 {!isApproved && (
@@ -592,7 +590,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                     <div>
                       <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">GOLD TIER</span>
                       <h3 className="text-xl font-bold text-white">₹{goldPrice.toLocaleString('en-IN')}</h3>
-                      <div className="text-[10px] text-[#8E8EA2]">+18% GST (₹{Math.round(goldPrice * 1.18).toLocaleString('en-IN')} Total)</div>
+                      <div className="text-[10px] text-[#8E8EA2]">Applicable taxes will be confirmed before payment.</div>
                     </div>
                     {selectedTier === 'GOLD' && (
                       <span className="px-2 py-0.5 rounded text-[9px] bg-amber-400 text-black font-bold">Selected</span>
@@ -605,7 +603,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                     <div>✓ Shiprocket Courier Integration</div>
                     <div>✓ Priority DNS & Custom Domain</div>
                     <div>✓ 90 Days Priority Support</div>
-                    <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery: 5–7 Business Days</div>
+                    <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery timeline quoted after scope review</div>
                   </div>
                 </div>
                 {!isApproved && (
@@ -631,7 +629,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                     <div>
                       <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">PREMIUM TIER</span>
                       <h3 className="text-xl font-bold text-white">₹{premiumPrice.toLocaleString('en-IN')}</h3>
-                      <div className="text-[10px] text-[#8E8EA2]">+18% GST (₹{Math.round(premiumPrice * 1.18).toLocaleString('en-IN')} Total)</div>
+                      <div className="text-[10px] text-[#8E8EA2]">Applicable taxes will be confirmed before payment.</div>
                     </div>
                     {selectedTier === 'PREMIUM' && (
                       <span className="px-2 py-0.5 rounded text-[9px] bg-amber-400 text-black font-bold">Selected</span>
@@ -644,7 +642,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                     <div>✓ Multi-Currency FX Engine</div>
                     <div>✓ Dedicated Account Manager</div>
                     <div>✓ 1 Year VIP Support</div>
-                    <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery: 7–10 Business Days</div>
+                    <div className="text-[11px] text-amber-300 pt-1 font-semibold">Delivery timeline quoted after scope review</div>
                   </div>
                 </div>
                 {!isApproved && (
@@ -669,20 +667,20 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                     <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider">OFFICIAL PROPOSAL PACKAGE</span>
                     <h3 className="text-xl font-bold text-white">Starter Business Architecture</h3>
                     <div className="text-xs text-[#8E8EA2]">
-                      {hasConfirmedGst ? `₹${totalPayable.toLocaleString('en-IN')} (${proposal.gst_percent}% GST Included)` : `₹${devFee.toLocaleString('en-IN')} (Base Fee · Taxes As Applicable)`}
+                      ₹{devFee.toLocaleString('en-IN')} (Base Fee · Applicable taxes will be confirmed before payment.)
                     </div>
                   </div>
                   <span className="px-2.5 py-1 rounded text-xs bg-amber-400 text-black font-bold">Included</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-[#B0B0C4] pt-2 border-t border-[#222234]">
-                  <div>✓ Custom Premium Responsive Design</div>
-                  <div>✓ Cashfree Payment Gateway (UPI / QR / Cards)</div>
-                  <div>✓ All 9 Core Website Features Included</div>
-                  <div>✓ Business Owner Dashboard (Self-Editing)</div>
-                  <div>✓ Product Catalog & Shopping Cart</div>
-                  <div>✓ 30 Days Complimentary Assistance</div>
-                  <div>✓ One-Click WhatsApp Order Alerts</div>
-                  <div>✓ Delivery Timeline: 3–5 Business Days</div>
+                  <div>✓ Responsive design where supported</div>
+                  <div>✓ Cashfree checkout where configured</div>
+                  <div>✓ Core website features listed in the written scope</div>
+                  <div>✓ Business Owner Dashboard (self-editing)</div>
+                  <div>✓ Product catalogue and cart where configured</div>
+                  <div>✓ 30 days support where included in scope</div>
+                  <div>✓ WhatsApp enquiry with the business number</div>
+                  <div>✓ Timeline quoted after scope review</div>
                 </div>
                 <div className="pt-2 text-[11px] text-[#7C7C92] italic">
                   * Custom Enterprise Tiers: Multi-location sync, automated courier integrations, and mobile PWA apps are configured on-demand as separate scopes upon owner request.
@@ -690,9 +688,10 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
               </div>
               <div className="md:w-64 flex flex-col justify-between border-t md:border-t-0 md:border-l border-[#242436] pt-4 md:pt-0 md:pl-6">
                 <div>
-                  <div className="text-[10px] text-[#7C7C92] uppercase font-semibold">Total Base Investment</div>
-                  <div className="text-2xl font-extrabold text-[#ECC86A]">₹{totalPayable.toLocaleString('en-IN')}</div>
-                  <div className="text-[10px] text-emerald-400 mt-1">✓ Lifetime Self-Editing Included</div>
+                  <div className="text-[10px] text-[#7C7C92] uppercase font-semibold">Package Base Price</div>
+                  <div className="text-2xl font-extrabold text-[#ECC86A]">₹{devFee.toLocaleString('en-IN')}</div>
+                  <div className="text-[10px] text-emerald-400 mt-1">Applicable taxes will be confirmed before payment.</div>
+                  <div className="text-[10px] text-[#7C7C92] mt-1">Quoted amount: ₹{totalPayable.toLocaleString('en-IN')}</div>
                 </div>
                 {isExpired ? (
                   <div className="w-full mt-4 py-2.5 px-3 rounded-lg bg-zinc-900 border border-zinc-700/60 text-zinc-400 text-xs text-center font-medium">
@@ -709,7 +708,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                     onClick={() => handlePaymentCheckout()}
                     className="w-full mt-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold transition-colors disabled:opacity-50"
                   >
-                    {paying ? 'Launching Cashfree...' : `Pay via Cashfree (₹${totalPayable.toLocaleString('en-IN')})`}
+                    {paying ? 'Launching Cashfree...' : `Pay via Cashfree (₹${totalPayable.toLocaleString('en-IN')} quoted amount)`}
                   </button>
                 ) : isDeclined ? (
                   <div className="w-full mt-4 py-2.5 px-3 rounded-lg bg-red-950/40 border border-red-500/40 text-red-300 text-xs text-center font-medium">
@@ -725,7 +724,7 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
                     }}
                     className="w-full mt-4 py-2.5 rounded-lg bg-[#D4AF37] text-black text-xs font-bold hover:bg-amber-400 transition-colors disabled:opacity-50"
                   >
-                    Approve Package (₹{totalPayable.toLocaleString('en-IN')})
+                    Approve Package (₹{totalPayable.toLocaleString('en-IN')} quoted amount)
                   </button>
                 )}
               </div>
@@ -855,13 +854,13 @@ export const CustomerProposalView: React.FC<CustomerProposalViewProps> = ({ toke
 
               <div className="bg-[#141420] p-3 rounded-lg border border-[#252538] space-y-1">
                 <div className="flex justify-between items-center">
-                  <span>Payable Amount:</span>
+                  <span>Quoted Amount:</span>
                   <strong className="text-amber-300 text-sm">
-                    ₹{totalPayable.toLocaleString('en-IN')} {hasConfirmedGst ? `(incl. ${proposal.gst_percent}% GST)` : '(Base Fee · Taxes As Applicable)'}
+                    ₹{totalPayable.toLocaleString('en-IN')}
                   </strong>
                 </div>
                 <div className="text-[10px] text-[#7C7C92]">
-                  Includes all development, setup, and 30 days complimentary onboarding support.
+                  Applicable taxes will be confirmed before payment. Development, setup and 30 days of onboarding support are included only where accepted in the written scope.
                 </div>
               </div>
 

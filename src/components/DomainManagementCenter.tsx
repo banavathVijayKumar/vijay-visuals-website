@@ -1062,7 +1062,7 @@ export const DomainManagementCenter: React.FC<DomainManagementCenterProps> = ({
                         <span className="font-mono-tabular text-white">₹{sug.indicativeRegistrationInr}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-[#8E8EA2]">GST ({sug.gstPct}%)</span>
+                        <span className="text-[#8E8EA2]">Registrar taxes (indicative {sug.gstPct}%)</span>
                         <span className="font-mono-tabular text-white">₹{sug.estimatedGstInr}</span>
                       </div>
                       <div className="flex justify-between font-semibold text-[#ECC86A] border-t border-[#1D1D28] pt-1">
@@ -1070,11 +1070,11 @@ export const DomainManagementCenter: React.FC<DomainManagementCenterProps> = ({
                         <span className="font-mono-tabular">₹{sug.estimatedTotalFirstYearInr}</span>
                       </div>
                       <div className="flex justify-between text-[#B4B4C6] pt-1">
-                        <span>Annual Renewal (+GST)</span>
+                        <span>Annual Renewal (taxes indicative)</span>
                         <span className="font-mono-tabular">₹{sug.indicativeRenewalInr} (₹{sug.estimatedRenewalTotalInr})</span>
                       </div>
                       <div className="flex justify-between text-[#8E8EA2]">
-                        <span>Transfer Charge (+GST)</span>
+                        <span>Transfer Charge (taxes indicative)</span>
                         <span className="font-mono-tabular">₹{sug.indicativeTransferInr} (₹{sug.estimatedTransferTotalInr})</span>
                       </div>
                     </div>
@@ -1350,7 +1350,7 @@ export const DomainManagementCenter: React.FC<DomainManagementCenterProps> = ({
                       { label: 'Cloud Hosting Fee (Metered Tier — Monthly)', val: `₹${selectedPriceRow.hostingFeeInr.toLocaleString('en-IN')}/mo` },
                       { label: 'SSL / HTTPS Certificate Fee (Cloudflare Edge)', val: selectedPriceRow.sslFeeInr === 0 ? '₹0 (Included via Cloudflare SSL)' : `₹${selectedPriceRow.sslFeeInr}` },
                       { label: 'Optional Domain Management Service Fee', val: `₹${mgmtFee.toLocaleString('en-IN')}` },
-                      { label: `Applicable Taxes (GST @ ${selectedPriceRow.gstPct}%)`, val: `₹${gst.toLocaleString('en-IN')}` },
+                      { label: `Indicative registrar taxes (@ ${selectedPriceRow.gstPct}%)`, val: `₹${gst.toLocaleString('en-IN')} · confirmed by registrar` },
                     ].map((row) => (
                       <div key={row.label} className="px-4 py-2.5 flex items-center justify-between gap-4">
                         <span className="text-[#A5A5B8]">{row.label}</span>

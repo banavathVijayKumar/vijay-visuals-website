@@ -199,10 +199,13 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
           </div>
 
           {/* Illustrative Demo Banner */}
-          <div className="bg-amber-950/40 border-b border-amber-500/30 px-3 py-1.5 flex items-center justify-between text-[11px] text-amber-200">
-            <span className="flex items-center gap-1.5">
-              <span className="font-bold uppercase tracking-wider text-[9px] bg-amber-400 text-black px-1.5 py-0.5 rounded">Illustrative Demo</span>
-              <span>Menu items, prices, and reviews shown below are sample demonstration data.</span>
+          <div className="bg-amber-950/40 border-b border-amber-500/30 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-amber-200">
+            <span className="flex flex-wrap items-center gap-1.5">
+              <span className="font-bold uppercase tracking-wider text-[9px] bg-amber-400 text-black px-1.5 py-0.5 rounded">Illustrative Demo — Not a real business</span>
+              <span>
+                Phone, address, opening hours, delivery, return policy, reviews, products and prices below are
+                fictional sample data. No real order, payment or message can be sent.
+              </span>
             </span>
             <span className="text-[10px] text-amber-300/80 hidden sm:inline">Replaced with your verified business assets</span>
           </div>
@@ -552,7 +555,7 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
                     </div>
 
                     <div className="p-3 bg-emerald-950/20 border border-emerald-500/30 rounded-lg text-emerald-300 text-[11px] text-center">
-                      ✓ Instant checkout verification and automated merchant settlement.
+                      ✓ Checkout requires server-side verification; merchant settlement requires separate activation.
                     </div>
                   </div>
                 )}
@@ -687,7 +690,7 @@ export const BusinessFuturePreview: React.FC<BusinessFuturePreviewProps> = ({ da
                     <div>✓ Add, edit & remove products & prices instantly</div>
                     <div>✓ Upload & replace hero banners & shop photos</div>
                     <div>✓ View incoming orders & update statuses</div>
-                    <div>✓ Generate & print official GST tax invoices</div>
+                    <div>GST tax invoices are not included by default.</div>
                     <div>✓ Connect your custom domain with 1 click</div>
                     <div>✓ Zero developer fees or agency dependencies</div>
                   </div>

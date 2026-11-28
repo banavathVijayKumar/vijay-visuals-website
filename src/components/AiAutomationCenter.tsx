@@ -382,7 +382,7 @@ export const AiAutomationCenter: React.FC<AiAutomationCenterProps> = ({
                 onChange={(e) => setWfAction(e.target.value)}
                 className="rounded-md border border-[#2A2A38] bg-[#08080C] px-2.5 py-2 text-xs text-white"
               >
-                <option value="generate_invoice">Action: Generate GST Invoice</option>
+                <option value="generate_invoice">Action: Draft a tax record for CA review</option>
                 <option value="low_stock_alert">Action: Send Low-Stock Alert</option>
                 <option value="whatsapp_template">Action: WhatsApp Business Message</option>
                 <option value="email_notification">Action: Automated Email</option>

@@ -92,7 +92,7 @@ function mapPlan(row: PlanRow, id: number): Record<string, unknown> {
     storageGb: Math.round(Number(row.storage_quota_mb || 0) / 1024),
     featuresJson: String(row.features_json || '[]'),
     thirdPartyDisclosure:
-      'GST 18% applicable. Custom domain fees paid directly to customer registrar.',
+      'Applicable taxes will be confirmed before payment. Domain registration and renewal are paid directly to the registrar.',
     active: Boolean(row.is_active ?? true),
   };
 }

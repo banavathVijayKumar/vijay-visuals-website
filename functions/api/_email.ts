@@ -612,8 +612,8 @@ export function buildOrderConfirmationEmailHtml(params: {
   const intro = isStoreOrder
     ? `We have received your order from <strong>${escapeHtml(tenantBrand)}</strong>. The store will review your order and share updates.`
     : `We have received your website development order for <strong>${safePackage}</strong>. Our engineering and creative team is reviewing your requirements.`;
-  const statusLabel = isStoreOrder ? 'ORDER STATUS' : 'ESTIMATED DELIVERY';
-  const statusValue = isStoreOrder ? 'Received — awaiting store confirmation' : '3–5 Business Days';
+  const statusLabel = isStoreOrder ? 'ORDER STATUS' : 'PROJECT TIMELINE';
+  const statusValue = isStoreOrder ? 'Received — awaiting store confirmation' : 'Quoted after scope confirmation';
   const actionUrl = isStoreOrder && params.storeUrl ? escapeHtml(params.storeUrl) : escapeHtml(dashboardUrl);
   const actionLabel = isStoreOrder && params.storeUrl ? 'View Store' : 'View Order in Dashboard';
   const tenantFooter = isStoreOrder

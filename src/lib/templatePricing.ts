@@ -12,6 +12,8 @@ export interface TemplatePriceView {
   label: string;
 }
 
+export const TEMPLATE_TAX_NOTE = 'Applicable taxes will be confirmed before payment.';
+
 export const TEMPLATE_PURCHASE_INCLUSIONS = [
   'One-time website template purchase for one website.',
   'Editable responsive design: colours, fonts, banners, images, logo, header, footer, text and section order.',
@@ -71,12 +73,11 @@ export function describeTemplatePrice(plans: PlatformPlanRecord[], templateId: s
       label: 'Not available yet',
     };
   }
-  const gstNote = plan.category === 'template' ? ' + GST at checkout' : '';
   return {
     code,
     configured: true,
     active: true,
     priceInr: Number(plan.priceInr || 0),
-    label: Number(plan.priceInr || 0) === 0 ? `Free${gstNote}` : `₹${Number(plan.priceInr).toLocaleString('en-IN')}${gstNote}`,
+    label: Number(plan.priceInr || 0) === 0 ? 'Free · ₹0 total' : `₹${Number(plan.priceInr).toLocaleString('en-IN')} base price`,
   };
 }

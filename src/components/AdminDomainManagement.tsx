@@ -524,7 +524,7 @@ export const AdminDomainManagement: React.FC<AdminDomainManagementProps> = ({ on
             <span>Super Admin Domain, Hosting & Management Fee Configuration</span>
           </h3>
           <p className="text-[11px] text-[#9E9EB2] mt-0.5">
-            All fees are itemized separately for customers with GST%. Changes take effect immediately across Customer & Business Owner Domain Centers.
+            Registrar fees and indicative tax fields are itemized separately for customers. Changes take effect immediately across Customer & Business Owner Domain Centers.
           </p>
         </div>
 

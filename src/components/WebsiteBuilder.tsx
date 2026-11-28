@@ -111,10 +111,10 @@ export const PLAN_TIER_CONFIG: Record<
     gst: 0,
     total: 0,
     baseStr: '₹0',
-    gstStr: '₹0',
-    totalStr: 'Free',
+    gstStr: 'Not applicable',
+    totalStr: '₹0',
     highlight: 'Free',
-    desc: 'Mobile-responsive website on a free /site/your-brand subdomain, up to 15 products. Upgrade anytime.',
+    desc: 'Mobile-responsive website on a free /site/your-brand subdomain, up to 15 products. Total ₹0; no tax calculation. Upgrade anytime.',
   },
   starter_website: {
     code: 'starter-website',
@@ -123,8 +123,8 @@ export const PLAN_TIER_CONFIG: Record<
     gst: 540,
     total: 3539,
     baseStr: '₹2,999',
-    gstStr: '₹540',
-    totalStr: '₹3,539',
+    gstStr: 'Confirmed before payment',
+    totalStr: 'Base ₹2,999 + applicable taxes',
     highlight: 'Essential',
     desc: 'Mobile-responsive business website across 36 industry templates, SEO & lead forms.',
   },
@@ -135,10 +135,10 @@ export const PLAN_TIER_CONFIG: Record<
     gst: 1440,
     total: 9439,
     baseStr: '₹7,999',
-    gstStr: '₹1,440',
-    totalStr: '₹9,439',
+    gstStr: 'Confirmed before payment',
+    totalStr: 'Base ₹7,999 + applicable taxes',
     highlight: 'Most Popular',
-    desc: 'Full website design, products, orders, gallery, publishing & custom domain connection.',
+    desc: 'Full website design, products, orders, gallery, publishing & custom domain connection. Domain registration/renewal and hosting are separate.',
   },
   ecommerce_website: {
     code: 'ecommerce-website',
@@ -147,10 +147,10 @@ export const PLAN_TIER_CONFIG: Record<
     gst: 2700,
     total: 17699,
     baseStr: '₹14,999',
-    gstStr: '₹2,700',
-    totalStr: '₹17,699',
+    gstStr: 'Confirmed before payment',
+    totalStr: 'Base ₹14,999 + applicable taxes',
     highlight: 'Storefront',
-    desc: 'Full e-commerce store with catalog, variants, stock alerts, coupons & GST invoices.',
+    desc: 'Storefront with categories, product variants, cart/checkout, configured coupons and low-stock counts in owner dashboards. Automated alerts, GST invoices and custom fulfilment workflows are not included by default.',
   },
   website_pwa: {
     code: 'website-plus-pwa',
@@ -159,22 +159,22 @@ export const PLAN_TIER_CONFIG: Record<
     gst: 4140,
     total: 27139,
     baseStr: '₹22,999',
-    gstStr: '₹4,140',
-    totalStr: '₹27,139',
+    gstStr: 'Confirmed before payment',
+    totalStr: 'Base ₹22,999 + applicable taxes',
     highlight: 'Optional PWA',
-    desc: 'Everything in Business Website + installable mobile home-screen web app (PWA).',
+    desc: 'Everything in Business Website + installable mobile home-screen web app (PWA, not a native app-store binary).',
   },
   enterprise_ai: {
     code: 'custom-dev-enterprise',
-    name: 'Custom Dev & Enterprise AI',
+    name: 'Custom Development & Enterprise',
     base: 49999,
     gst: 9000,
     total: 58999,
     baseStr: '₹49,999',
-    gstStr: '₹9,000',
-    totalStr: '₹58,999',
+    gstStr: 'Confirmed before payment',
+    totalStr: 'Base ₹49,999 + applicable taxes',
     highlight: 'Enterprise',
-    desc: 'Custom workflows, dedicated AI engines, ERP sync & high-volume multi-branch routing.',
+    desc: 'Custom workflows and multi-branch routing are quoted after review. AI engines, ERP/POS sync and high-volume automation require a separately approved proposal and are not included by default.',
   },
 };
 
@@ -291,18 +291,18 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   const [templateId, setTemplateId] = useState<string>('clothing-store');
   const [templateName, setTemplateName] = useState<string>('Vastra Heritage Men & Women Apparel');
   const [templateFeatures, setTemplateFeatures] = useState<string[]>([
-    'Interactive Size Guide',
-    'Trial At Home Available',
-    'Fabric Composition Specs',
-    'Express 48h Alteration',
+    'Size/colour variants',
+    'Product gallery',
+    'Editable fabric details',
+    'WhatsApp enquiry (business number)',
   ]);
   const [templateSearch, setTemplateSearch] = useState('');
-  const [tagline, setTagline] = useState('Pure Kanchipuram Handlooms & Festive Bridal Wear');
+  const [tagline, setTagline] = useState('Sample handloom & festive bridal wear catalogue');
   const [heroHeadline, setHeroHeadline] = useState('');
   const [heroSubheadline, setHeroSubheadline] = useState('');
   const [ctaText, setCtaText] = useState('Explore Collection');
   const [description, setDescription] = useState(
-    'Direct from master weavers in Telangana & Tamil Nadu with nationwide doorstep delivery and custom tailoring.'
+    'Illustrative sample boutique catalogue with editable product photos, prices, variants and enquiry details. Not a real business.'
   );
   const [logoText, setLogoText] = useState('SLS');
   const [logoImage, setLogoImage] = useState('');
@@ -317,12 +317,14 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   const [seoDescription, setSeoDescription] = useState('');
   const [currency, setCurrency] = useState('INR');
   const [language, setLanguage] = useState<'en' | 'te' | 'hi'>('en');
-  const [phone, setPhone] = useState('+91 93813 62201');
-  const [whatsapp, setWhatsapp] = useState('919381362201');
-  const [address, setAddress] = useState('Banjara Hills, Hyderabad, Telangana');
-  const [businessHours, setBusinessHours] = useState('Mon–Sun: 10:00 AM – 9:30 PM');
-  const [deliveryInfo, setDeliveryInfo] = useState('Same-day local delivery & 2–4 day pan-India shipping.');
-  const [returnPolicy, setReturnPolicy] = useState('7-day easy exchange/return for unused items with original tags.');
+  // Fictional sample identity. Preview links and writes are blocked; replace these
+  // fields with real, verified business details before any published use.
+  const [phone, setPhone] = useState('+91 00000 00000 (sample)');
+  const [whatsapp, setWhatsapp] = useState('0000000000');
+  const [address, setAddress] = useState('Sample Address, Sample City — fictional');
+  const [businessHours, setBusinessHours] = useState('Sample hours — not a real business');
+  const [deliveryInfo, setDeliveryInfo] = useState('Sample delivery information — fictional; edit before publishing.');
+  const [returnPolicy, setReturnPolicy] = useState('Sample return policy — fictional; edit before publishing.');
   const [socialLinks, setSocialLinks] = useState({
     instagram: '',
     facebook: '',
@@ -376,11 +378,17 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   // Section Order, Custom Pages, Draft Snapshots & Publish Control
   const [sectionOrder, setSectionOrder] = useState<string[]>(['hero', 'catalog', 'gallery', 'booking', 'contact']);
   const [customPages, setCustomPages] = useState<CustomPage[]>([
-    { slug: 'about', title: 'About Us', content: 'Welcome to our official business website.', inNav: true, blocks: [] },
+    {
+      slug: 'about',
+      title: 'About Us',
+      content: 'Illustrative sample page — replace with verified business information before publishing.',
+      inNav: true,
+      blocks: [],
+    },
     {
       slug: 'shipping-returns',
       title: 'Shipping & Returns',
-      content: 'Transparent delivery timelines and customer-friendly return guidelines.',
+      content: 'Sample delivery and return text — fictional; replace with a verified policy before publishing.',
       inNav: true,
       blocks: [],
     },
@@ -571,7 +579,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
 
       const checkoutOptions = {
         planCode: selectedTier.code,
-        planName: `${selectedTier.name} (${selectedTier.totalStr})`,
+        planName: `${selectedTier.name} (${selectedTier.baseStr} base)`,
         websiteId: purchaseModalTenantId
           ? String(purchaseModalTenantId)
           : editingTenantId
@@ -1928,7 +1936,9 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                     </div>
                     <div className="flex items-baseline gap-1.5 mb-1.5 font-mono-tabular">
                       <span className="text-sm font-bold text-[#ECC86A]">{tier.baseStr}</span>
-                      <span className="text-[10px] text-[#7A7A8E]">+ 18% GST (Total {tier.totalStr})</span>
+                      <span className="text-[10px] text-[#7A7A8E]">
+                        {tierKey === 'free_start' ? 'Total ₹0 · no tax' : 'Applicable taxes will be confirmed before payment.'}
+                      </span>
                     </div>
                     <p className="text-[10px] text-[#8E8EA2] line-clamp-2 leading-relaxed">{tier.desc}</p>
                   </button>
@@ -2002,7 +2012,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                   type="text"
                   value={whatsapp}
                   onChange={(e) => setWhatsapp(e.target.value)}
-                  placeholder="919381362201"
+                  placeholder="0000000000 (sample)"
                   className="w-full rounded-md border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs font-mono-tabular text-white"
                 />
               </div>
@@ -2725,7 +2735,9 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                     </div>
                     <div className="text-right">
                       <p className="font-mono-tabular text-xl font-bold text-[#ECC86A]">{cur.baseStr}</p>
-                      <p className="text-[10px] text-[#7A7A8E]">+ 18% GST</p>
+                      <p className="text-[10px] text-[#7A7A8E]">
+                        {planTier === 'free_start' ? 'Total ₹0 · no tax' : 'Applicable taxes will be confirmed before payment.'}
+                      </p>
                     </div>
                   </div>
 
@@ -2736,14 +2748,23 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                       <span>{cur.baseStr}</span>
                     </div>
                     <div className="flex justify-between text-[#A0A0B4]">
-                      <span>GST (18% Goods &amp; Services Tax):</span>
-                      <span>{cur.gstStr}</span>
+                      <span>Selected template add-on:</span>
+                      <span>₹0 · included</span>
+                    </div>
+                    <div className="flex justify-between text-[#A0A0B4]">
+                      <span>Applicable taxes:</span>
+                      <span className="text-right">{planTier === 'free_start' ? cur.gstStr : 'Applicable taxes will be confirmed before payment.'}</span>
                     </div>
                     <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-[#1E1E2C]">
-                      <span>Total Amount Payable:</span>
-                      <span className="text-[#ECC86A]">{cur.totalStr}</span>
+                      <span>{planTier === 'free_start' ? 'Total' : 'Base price'}</span>
+                      <span className="text-[#ECC86A]">{cur.baseStr}</span>
                     </div>
                   </div>
+                  {planTier !== 'free_start' && (
+                    <p className="text-[10px] leading-relaxed text-[#C4B79A]">
+                      Domain connection/setup does not include a free domain. Registration, renewal and hosting charges are separate.
+                    </p>
+                  )}
                 </div>
               );
             })()}
@@ -2811,7 +2832,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                     <CreditCard className="w-4 h-4" />
                     <span>
                       Pay via Cashfree &amp; Publish (
-                      {(PLAN_TIER_CONFIG[planTier] || PLAN_TIER_CONFIG.website_only).totalStr}
+                      {(PLAN_TIER_CONFIG[planTier] || PLAN_TIER_CONFIG.website_only).baseStr} base
                       )
                     </span>
                   </>

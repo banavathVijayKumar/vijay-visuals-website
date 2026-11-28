@@ -59,7 +59,7 @@ const FALLBACK_BLOG_POSTS: BlogPostItem[] = [
     slug: 'launch-indian-online-store-gst-upi',
     title: 'How Small Businesses in India Launch an Online Store with Direct Seller Settlements',
     excerpt:
-      'Step-by-step checklist for Indian shop owners: mobile-first catalog, COD + UPI readiness, GST invoicing, and keeping 100% domain ownership.',
+      'Step-by-step checklist for Indian shop owners: mobile-first catalog, COD + UPI readiness, tax-record exports for CA review, and keeping 100% domain ownership.',
     content_markdown:
       'Every shop owner in India deserves an independent digital storefront without paying high marketplace commissions. Start by picking your industry template, adding clear product photos with alt text, configuring Cash on Delivery and direct UPI payments (with automated seller split settlement subject to Cashfree Easy Split activation and approval), and connecting your own .in or .com domain via DNS TXT verification.',
     category: 'E-Commerce Guide',
@@ -114,7 +114,7 @@ const POLICY_DOCS: Record<PolicyDocKey, { title: string; points: string[] }> = {
   refund: {
     title: 'Transparent Refund & Cancellation Policy',
     points: [
-      'Platform package invoices clearly itemize one-time setup, recurring subscription, and applicable GST before payment.',
+      'Platform package summaries itemize one-time setup and recurring subscription base prices. Applicable taxes will be confirmed before payment.',
       'Domain registrations, third-party gateway fees, and consumed metered AI/messaging credits are non-refundable once provisioned with external providers.',
       'Storefront customer refunds and returns are managed directly by the respective merchant through the order & return workflow.',
     ],

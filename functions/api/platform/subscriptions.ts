@@ -72,7 +72,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   return json({
     billingSeparationNotice:
-      'Vijay Visuals subscription fees (one-time setup + recurring SaaS plan + GST) are billed separately from your customer store sales, which settle to your business account.',
+      'Vijay Visuals subscription fees (one-time setup + recurring SaaS plan) are billed separately from your customer store sales, which settle to your business account. Applicable taxes will be confirmed before payment.',
     plans,
     activeSubscription,
   });

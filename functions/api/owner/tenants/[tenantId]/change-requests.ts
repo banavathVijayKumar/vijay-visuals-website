@@ -152,7 +152,7 @@ export async function onRequestPost(
   if (isBugFix) {
     aiSummary = `Classified as Quality Assurance / Free Bug Fix. Priority triage required. Estimated developer turnaround: 24–48 hours at ₹0 cost.`;
   } else {
-    aiSummary = `Feature / Design Change Request (${category.replace(/_/g, ' ')}). Technical review required to formulate official GST quotation and milestone timeline.`;
+    aiSummary = `Feature / Design Change Request (${category.replace(/_/g, ' ')}). Technical review required for a quotation, milestone timeline and tax confirmation before payment.`;
   }
 
   const requestNumber = `CR-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;

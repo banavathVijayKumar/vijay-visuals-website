@@ -132,7 +132,6 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
   const proposalUrl = `${baseUrl}/proposal/${proposal.secure_token}`;
   const idempotencyVersion = String(proposal.updated_at || 'initial').replace(/[^A-Za-z0-9]/g, '') || 'initial';
   const amountFormatted = `₹${(proposal.grand_total_inr || proposal.development_fee_inr || 7999).toLocaleString('en-IN')}`;
-  const hasConfirmedGst = Boolean(proposal.gst_confirmed || (proposal.gst_percent && Number(proposal.gst_percent) > 0 && proposal.gst_status === 'confirmed'));
 
   if (body.channel === 'whatsapp') {
     const rawPhone = recipient.replace(/[^0-9]/g, '');
@@ -149,8 +148,8 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       `We have crafted a premium, custom website proposal and responsive business future preview for *${proposal.business_name}*.`,
       ``,
       `📋 *Package:* ${proposal.package_tier || 'STARTER'} Website Package`,
-      `💰 *Total Investment:* ${amountFormatted} ${hasConfirmedGst ? `(${proposal.gst_percent || 18}% GST itemized)` : '(Exclusive of GST / Taxes As Applicable)'}`,
-      `⏱ *Delivery Timeline:* 3–5 Business Days`,
+      `💰 *Quoted Amount:* ${amountFormatted}. Applicable taxes will be confirmed before payment.`,
+      `⏱ *Timeline:* Quoted after scope review`,
       ``,
       `🔍 *Interactive Future Website Preview & Proposal Link:*`,
       `${proposalUrl}`,
@@ -231,8 +230,8 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
           <div style="background-color: #12121A; border: 1px solid #2A2A38; border-radius: 6px; padding: 18px; margin: 20px 0;">
             <p style="margin: 4px 0; font-size: 13px; color: #8E8EA2;">PROPOSAL NUMBER: <strong style="color: #FFFFFF;">${proposal.proposal_number}</strong></p>
             <p style="margin: 4px 0; font-size: 13px; color: #8E8EA2;">SELECTED TIER: <strong style="color: #D4AF37;">${proposal.package_tier || 'STARTER'}</strong></p>
-            <p style="margin: 4px 0; font-size: 13px; color: #8E8EA2;">TOTAL INVESTMENT: <strong style="color: #ECC86A; font-size: 16px;">${amountFormatted}</strong> ${hasConfirmedGst ? `(incl. ${proposal.gst_percent || 18}% GST)` : '(Base Price · Exclusive of GST)'}</p>
-            <p style="margin: 4px 0; font-size: 13px; color: #8E8EA2;">TIMELINE: <strong style="color: #FFFFFF;">3–5 Business Days</strong></p>
+            <p style="margin: 4px 0; font-size: 13px; color: #8E8EA2;">QUOTED AMOUNT: <strong style="color: #ECC86A; font-size: 16px;">${amountFormatted}</strong> · Applicable taxes will be confirmed before payment.</p>
+            <p style="margin: 4px 0; font-size: 13px; color: #8E8EA2;">TIMELINE: <strong style="color: #FFFFFF;">Quoted after scope review</strong></p>
           </div>
 
           <div style="text-align: center; margin: 30px 0;">

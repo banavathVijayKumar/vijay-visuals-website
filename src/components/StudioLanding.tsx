@@ -882,7 +882,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     Platform Package Cart &amp; Add-On Builder
                   </h3>
                   <p className="text-xs text-[#9E9EB2] mt-1">
-                    All prices are validated server-side from Cloudflare D1 edge database. Toggle add-ons to build a transparent GST quotation.
+                    Base prices are validated server-side from Cloudflare D1. Applicable taxes will be confirmed before payment.
                   </p>
                 </div>
                 <div className="inline-flex rounded-md border border-[#2A2A38] bg-[#08080C] p-0.5 text-xs">
@@ -959,12 +959,12 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     <span>₹{(serverCalc?.recurringSubtotalInr ?? 0).toLocaleString('en-IN')}</span>
                   </div>
                   <div className="flex justify-between text-[#9E9EB2]">
-                    <span>GST (18%)</span>
-                    <span>₹{(serverCalc?.gstInr ?? 0).toLocaleString('en-IN')}</span>
+                    <span>Applicable taxes</span>
+                    <span className="text-right">Applicable taxes will be confirmed before payment.</span>
                   </div>
                   <div className="flex justify-between text-base font-bold text-[#ECC86A] pt-2 border-t border-[#1E1E2B]">
-                    <span>Grand Total (Incl. GST)</span>
-                    <span>₹{(serverCalc?.grandTotalInr ?? 0).toLocaleString('en-IN')}</span>
+                    <span>Base subtotal</span>
+                    <span>₹{((serverCalc?.oneTimeSubtotalInr ?? 0) + (serverCalc?.recurringSubtotalInr ?? 0)).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
 
@@ -997,8 +997,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     Locked Quotation Saved: {lockedProposal.proposalNumber}
                   </p>
                   <p className="text-[11px] text-[#D5D5E2]">
-                    Grand Total: ₹{lockedProposal.grandTotalInr.toLocaleString('en-IN')} (incl. ₹
-                    {lockedProposal.gstInr.toLocaleString('en-IN')} GST). Prices are locked and ready in your Dashboards tab.
+                    Line-item base prices are locked and ready in your Dashboards tab. Applicable taxes will be confirmed before payment.
                   </p>
                   <div className="flex gap-2 pt-1">
                     <button
@@ -1031,7 +1030,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                     disabled={propBusy}
                     className="min-h-11 w-full py-2.5 rounded-md bg-gold-gradient text-[#08080A] text-xs font-semibold"
                   >
-                    {propBusy ? 'Locking Quotation...' : 'Generate Locked Quotation (18% GST)'}
+                    {propBusy ? 'Locking Quotation...' : 'Generate Locked Quotation'}
                   </button>
                 </form>
               )}
@@ -1333,7 +1332,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <p className="font-mono-tabular text-xl font-bold text-[#ECC86A]">
                     ₹{buyingPlan.priceInr.toLocaleString('en-IN')}
                   </p>
-                  <p className="text-[10px] text-[#7A7A8E]">+ 18% GST</p>
+                  <p className="text-[10px] text-[#7A7A8E]">Applicable taxes will be confirmed before payment.</p>
                 </div>
               </div>
 
@@ -1344,14 +1343,16 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <span>₹{buyingPlan.priceInr.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="flex justify-between text-[#A0A0B4]">
-                  <span>GST (18% Goods &amp; Services Tax):</span>
-                  <span>₹{Math.round(buyingPlan.priceInr * 0.18).toLocaleString('en-IN')}</span>
+                  <span>Selected template add-on:</span>
+                  <span>₹0 · included</span>
+                </div>
+                <div className="flex justify-between text-[#A0A0B4]">
+                  <span>Applicable taxes:</span>
+                  <span className="text-right">Applicable taxes will be confirmed before payment.</span>
                 </div>
                 <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-[#1E1E2C]">
-                  <span>Total Amount Payable:</span>
-                  <span className="text-[#ECC86A]">
-                    ₹{Math.round(buyingPlan.priceInr * 1.18).toLocaleString('en-IN')}
-                  </span>
+                  <span>Package base price</span>
+                  <span className="text-[#ECC86A]">₹{buyingPlan.priceInr.toLocaleString('en-IN')}</span>
                 </div>
               </div>
             </div>
@@ -1370,7 +1371,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                 </li>
                 <li className="flex items-center gap-1.5">
                   <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
-                  <span>Orders, invoices &amp; customers</span>
+                  <span>Order records &amp; customers</span>
                 </li>
                 <li className="flex items-center gap-1.5">
                   <Check className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
@@ -1434,7 +1435,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
                   <>
                     <CreditCard className="w-4 h-4" />
                     <span>
-                      Proceed to Cashfree Checkout (₹{Math.round(buyingPlan.priceInr * 1.18).toLocaleString('en-IN')})
+                      Proceed to Cashfree Checkout (₹{buyingPlan.priceInr.toLocaleString('en-IN')} base · taxes confirmed before payment)
                     </span>
                   </>
                 )}

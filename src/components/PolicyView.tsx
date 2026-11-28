@@ -75,7 +75,7 @@ const POLICY_PAGES: Record<PolicyPageKey, PolicyPage> = {
       {
         heading: 'Platform payments',
         points: [
-          'Platform package invoices clearly itemize one-time setup, recurring subscription, and applicable GST before payment.',
+          'Platform package summaries itemize one-time setup and recurring subscription base prices. Applicable taxes will be confirmed before payment.',
           'Domain registrations, third-party gateway fees, and consumed metered AI/messaging credits are non-refundable once provisioned with external providers.',
         ],
       },

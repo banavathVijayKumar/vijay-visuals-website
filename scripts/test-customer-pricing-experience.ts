@@ -12,9 +12,11 @@ import {
   BUSINESS_PACKAGE_SCOPE,
   CUSTOM_REQUIREMENT_MESSAGE,
   CUSTOMER_RESPONSIBILITIES,
+  DOMAIN_AND_HOSTING_NOTE,
   PACKAGE_EXCLUSIONS,
   PACKAGE_MILESTONES,
   PROPOSED_TEMPLATE_PRICE_BY_ID,
+  TAX_CONFIRMATION_NOTE,
   detectCustomRequirement,
   describeBusinessPackagePrice,
   getProposedTemplatePrice,
@@ -60,6 +62,13 @@ const packageStatusApi = read('functions/api/customer/package-status.ts');
 const middleware = read('functions/_middleware.ts');
 const plansApi = read('functions/api/plans.ts');
 const content = read('src/data/content.ts');
+const builder = read('src/components/WebsiteBuilder.tsx');
+const templatePricing = read('src/lib/templatePricing.ts');
+const templatesData = read('src/lib/templatesData.ts');
+const storefront = read('src/components/StorefrontView.tsx');
+const businessFuture = read('src/components/BusinessFuturePreview.tsx');
+const seed = read('src/db/seed.ts');
+const supabase = read('src/lib/supabase.ts');
 const report = read('reports/vijay-visuals-36-template-pricing-schedule.md');
 
 it('all 36 catalogue templates have an exact proposed price and tpl-* SKU', () => {
@@ -114,8 +123,7 @@ it('₹7,999 package breakdown keeps template at zero and separates recurring co
     code: 'business-website',
     basePriceInr: 7999,
     templateAddOnInr: 0,
-    gstInr: 1440,
-    finalPayableInr: 9439,
+    taxNote: TAX_CONFIRMATION_NOTE,
     recurringInr: 0,
   });
   assert.equal(describeBusinessPackagePrice([]), null);
@@ -173,7 +181,7 @@ it('custom requirements are detected without generating a price', () => {
 });
 
 it('marketplace shows the exact required customer-facing sections and disclosures', () => {
-  const customerJourney = `${pricingLib}\n${marketplace}\n${packageGuide}\n${content}`;
+  const customerJourney = `${pricingLib}\n${marketplace}\n${packageGuide}\n${templatePricing}\n${templatesData}\n${content}`;
   const required = [
     'A · Website Templates',
     'B · Complete Website Packages',
@@ -185,7 +193,10 @@ it('marketplace shows the exact required customer-facing sections and disclosure
     'Cashfree is the only intended platform gateway',
     'Get Your Complete Business Website',
     CUSTOM_REQUIREMENT_MESSAGE,
-    'Final payable amount',
+    'Package base price',
+    TAX_CONFIRMATION_NOTE,
+    'Custom domain connection/setup does not include a free domain',
+    'Design scope:',
     'Payment, refund/cancellation and support transparency',
   ];
   for (const needle of required) {
@@ -270,6 +281,77 @@ it('customer sections use responsive mobile-first layout classes', () => {
   assert.ok(packageGuide.includes('sm:grid-cols-2'));
   assert.ok(customerDashboard.includes('grid-cols-1'));
   assert.ok(customerDashboard.includes('md:grid-cols-2'));
+});
+
+it('free package shows ₹0 total and paid packages use exact tax-confirmation wording', () => {
+  const surfaces = `${pricingLib}\n${marketplace}\n${packageGuide}\n${studio}\n${builder}\n${templatePricing}\n${plansApi}`;
+  assert.ok(surfaces.includes(TAX_CONFIRMATION_NOTE), 'Exact tax-confirmation note is missing');
+  assert.ok(builder.includes('Total ₹0 · no tax'), 'Free package must show a ₹0 total with no tax');
+  assert.ok(!surfaces.includes('₹0 + 18% GST (Total Free)'), 'Confusing free-package GST text remains');
+  assert.ok(!surfaces.includes('+ 18% GST'), 'Fixed 18% GST claim remains on a customer surface');
+  assert.ok(!surfaces.includes('GST (18%)'), 'Fixed GST row remains on a customer surface');
+  assert.ok(!surfaces.includes('₹9,439'), 'Stale final payable claim remains');
+  assert.ok(!surfaces.includes('₹1,440'), 'Stale GST amount claim remains');
+});
+
+it('domain connection is not advertised as a free domain', () => {
+  const surfaces = `${pricingLib}\n${packageGuide}\n${builder}\n${plansApi}\n${templatePricing}`;
+  assert.ok(DOMAIN_AND_HOSTING_NOTE.includes('Custom domain connection/setup does not include a free domain.'));
+  assert.ok(surfaces.includes(DOMAIN_AND_HOSTING_NOTE));
+  assert.ok(plansApi.includes('registration, renewal and hosting charges are separate'));
+  assert.ok(builder.includes('Registration, renewal and hosting charges are separate.'));
+});
+
+it('₹14,999 package advertises only verified e-commerce behaviour', () => {
+  assert.ok(plansApi.includes('low-stock counts in dashboards'));
+  assert.ok(plansApi.includes('configured coupons'));
+  assert.ok(plansApi.includes('GST invoices, refund workflows and custom fulfilment are not included by default'));
+  assert.ok(seed.includes('GST invoices, automated stock alerts, refund workflows and custom fulfilment are not included by default'));
+  assert.ok(builder.includes('Automated alerts, GST invoices and custom fulfilment workflows are not included by default.'));
+  assert.ok(!plansApi.includes('stock alerts & coupons'));
+  assert.ok(!plansApi.includes('GST invoices & order tracking'));
+  assert.ok(!plansApi.includes('refund tracking'));
+  assert.ok(!seed.includes('GST invoice generator'));
+});
+
+it('all 36 template claims avoid unsupported delivery, certification and AI promises', () => {
+  assert.equal((templatesData.match(/badge: '/g) ?? []).length, 36);
+  assert.equal((templatesData.match(/description: '/g) ?? []).length, 36);
+  assert.ok(templatesData.includes('TEMPLATE_CLAIM_DISCLOSURE'));
+  assert.ok(marketplace.includes('Design scope:'));
+  const forbidden = [
+    'express 30-minute delivery dispatch',
+    '360° Ring Viewer',
+    'Same-Day 2-Hour Delivery',
+    'Warranty Assured',
+    'Accredited',
+    '5-Star Luxury',
+    'Certified Organic',
+    '100% Pure',
+    'Dedicated AI engines',
+    'Instant WhatsApp Ordering',
+  ];
+  for (const phrase of forbidden) {
+    assert.ok(!templatesData.includes(phrase), `Unsupported template claim remains: ${phrase}`);
+    assert.ok(!supabase.includes(phrase), `Unsupported dead-template claim remains: ${phrase}`);
+  }
+  assert.ok(!supabase.includes('UNUSED_OLD_TEMPLATES'), 'Historical misleading template block should be removed');
+});
+
+it('Sri Lakshmi demo storefront is fictional, labelled and non-contactable', () => {
+  const surfaces = `${builder}\n${storefront}\n${businessFuture}`;
+  assert.ok(businessFuture.includes('Illustrative Demo — Not a real business'));
+  assert.ok(storefront.includes('Illustrative Demo — Not a real business'));
+  assert.ok(storefront.includes('Phone, address, opening hours, delivery, return policy,'));
+  assert.ok(storefront.includes('Sample phone (fictional — not for calls)'));
+  assert.ok(storefront.includes('Sample WhatsApp (fictional — messaging disabled)'));
+  assert.ok(storefront.includes('Orders, payments, messages and form submissions are disabled.'));
+  assert.ok(storefront.includes('Illustrative demo: quote requests are disabled. No message was sent.'));
+  assert.ok(storefront.includes('modules.whatsappOrder && tenant.whatsapp && !demoSample'));
+  assert.ok(storefront.includes('seoConfig?.googleMapsUrl && !demoSample'));
+  assert.ok(builder.includes('+91 00000 00000 (sample)'));
+  assert.ok(!builder.includes("+91 93813 62201"));
+  assert.ok(!builder.includes('919381362201'));
 });
 
 console.log('--------------------------------------------------------------------');

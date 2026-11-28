@@ -361,7 +361,7 @@ export const OrderTrackerModal: React.FC<OrderTrackerModalProps> = ({
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-[#323244] text-xs font-medium text-[#E8E8ED] hover:border-[#D4AF37]"
               >
                 <Printer className="w-3.5 h-3.5 text-[#D4AF37]" />
-                <span>View Printable GST Invoice ({result.order.invoiceNumber})</span>
+                <span>View Printable Receipt ({result.order.invoiceNumber})</span>
               </button>
             )}
           </div>

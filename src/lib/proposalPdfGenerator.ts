@@ -7,6 +7,8 @@
 
 import { OFFICIAL_VV_LOGO_BASE64 } from './officialLogo';
 
+const TAX_CONFIRMATION_NOTE = 'Applicable taxes will be confirmed before payment.';
+
 export interface ProposalRecord {
   id: number;
   proposal_number: string;
@@ -70,10 +72,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
   } catch {}
 
   const tier = p.package_tier || 'STARTER';
-  const hasConfirmedGst = Boolean(p.gst_percent && p.gst_percent > 0 && p.gst_inr && p.gst_inr > 0);
   const devFee = p.development_fee_inr || 7999;
-  const gstAmount = hasConfirmedGst ? (p.gst_inr || 0) : 0;
-  const totalAmount = hasConfirmedGst ? (p.grand_total_inr || (devFee + gstAmount)) : (p.grand_total_inr || devFee);
   const showGoldAndPremium = Boolean(packagesCmp?.gold?.approved === true && packagesCmp?.premium?.approved === true);
   const goldPrice = packagesCmp.gold?.priceInr || 14999;
   const premiumPrice = packagesCmp.premium?.priceInr || 24999;
@@ -98,7 +97,6 @@ export function generateProposalHtml(p: ProposalRecord): string {
   const pincode = escHtml(p.pincode || '500081');
   const area = escHtml(p.area || p.city || 'your area');
   const safeTier = escHtml(tier);
-  const gstPercent = escHtml(p.gst_percent);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -332,7 +330,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           ${safeTier} <span style="font-size: 15px; font-weight: 400; color: #A5A5B8;">PACKAGE</span>
         </div>
         <div style="font-size: 20px; font-weight: 800; color: #ECC86A;">
-          ₹${totalAmount.toLocaleString('en-IN')} <span style="font-size: 10px; font-weight: 400; color: #8E8EA2;">${hasConfirmedGst ? `(One-Time · ${gstPercent}% GST Included)` : '(One-Time Base Price · Exclusive of GST / As Applicable)'}</span>
+          ₹${devFee.toLocaleString('en-IN')} <span style="font-size: 10px; font-weight: 400; color: #8E8EA2;">(One-Time Base Price · ${TAX_CONFIRMATION_NOTE})</span>
         </div>
       </div>
     </div>
@@ -615,13 +613,13 @@ export function generateProposalHtml(p: ProposalRecord): string {
         </div>
         <div>
           <div style="font-size: 9px; color: #8E8EA2; text-transform: uppercase;">Tax Status</div>
-          <div style="font-size: 13px; font-weight: 700; color: #FFFFFF;">
-            ${hasConfirmedGst ? `+₹${gstAmount.toLocaleString('en-IN')} (${gstPercent}% GST)` : 'GST: Excluded / As Applicable'}
+          <div style="font-size: 13px; font-weight: 700; color: #FFFFFF; max-width: 210px;">
+            ${TAX_CONFIRMATION_NOTE}
           </div>
         </div>
         <div style="text-align: right;">
-          <div style="font-size: 9px; color: #ECC86A; text-transform: uppercase; font-weight: 600;">Total Investment</div>
-          <div style="font-size: 17px; font-weight: 800; color: #ECC86A;">₹${totalAmount.toLocaleString('en-IN')} ${hasConfirmedGst ? 'All-Inclusive' : '(Base Price)'}</div>
+          <div style="font-size: 9px; color: #ECC86A; text-transform: uppercase; font-weight: 600;">Base Price</div>
+          <div style="font-size: 17px; font-weight: 800; color: #ECC86A;">₹${devFee.toLocaleString('en-IN')}</div>
         </div>
       </div>
     </div>
@@ -803,20 +801,20 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div>
             <div style="font-size: 9px; color: #D4AF37; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">STARTER TIER</div>
             <div style="font-size: 20px; font-weight: 800; color: #FFFFFF; margin: 4px 0;">₹${devFee.toLocaleString('en-IN')}</div>
-            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">${hasConfirmedGst ? `+${gstPercent}% GST (₹${totalAmount.toLocaleString('en-IN')} Total)` : 'Base Fee · Taxes As Applicable'}</div>
+            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">Base Fee · ${TAX_CONFIRMATION_NOTE}</div>
             <div style="font-size: 8.5px; color: #A0A0B8; text-align: left; line-height: 1.5; border-top: 1px solid #242436; padding-top: 8px;">
-              ✓ Premium Responsive Design<br>
-              ✓ 9 Core Website Features<br>
-              ✓ Product Catalog & Cart<br>
-              ✓ Cashfree Payment Gateway<br>
+              ✓ Responsive design where supported<br>
+              ✓ Core website sections<br>
+              ✓ Product catalogue and cart where configured<br>
+              ✓ Cashfree checkout where configured<br>
               ✓ Business Owner Dashboard<br>
-              ✓ WhatsApp Order CTA<br>
-              ✓ Google Maps & Basic SEO<br>
-              ✓ 30 Days Free Support
+              ✓ WhatsApp enquiry with business number<br>
+              ✓ Contact map and basic SEO fields where configured<br>
+              ✓ 30 days support after handover where included in scope
             </div>
           </div>
           <div style="margin-top: 10px; font-size: 8.5px; color: #ECC86A; font-weight: 600;">
-            Timeline: 3–5 Days
+            Timeline quoted after scope review
           </div>
         </div>
 
@@ -825,20 +823,20 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div>
             <div style="font-size: 9px; color: #D4AF37; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">GOLD TIER</div>
             <div style="font-size: 20px; font-weight: 800; color: #FFFFFF; margin: 4px 0;">₹${goldPrice.toLocaleString('en-IN')}</div>
-            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">${hasConfirmedGst ? `+18% GST (₹${Math.round(goldPrice * 1.18).toLocaleString('en-IN')} Total)` : 'Base Fee · Taxes As Applicable'}</div>
+            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">Base Fee · Applicable taxes will be confirmed before payment.</div>
             <div style="font-size: 8.5px; color: #A0A0B8; text-align: left; line-height: 1.5; border-top: 1px solid #242436; padding-top: 8px;">
               ✓ Everything in Starter<br>
-              ✓ Verified Customer Reviews<br>
-              ✓ Discount Promo Engine<br>
-              ✓ Shiprocket Courier Tracking<br>
-              ✓ Priority Custom DNS Setup<br>
-              ✓ Monthly Sales Analytics<br>
-              ✓ 90 Days Priority Support<br>
-              ✓ 2 Monthly Content Updates
+              ✓ Customer reviews where enabled<br>
+              ✓ Discount coupons where configured<br>
+              ✓ Courier tracking requires configured provider<br>
+              ✓ Custom domain connection for a customer-owned domain<br>
+              ✓ Monthly sales reports where available<br>
+              ✓ 90 days support where included in written scope<br>
+              ✓ Two content updates where included in written scope
             </div>
           </div>
           <div style="margin-top: 10px; font-size: 8.5px; color: #ECC86A; font-weight: 600;">
-            Timeline: 5–7 Days
+            Timeline quoted after scope review
           </div>
         </div>
 
@@ -847,20 +845,20 @@ export function generateProposalHtml(p: ProposalRecord): string {
           <div>
             <div style="font-size: 9px; color: #D4AF37; text-transform: uppercase; font-weight: 700; letter-spacing: 1px;">PREMIUM TIER</div>
             <div style="font-size: 20px; font-weight: 800; color: #FFFFFF; margin: 4px 0;">₹${premiumPrice.toLocaleString('en-IN')}</div>
-            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">${hasConfirmedGst ? `+18% GST (₹${Math.round(premiumPrice * 1.18).toLocaleString('en-IN')} Total)` : 'Base Fee · Taxes As Applicable'}</div>
+            <div style="font-size: 8px; color: #8E8EA2; margin-bottom: 10px;">Base Fee · Applicable taxes will be confirmed before payment.</div>
             <div style="font-size: 8.5px; color: #A0A0B8; text-align: left; line-height: 1.5; border-top: 1px solid #242436; padding-top: 8px;">
               ✓ Everything in Gold<br>
-              ✓ Installable Mobile PWA App<br>
-              ✓ Custom App Icon & Offline Mode<br>
-              ✓ Multi-Currency FX Engine<br>
-              ✓ Automated AI Descriptions<br>
-              ✓ Dedicated Account Manager<br>
-              ✓ 1 Year VIP Support<br>
-              ✓ Quarterly Strategy Audits
+              ✓ Browser-installable PWA where configured, not a store binary<br>
+              ✓ Custom icon and offline content where configured<br>
+              ✓ Multi-currency display where enabled<br>
+              ✓ Gemini AI content tools when configured; no AI concierge<br>
+              ✓ Named contact where included in written scope<br>
+              ✓ One-year support where included in written scope<br>
+              ✓ Quarterly reviews where included in written scope
             </div>
           </div>
           <div style="margin-top: 10px; font-size: 8.5px; color: #ECC86A; font-weight: 600;">
-            Timeline: 7–10 Days
+            Timeline quoted after scope review
           </div>
         </div>
       </div>
@@ -873,7 +871,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           </div>
           <div style="text-align: right;">
             <div style="font-size: 18px; font-weight: 800; color: #ECC86A;">₹${devFee.toLocaleString('en-IN')}</div>
-            <div style="font-size: 8px; color: #8E8EA2;">${hasConfirmedGst ? `+₹${gstAmount.toLocaleString('en-IN')} (${gstPercent}% GST)` : 'Base Investment · Taxes As Applicable'}</div>
+            <div style="font-size: 8px; color: #8E8EA2;">Base Price · ${TAX_CONFIRMATION_NOTE}</div>
           </div>
         </div>
 
@@ -882,29 +880,29 @@ export function generateProposalHtml(p: ProposalRecord): string {
             <div style="color: #D4AF37; font-weight: 700; font-size: 10px; margin-bottom: 4px;">✓ Front-End & Customer Experience</div>
             • Custom responsive luxury design tailored for ${categoryName}<br>
             • Fluid mobile layout for iOS Safari & Android Chrome<br>
-            • Product catalog, high-res photos, descriptions & categories<br>
-            • Interactive shopping cart with coupon support & instant checkout<br>
-            • Direct WhatsApp order button with cart summaries
+            • Product catalogue, photos, descriptions and categories<br>
+            • Cart with configured coupons and checkout where enabled<br>
+            • WhatsApp enquiry link using the business number
           </div>
           <div style="background: #161622; padding: 10px; border-radius: 6px; border: 1px solid #252538;">
             <div style="color: #D4AF37; font-weight: 700; font-size: 10px; margin-bottom: 4px;">✓ Payments, Control & Infrastructure</div>
             • Cashfree Payment Gateway (UPI, Dynamic QR, Cards, NetBanking)<br>
             • Dedicated Business Owner Dashboard for self-editing & pricing<br>
-            • Cloudflare Pages edge hosting with automated SSL certificates<br>
-            • Ethical local Google search tags & XML sitemap generation<br>
-            • Interactive Google Map location, contact dialers & hours
+            • Static hosting on Cloudflare Pages where configured<br>
+            • Basic SEO fields, structured metadata and XML sitemap where configured<br>
+            • Map, contact details and opening hours where configured
           </div>
         </div>
 
         <div style="display: flex; justify-content: space-between; align-items: center; background: #0E0E16; border-radius: 6px; padding: 8px 12px; margin-top: 10px; font-size: 8.5px;">
           <div>
-            <strong style="color: #FFFFFF;">Delivery Timeline:</strong> <span style="color: #ECC86A; font-weight: 700;">3–5 Business Days</span>
+            <strong style="color: #FFFFFF;">Delivery Timeline:</strong> <span style="color: #ECC86A; font-weight: 700;">Quoted after scope review</span>
           </div>
           <div>
-            <strong style="color: #FFFFFF;">Post-Launch Support:</strong> <span style="color: #10B981; font-weight: 600;">30 Days Complimentary Assistance</span>
+            <strong style="color: #FFFFFF;">Post-Launch Support:</strong> <span style="color: #10B981; font-weight: 600;">30 days after handover where included in scope</span>
           </div>
           <div>
-            <strong style="color: #FFFFFF;">Self-Editing Fee:</strong> <span style="color: #10B981; font-weight: 600;">₹0 (Included for Lifetime)</span>
+            <strong style="color: #FFFFFF;">Self-Editing:</strong> <span style="color: #10B981; font-weight: 600;">Dashboard editing included; no lifetime service promise</span>
           </div>
         </div>
       </div>
@@ -962,9 +960,9 @@ export function generateProposalHtml(p: ProposalRecord): string {
         <div style="background: #12121C; border: 1px solid #222232; border-radius: 6px; padding: 8px 12px; display: flex; justify-content: space-between;">
           <div>
             <strong style="color: #FFFFFF;">3. Cloud Hosting & SSL Security</strong>
-            <div style="color: #8E8EA2;">Hosted on Cloudflare Pages high-speed global CDN with free automated SSL encryption included.</div>
+            <div style="color: #8E8EA2;">Static hosting on the Cloudflare Pages free tier where applicable; SSL is provided by Cloudflare. Charges beyond the platform free tier are separate.</div>
           </div>
-          <div style="color: #10B981; font-weight: 700;">Included Free</div>
+          <div style="color: #10B981; font-weight: 700;">Platform Free Tier</div>
         </div>
         <div style="background: #12121C; border: 1px solid #222232; border-radius: 6px; padding: 8px 12px; display: flex; justify-content: space-between;">
           <div>
@@ -976,9 +974,9 @@ export function generateProposalHtml(p: ProposalRecord): string {
         <div style="background: #12121C; border: 1px solid #222232; border-radius: 6px; padding: 8px 12px; display: flex; justify-content: space-between;">
           <div>
             <strong style="color: #FFFFFF;">5. Maintenance & Support (Optional)</strong>
-            <div style="color: #8E8EA2;">First 30 days are completely free. Optional monthly maintenance (₹999/mo) only if you require dedicated hands-on staff assistance.</div>
+            <div style="color: #8E8EA2;">Up to 30 days of support after handover where included in the written scope. Further hands-on maintenance is quoted separately.</div>
           </div>
-          <div style="color: #B0B0C4;">Optional Only</div>
+          <div style="color: #B0B0C4;">Quoted Separately</div>
         </div>
       </div>
 
@@ -1012,7 +1010,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
         <div style="font-size: 10px; text-transform: uppercase; color: #D4AF37; font-weight: 600; letter-spacing: 2px;">Ready to Launch</div>
         <h2 style="font-size: 26px; font-weight: 800; color: #FFFFFF; margin: 4px 0 8px 0;">Authorize & Begin Development</h2>
         <p style="font-size: 11px; color: #A0A0B8; max-width: 480px; margin: 0 auto; line-height: 1.5;">
-          Review the proposal terms, approve online using your secure link, and proceed with safe Cashfree payment to initiate immediate development.
+          Review the proposal terms, approve online using your secure link, and proceed with verified Cashfree payment. Work starts after written scope confirmation and payment verification.
         </p>
       </div>
 
@@ -1023,9 +1021,9 @@ export function generateProposalHtml(p: ProposalRecord): string {
             <div style="font-size: 16px; font-weight: 800; color: #FFFFFF;">${safeTier} Business Package</div>
           </div>
           <div style="text-align: right;">
-            <div style="font-size: 10px; color: #8E8EA2; text-transform: uppercase;">Total Payable</div>
-            <div style="font-size: 22px; font-weight: 800; color: #ECC86A;">₹${totalAmount.toLocaleString('en-IN')}</div>
-            <div style="font-size: 8px; color: #8E8EA2;">${hasConfirmedGst ? `(${gstPercent}% GST Included)` : '(Taxes As Applicable)'}</div>
+            <div style="font-size: 10px; color: #8E8EA2; text-transform: uppercase;">Package Base Price</div>
+            <div style="font-size: 22px; font-weight: 800; color: #ECC86A;">₹${devFee.toLocaleString('en-IN')}</div>
+            <div style="font-size: 8px; color: #8E8EA2;">${TAX_CONFIRMATION_NOTE}</div>
           </div>
         </div>
 
@@ -1040,7 +1038,7 @@ export function generateProposalHtml(p: ProposalRecord): string {
           </div>
           <div style="display: flex; gap: 8px;">
             <span style="color: #D4AF37; font-weight: 700;">Step 3:</span>
-            <span>Your dedicated onboarding manager begins storefront deployment immediately.</span>
+            <span>Onboarding begins after written scope confirmation and verified payment.</span>
           </div>
         </div>
       </div>

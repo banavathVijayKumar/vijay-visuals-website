@@ -1970,7 +1970,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                           type="text"
                           value={prodSpecs}
                           onChange={(e) => setProdSpecs(e.target.value)}
-                          placeholder="Key specs, material, or warranty details (e.g. 1 Year Brand Warranty · 100% Pure Cotton)"
+                          placeholder="Key specs, material, or care notes (e.g. Cotton · Handwash)"
                           className="w-full rounded-md border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-xs text-white"
                         />
 
@@ -3632,9 +3632,9 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                 <div className="px-5 py-3.5 border-b border-[#1E1E2B] flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-white flex items-center gap-2">
                     <Receipt className="w-4 h-4 text-[#D4AF37]" />
-                    <span>Vijay Visuals Platform Payment History &amp; Invoices ({platformPayments.length})</span>
+                    <span>Vijay Visuals Platform Payment History &amp; Receipts ({platformPayments.length})</span>
                   </h2>
-                  <span className="text-[10px] text-[#7E7E92]">Authoritative GST Receipts</span>
+                  <span className="text-[10px] text-[#7E7E92]">Verified payment records</span>
                 </div>
 
                 {platformPayments.length === 0 ? (
@@ -4225,7 +4225,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                                 {p.proposalNumber} · {p.businessName}
                               </p>
                               <p className="text-[11px] text-[#9A9AAE]">
-                                {p.customerName} ({p.customerEmail}) · Total ₹{p.grandTotalInr.toLocaleString('en-IN')} (incl. ₹{p.gstInr.toLocaleString('en-IN')} GST)
+                                {p.customerName} ({p.customerEmail}) · Quoted amount ₹{p.grandTotalInr.toLocaleString('en-IN')} · Applicable taxes will be confirmed before payment.
                               </p>
                             </div>
                             <select
@@ -4523,7 +4523,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                     <p className="text-[10px] text-[#A0A0B4] mt-0.5">Platform Web Engineering &amp; Multi-Tenant Cloud Services</p>
                     <p className="text-[10px] text-[#7E7E92]">
                       {canShowTaxInvoice(selectedReceipt)
-                        ? 'Tax Invoice · SAC Code: 998314 (GSTIN: Pending Registration / Business Settings)'
+                        ? 'Tax Invoice Draft · SAC Code: 998314 (GSTIN: Pending Registration / Business Settings)'
                         : 'Payment Record · Not a verified tax invoice'}
                     </p>
                   </div>
@@ -4608,13 +4608,14 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                           <span>₹{base.toLocaleString('en-IN')}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>GST (stored):</span>
+                          <span>Tax field (stored, unverified):</span>
                           <span>₹{gst.toLocaleString('en-IN')}</span>
                         </div>
                         <div className="flex justify-between text-xs font-bold text-white pt-1.5 border-t border-[#1C1C28]">
-                          <span>Grand Total (stored):</span>
+                          <span>Stored amount:</span>
                           <span className="text-[#ECC86A]">₹{total.toLocaleString('en-IN')}</span>
                         </div>
+                        <p className="text-[9px] text-[#D8C99A]">Applicable taxes will be confirmed before payment.</p>
                       </div>
                     </>
                   );

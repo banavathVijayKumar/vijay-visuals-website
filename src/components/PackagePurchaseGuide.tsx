@@ -15,9 +15,9 @@ import {
   BUSINESS_PACKAGE_SCOPE,
   CUSTOMER_RESPONSIBILITIES,
   CUSTOM_REQUIREMENT_MESSAGE,
+  DOMAIN_AND_HOSTING_NOTE,
   PACKAGE_EXCLUSIONS,
   PACKAGE_MILESTONES,
-  PACKAGE_GST_RATE_PERCENT,
   detectCustomRequirement,
   describeBusinessPackagePrice,
   formatInr,
@@ -243,18 +243,21 @@ export const PackagePurchaseGuide: React.FC<PackagePurchaseGuideProps> = ({
                   <dd className="font-mono-tabular text-white">{formatInr(0)}</dd>
                 </div>
                 <div className="flex justify-between gap-3 border-b border-[#222230] pb-2">
-                  <dt className="text-[#A3A3B5]">GST ({PACKAGE_GST_RATE_PERCENT}%, configured tax)</dt>
-                  <dd className="font-mono-tabular text-white">{formatInr(price.gstInr)}</dd>
+                  <dt className="text-[#A3A3B5]">Applicable taxes</dt>
+                  <dd className="text-right text-[11px] text-white">{price.taxNote}</dd>
                 </div>
                 <div className="flex justify-between gap-3 border-b border-[#222230] pb-2">
                   <dt className="text-[#A3A3B5]">Separate recurring costs</dt>
                   <dd className="font-mono-tabular text-white">{formatInr(price.recurringInr)} now</dd>
                 </div>
                 <div className="flex justify-between gap-3 pt-2 text-base font-bold text-[#ECC86A]">
-                  <dt>Final payable amount</dt>
-                  <dd className="font-mono-tabular">{formatInr(price.finalPayableInr)}</dd>
+                  <dt>Package base price</dt>
+                  <dd className="font-mono-tabular">{formatInr(price.basePriceInr)}</dd>
                 </div>
               </dl>
+              <p className="mt-3 rounded-md border border-amber-500/25 bg-amber-950/10 px-3 py-2 text-[10px] leading-relaxed text-[#D8C99A]">
+                {DOMAIN_AND_HOSTING_NOTE}
+              </p>
               <button
                 type="button"
                 onClick={() => onUseTemplate(selectedTemplate.id)}

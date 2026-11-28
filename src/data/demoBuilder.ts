@@ -166,7 +166,7 @@ export const DEMO_CATEGORY_PROFILES: Record<DemoCategoryId, DemoCategoryProfile>
     defaultPrimary: '#2563A6',
     sections: [...BASE_SECTIONS, 'faq'],
     items: [
-      item('electronics-1', 'Wireless Headphones', 'Sample audio product with colour and warranty options.', '₹4,999', 'Audio', MEDIA.electronics, [], ['Black', 'Silver'], ['1 year warranty']),
+      item('electronics-1', 'Wireless Headphones', 'Sample audio product with colour options and seller-provided care notes.', '₹4,999', 'Audio', MEDIA.electronics, [], ['Black', 'Silver'], ['Sample care note']),
       item('electronics-2', 'Compact Smart Speaker', 'Sample home device listing with room suggestions.', '₹3,499', 'Smart Home', MEDIA.electronics, [], ['Graphite', 'Sand'], ['Voice assistant ready']),
       item('electronics-3', 'Everyday Power Bank', 'Sample portable charger with capacity choices.', '₹1,799', 'Accessories', MEDIA.electronics, ['10K', '20K'], ['Black'], ['USB-C']),
     ],

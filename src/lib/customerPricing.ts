@@ -73,35 +73,34 @@ export function formatInr(value: number): string {
  * We do not rename, duplicate or re-price it.
  */
 export const BUSINESS_WEBSITE_PACKAGE_CODE = 'business-website';
-export const PACKAGE_GST_RATE_PERCENT = 18;
+export const TAX_CONFIRMATION_NOTE = 'Applicable taxes will be confirmed before payment.';
+export const DOMAIN_AND_HOSTING_NOTE =
+  'Custom domain connection/setup does not include a free domain. Domain registration, renewal and any hosting charges are shown or paid separately wherever applicable.';
 
 export interface PackagePriceBreakdown {
   name: string;
   code: string;
   basePriceInr: number;
   templateAddOnInr: 0;
-  gstInr: number;
-  finalPayableInr: number;
+  taxNote: string;
   recurringInr: 0;
 }
 
 /**
  * Uses the server-loaded plan price when available so the displayed base price
- * can never drift from the existing package catalogue. GST is shown only as
- * the already-configured 18% platform quotation tax, never as a hidden fee.
+ * can never drift from the existing package catalogue. GST registration and
+ * legal applicability are not assumed, so no tax rate or tax amount is quoted.
  */
 export function describeBusinessPackagePrice(plans: PlatformPlanRecord[]): PackagePriceBreakdown | null {
   const plan = plans.find((item) => item.code === BUSINESS_WEBSITE_PACKAGE_CODE);
   if (!plan || !plan.active) return null;
   const basePriceInr = Math.round(Number(plan.priceInr || 0));
-  const gstInr = Math.round(basePriceInr * PACKAGE_GST_RATE_PERCENT / 100);
   return {
     name: plan.name || 'Business Website Package',
     code: plan.code,
     basePriceInr,
     templateAddOnInr: 0,
-    gstInr,
-    finalPayableInr: basePriceInr + gstInr,
+    taxNote: TAX_CONFIRMATION_NOTE,
     recurringInr: 0,
   };
 }
@@ -202,8 +201,8 @@ export const CUSTOMER_RESPONSIBILITIES = [
 ] as const;
 
 export const PACKAGE_EXCLUSIONS = [
-  'Domain registration and renewal.',
-  'Hosting renewals, storage overages and business email accounts.',
+  'Custom domain connection/setup is not a free domain. Domain registration and renewal are paid separately to the registrar.',
+  'Hosting charges, renewals, storage overages and business email accounts are shown or paid separately wherever applicable.',
   'Premium plugins or third-party licences unless separately purchased.',
   'Payment gateway merchant approval, MDR and gateway settlement charges.',
   'Custom integrations, custom development and data migration.',

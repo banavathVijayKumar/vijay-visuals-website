@@ -715,14 +715,14 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
               onClick={() => onNavigatePlan('website_only_onetime')}
               className="px-6 py-3 rounded-lg bg-gold-gradient text-[#08080A] font-bold text-xs hover:opacity-95 transition-opacity shadow-lg"
             >
-              Get Business Website (₹9,439)
+              Get Business Website (₹7,999 base)
             </button>
             <button
               type="button"
               onClick={() => onNavigatePlan('website_plus_pwa_onetime')}
               className="px-6 py-3 rounded-lg border border-[#D4AF37] text-[#ECC86A] font-bold text-xs hover:bg-[#D4AF37]/10 transition-colors"
             >
-              Get Website + Mobile PWA (₹27,139)
+              Get Website + Mobile PWA (₹22,999 base)
             </button>
             <button
               type="button"
@@ -833,8 +833,8 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span>GST (5% Cloud Kitchen)</span>
-                    <span>₹{gstAmount}</span>
+                    <span>Taxes (simulated)</span>
+                    <span>₹{gstAmount} · demo only</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Delivery Fleet Fee</span>
@@ -844,6 +844,7 @@ export const InteractiveDemoHub: React.FC<InteractiveDemoHubProps> = ({
                     <span>Total Amount</span>
                     <span className="text-[#D4AF37]">₹{totalAmount}</span>
                   </div>
+                  <p className="text-[10px] text-[#D8C99A]">Applicable taxes will be confirmed before payment. This transaction is 100% simulated.</p>
                 </div>
 
                 <button

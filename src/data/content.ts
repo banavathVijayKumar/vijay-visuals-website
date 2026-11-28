@@ -123,7 +123,7 @@ export const PLUGIN_CATALOG = [
     category: 'Finance & Accounting',
     permissionScope: 'read:invoices,read:finance',
     pricing: 'Included',
-    description: 'Export GST-ready sales, credit notes, and expense ledgers for CA filing and reconciliation.',
+    description: 'Export sales, credit notes and expense ledgers for CA reconciliation. Filing and tax-return submission are not performed by the platform.',
   },
   {
     code: 'custom_webhook',
@@ -305,10 +305,10 @@ export const PORTFOLIO_DATA = [
     id: 'nocturne-audio',
     title: 'Nocturne Audio & Creator Hardware',
     category: 'Electronics Storefront & AI Center',
-    metric: 'Automated Invoicing & Inventory Alerts',
+    metric: 'Editable Catalog & Low-Stock Counts',
     client: 'Nocturne Audio Systems, HITEC City',
     summary:
-      'Precision electronics catalog powered by Gemini AI customer support, low-stock inventory alerts, and automated GST invoice generation.',
+      'Illustrative electronics catalog with editable specifications, configured Gemini AI content tools where enabled, and low-stock counts in dashboards. GST invoicing and AI concierge are not included.',
     image: '/src/assets/images/store_electronics_audio_1795055804216.jpg',
     slug: 'nocturne-audio-tech',
   },
@@ -376,13 +376,13 @@ const EN_STRINGS: Record<string, string> = {
   heroKicker: 'VIJAY VISUALS · Made in India. Built for the World.',
   heroTitle: 'Empowering Every Business to Go Digital.',
   heroSubtitle:
-    `Proudly built in India for entrepreneurs worldwide. Launch websites across ${CORE_BUSINESS_CATEGORY_COUNT} broad industry groups and ${TEMPLATE_CATEGORY_COUNT} ready-to-customize templates, full e-commerce, 12 interface languages, multi-currency display, custom domains, SEO tools, delivery ops, and Gemini AI automation.`,
+    `Proudly built in India for entrepreneurs worldwide. Launch websites across ${CORE_BUSINESS_CATEGORY_COUNT} broad industry groups and ${TEMPLATE_CATEGORY_COUNT} ready-to-customize templates, e-commerce tools where configured, 12 interface languages, multi-currency display, custom domain connection, SEO fields, and optional Gemini AI content tools.`,
   ctaLaunchBuilder: 'Launch Website Builder',
   ctaExploreStores: 'Explore Live Stores',
   ctaWhatsApp: 'Start Project on WhatsApp',
   liveStoresTitle: 'Live Business Storefronts',
   liveStoresSubtitle:
-    'Open any published multi-tenant storefront to test live shopping, service bookings, coupons, checkout, GST invoicing, and AI concierge.',
+    'Open any published multi-tenant storefront to test shopping, service bookings, configured coupons and checkout where enabled. GST invoicing and an AI concierge are not included.',
   pricingTitle: 'Transparent Packages & Global Licensing',
   pricingSubtitle:
     'Website-only stays affordable; add branded PWA, storage, or AI credits only when needed. Third-party infrastructure charges are clearly disclosed.',
@@ -412,12 +412,12 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'విజయ్ విజువల్స్ · భారతదేశంలో తయారైంది. ప్రపంచం కోసం నిర్మించబడింది.',
     heroTitle: 'ప్రతి వ్యాపారాన్ని డిజిటల్‌గా శక్తివంతం చేస్తోంది.',
     heroSubtitle:
-      '16 వ్యాపార విభాగాల కోసం వెబ్‌సైట్ బిల్డర్, ఈ-కామర్స్, 12 భాషలు, మల్టీ-కరెన్సీ, కస్టమ్ డొమైన్, SEO టూల్స్, డెలివరీ మరియు Gemini AI ఆటోమేషన్.',
+      '16 వ్యాపార విభాగాల కోసం వెబ్‌సైట్ బిల్డర్, ఈ-కామర్స్, 12 భాషలు, మల్టీ-కరెన్సీ, కస్టమ్ డొమైన్, SEO టూల్స్, డెలివరీ మరియు కాన్ఫిగర్ చేసినప్పుడు ఐచ్ఛిక Gemini AI కంటెంట్ టూల్స్.',
     ctaLaunchBuilder: 'వెబ్‌సైట్ బిల్డర్ తెరవండి',
     ctaExploreStores: 'లైవ్ స్టోర్స్ చూడండి',
     ctaWhatsApp: 'వాట్సాప్‌లో సంప్రదించండి',
     liveStoresTitle: 'లైవ్ బిజినెస్ స్టోర్‌ఫ్రంట్‌లు',
-    liveStoresSubtitle: 'ఏదైనా స్టోర్ తెరిచి షాపింగ్, బుకింగ్స్, కూపన్లు, చెకౌట్, GST ఇన్‌వాయిస్ మరియు AI చాట్‌బాట్‌ను పరీక్షించండి.',
+    liveStoresSubtitle: 'ఏదైనా స్టోర్ తెరిచి షాపింగ్, బుకింగ్స్, కాన్ఫిగర్ చేసిన కూపన్లు, చెకౌట్ పరీక్షించండి. GST ఇన్\u200cవాయిస్, AI కాంసియర్\u200cజ్ చేర్చబడవు.',
     pricingTitle: 'పారదర్శక ప్యాకేజీలు & లైసెన్సింగ్',
     pricingSubtitle: 'వెబ్‌సైట్ మాత్రమే తీసుకోవచ్చు లేదా అవసరమైనప్పుడు PWA, స్టోరేజ్, AI క్రెడిట్స్ జోడించవచ్చు.',
     trackOrder: 'ఆర్డర్ ట్రాక్ చేయండి',
@@ -443,12 +443,12 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'विजय विजुअल्स · मेड इन इंडिया। विश्व के लिए निर्मित।',
     heroTitle: 'हर व्यवसाय को डिजिटल बनाने का सशक्त मंच।',
     heroSubtitle:
-      '16 बिजनेस श्रेणियों के लिए AI वेबसाइट बिल्डर, ई-कॉमर्स, 12 भाषाएं, मल्टी-करेंसी, कस्टम डोमेन, SEO टूल्स, डिलीवरी मैनेजमेंट और वैकल्पिक ब्रांडेड PWA।',
+      '16 बिजनेस श्रेणियों के लिए वेबसाइट बिल्डर, ई-कॉमर्स, 12 भाषाएं, मल्टी-करेंसी, कस्टम डोमेन कनेक्शन, SEO फील्ड और कॉन्फ़िगर होने पर वैकल्पिक Gemini AI सामग्री टूल।',
     ctaLaunchBuilder: 'वेबसाइट बिल्डर खोलें',
     ctaExploreStores: 'लाइव स्टोर्स देखें',
     ctaWhatsApp: 'व्हाट्सएप पर शुरू करें',
     liveStoresTitle: 'लाइव बिजनेस स्टोरफ्रंट',
-    liveStoresSubtitle: 'किसी भी स्टोर को खोलें और लाइव शॉपिंग, अपॉइंटमेंट बुकिंग, कूपन, चेकआउट, GST इनवॉइस और AI चैटबॉट टेस्ट करें।',
+    liveStoresSubtitle: 'किसी भी स्टोर को खोलें और शॉपिंग, अपॉइंटमेंट बुकिंग, कॉन्फ़िगर किए गए कूपन और चेकआउट देखें। GST इनवॉइस और AI कॉन्सियर्ज शामिल नहीं हैं।',
     pricingTitle: 'पारदर्शी पैकेज और लाइसेंसिंग',
     pricingSubtitle: 'केवल वेबसाइट पैकेज हमेशा उपलब्ध है; जरूरत होने पर ब्रांडेड PWA, स्टोरेज या AI क्रेडिट जोड़ें।',
     trackOrder: 'ऑर्डर ट्रैक करें',
@@ -468,7 +468,7 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'விஜய் விஷுவல்ஸ் · இந்தியாவில் உருவானது. உலகிற்காக கட்டப்பட்டது.',
     heroTitle: 'ஒவ்வொரு வணிகத்தையும் டிஜிட்டல் மயமாக்குகிறது.',
     heroSubtitle:
-      '16 வணிக பிரிவுகளுக்கான வலைத்தள உருவாக்கி, மின்-வணிகம், 12 மொழிகள், பல நாணய ஆதரவு, தனிப்பயன் டொமைன், SEO மற்றும் Gemini AI ஆட்டோமேஷன்.',
+      '16 வணிக பிரிவுகளுக்கான வலைத்தள உருவாக்கி, மின்-வணிகம், 12 மொழிகள், பல நாணய ஆதரவு, தனிப்பயன் டொமைன், SEO மற்றும் உள்ளமைக்கப்பட்டபோது விருப்பமான Gemini AI உள்ளடக்க கருவிகள்.',
     ctaLaunchBuilder: 'வலை உருவாக்கியை திறக்கவும்',
     ctaExploreStores: 'நேரடி கடைகளை காண்க',
     ctaWhatsApp: 'வாட்ஸ்அப்பில் தொடங்கவும்',
@@ -491,7 +491,7 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'ವಿಜಯ್ ವಿಶುವಲ್ಸ್ · ಭಾರತದಲ್ಲಿ ತಯಾರಾಗಿದೆ. ಜಗತ್ತಿಗಾಗಿ ನಿರ್ಮಿಸಲಾಗಿದೆ.',
     heroTitle: 'ಪ್ರತಿ ವ್ಯವಹಾರವನ್ನು ಡಿಜಿಟಲ್ ಮಾಡಲು ಶಕ್ತಿ ನೀಡುತ್ತಿದೆ.',
     heroSubtitle:
-      '16 ವ್ಯವಹಾರ ವಿಭಾಗಗಳಿಗೆ ವೆಬ್‌ಸೈಟ್ ಬಿಲ್ಡರ್, ಇ-ಕಾಮರ್ಸ್, 12 ಭಾಷೆಗಳು, ಮಲ್ಟಿ-ಕರೆನ್ಸಿ, ಕಸ್ಟಮ್ ಡೊಮೇನ್, SEO ಮತ್ತು Gemini AI ಆಟೋಮೇಷನ್.',
+      '16 ವ್ಯವಹಾರ ವಿಭಾಗಗಳಿಗೆ ವೆಬ್‌ಸೈಟ್ ಬಿಲ್ಡರ್, ಇ-ಕಾಮರ್ಸ್, 12 ಭಾಷೆಗಳು, ಮಲ್ಟಿ-ಕರೆನ್ಸಿ, ಕಸ್ಟಮ್ ಡೊಮೇನ್, SEO ಮತ್ತು ಕಾನ್ಫಿಗರ್ ಮಾಡಿದಾಗ ಐಚ್ಛಿಕ Gemini AI ವಿಷಯ ಪರಿಕರಗಳು.',
     ctaLaunchBuilder: 'ವೆಬ್‌ಸೈಟ್ ಬಿಲ್ಡರ್ ತೆರೆಯಿರಿ',
     ctaExploreStores: 'ಲೈವ್ ಸ್ಟೋರ್‌ಗಳನ್ನು ನೋಡಿ',
     ctaWhatsApp: 'ವಾಟ್ಸಾಪ್‌ನಲ್ಲಿ ಪ್ರಾರಂಭಿಸಿ',
@@ -514,7 +514,7 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'വിജയ് വിഷ്വൽസ് · ഇന്ത്യയിൽ നിർമ്മിച്ചത്. ലോകത്തിനായി ഒരുക്കിയത്.',
     heroTitle: 'എല്ലാ ബിസിനസ്സുകളെയും ഡിജിറ്റലാക്കാൻ ശക്തി നൽകുന്നു.',
     heroSubtitle:
-      '16 ബിസിനസ്സ് വിഭാഗങ്ങൾക്കായി വെബ്സൈറ്റ് ബിൽഡർ, ഇ-കൊമേഴ്സ്, 12 ഭാഷകൾ, മൾട്ടി-കറൻസി, കസ്റ്റം ഡൊമെയ്ൻ, SEO, Gemini AI ഓട്ടോമേഷൻ.',
+      '16 ബിസിനസ്സ് വിഭാഗങ്ങൾക്കായി വെബ്സൈറ്റ് ബിൽഡർ, ഇ-കൊമേഴ്സ്, 12 ഭാഷകൾ, മൾട്ടി-കറൻസി, കസ്റ്റം ഡൊമെയ്ൻ, SEO, ആവശ്യാനുസരണം Gemini AI ഉള്ളടക്ക ഉപകരണങ്ങൾ.',
     ctaLaunchBuilder: 'വെബ്സൈറ്റ് ബിൽഡർ തുറക്കുക',
     ctaExploreStores: 'ലൈവ് സ്റ്റോറുകൾ കാണുക',
     ctaWhatsApp: 'വാട്സ്ആപ്പിൽ ആരംഭിക്കുക',
@@ -537,7 +537,7 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'विजय व्हिज्युअल्स · मेड इन इंडिया. जगासाठी निर्मित.',
     heroTitle: 'प्रत्येक व्यवसायाला डिजिटल बनवण्याची ताकद.',
     heroSubtitle:
-      '16 व्यवसाय श्रेणींसाठी वेबसाइट बिल्डर, ई-कॉमर्स, 12 भाषा, मल्टी-करन्सी, कस्टम डोमेन, SEO टूल्स आणि Gemini AI ऑटोमेशन.',
+      '16 व्यवसाय श्रेणींसाठी वेबसाइट बिल्डर, ई-कॉमर्स, 12 भाषा, मल्टी-करन्सी, कस्टम डोमेन, SEO टूल्स आणि कॉन्फ़िगर केल्यावर पर्यायी Gemini AI सामग्री साधने.',
     ctaLaunchBuilder: 'वेबसाइट बिल्डर उघडा',
     ctaExploreStores: 'लाइव्ह स्टोअर्स पहा',
     ctaWhatsApp: 'व्हॉट्सॲपवर सुरू करा',
@@ -560,7 +560,7 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'বিজয় ভিজ্যুয়ালস · ভারতে তৈরি। বিশ্বের জন্য নির্মিত।',
     heroTitle: 'প্রতিটি ব্যবসাকে ডিজিটাল হতে সক্ষম করছে।',
     heroSubtitle:
-      '১৬টি ব্যবসার বিভাগের জন্য ওয়েবসাইট বিল্ডার, ই-কমার্স, ১২টি ভাষা, মাল্টি-কারেন্সি, কাস্টম ডোমেইন, SEO এবং Gemini AI অটোমেশন।',
+      '১৬টি ব্যবসার বিভাগের জন্য ওয়েবসাইট বিল্ডার, ই-কমার্স, ১২টি ভাষা, মাল্টি-কারেন্সি, কাস্টম ডোমেইন, SEO এবং কনফিগার হলে ঐচ্ছিক Gemini AI কন্টেন্ট টুল।',
     ctaLaunchBuilder: 'ওয়েবসাইট বিল্ডার খুলুন',
     ctaExploreStores: 'লাইভ স্টোর দেখুন',
     ctaWhatsApp: 'হোয়াটসঅ্যাপে শুরু করুন',
@@ -583,7 +583,7 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'વિજય વિઝ્યુઅલ્સ · ભારતમાં નિર્મિત. વિશ્વ માટે બનાવેલ.',
     heroTitle: 'દરેક વ્યવસાયને ડિજિટલ બનાવવાની શક્તિ.',
     heroSubtitle:
-      '16 વ્યવસાય શ્રેણીઓ માટે વેબસાઇટ બિલ્ડર, ઈ-કોમર્સ, 12 ભાષાઓ, મલ્ટી-કરન્સી, કસ્ટમ ડોમેન, SEO અને Gemini AI ઓટોમેશન.',
+      '16 વ્યવસાય શ્રેણીઓ માટે વેબસાઇટ બિલ્ડર, ઈ-કોમર્સ, 12 ભાષાઓ, મલ્ટી-કરન્સી, કસ્ટમ ડોમેન, SEO અને ગોઠવેલ હોય ત્યારે વૈકલ્પિક Gemini AI સામગ્રી સાધનો.',
     ctaLaunchBuilder: 'વેબસાઇટ બિલ્ડર ખોલો',
     ctaExploreStores: 'લાઇવ સ્ટોર્સ જુઓ',
     ctaWhatsApp: 'વોટ્સએપ પર શરૂ કરો',
@@ -606,7 +606,7 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'ਵਿਜੇ ਵਿਜ਼ੁਅਲਸ · ਭਾਰਤ ਵਿੱਚ ਬਣਿਆ। ਦੁਨੀਆ ਲਈ ਤਿਆਰ।',
     heroTitle: 'ਹਰ ਕਾਰੋਬਾਰ ਨੂੰ ਡਿਜੀਟਲ ਬਣਾਉਣ ਦਾ ਪਲੇਟਫਾਰਮ।',
     heroSubtitle:
-      '16 ਕਾਰੋਬਾਰੀ ਸ਼੍ਰੇਣੀਆਂ ਲਈ ਵੈੱਬਸਾਈਟ ਬਿਲਡਰ, ਈ-ਕਾਮਰਸ, 12 ਭਾਸ਼ਾਵਾਂ, ਮਲਟੀ-ਕਰੰਸੀ, ਕਸਟਮ ਡੋਮੇਨ, SEO ਅਤੇ Gemini AI ਆਟੋਮੇਸ਼ਨ।',
+      '16 ਕਾਰੋਬਾਰੀ ਸ਼੍ਰੇਣੀਆਂ ਲਈ ਵੈੱਬਸਾਈਟ ਬਿਲਡਰ, ਈ-ਕਾਮਰਸ, 12 ਭਾਸ਼ਾਵਾਂ, ਮਲਟੀ-ਕਰੰਸੀ, ਕਸਟਮ ਡੋਮੇਨ, SEO ਅਤੇ ਸੰਰਚਿਤ ਹੋਣ ਤੇ ਵਿਕਲਪਿਕ Gemini AI ਸਮੱਗਰੀ ਟੂਲ।',
     ctaLaunchBuilder: 'ਵੈੱਬਸਾਈਟ ਬਿਲਡਰ ਖੋਲ੍ਹੋ',
     ctaExploreStores: 'ਲਾਈਵ ਸਟੋਰ ਦੇਖੋ',
     ctaWhatsApp: 'ਵਟਸਐਪ ’ਤੇ ਸ਼ੁਰੂ ਕਰੋ',
@@ -629,7 +629,7 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'ବିଜୟ ଭିଜୁଆଲ୍ସ · ଭାରତରେ ନିର୍ମିତ। ବିଶ୍ୱ ପାଇଁ ଗଠିତ।',
     heroTitle: 'ପ୍ରତ୍ୟେକ ବ୍ୟବସାୟକୁ ଡିଜିଟାଲ୍ କରିବା ପାଇଁ ସଶକ୍ତ ପ୍ଲାଟଫର୍ମ।',
     heroSubtitle:
-      '16 ବ୍ୟବସାୟ ଶ୍ରେଣୀ ପାଇଁ ୱେବସାଇଟ୍ ବିଲ୍ଡର୍, ଇ-କମର୍ସ, 12 ଭାଷା, ମଲ୍ଟି-କରେନ୍ସି, କଷ୍ଟମ୍ ଡୋମେନ୍, SEO ଏବଂ Gemini AI ଅଟୋମେସନ୍।',
+      '16 ବ୍ୟବସାୟ ଶ୍ରେଣୀ ପାଇଁ ୱେବସାଇଟ୍ ବିଲ୍ଡର୍, ଇ-କମର୍ସ, 12 ଭାଷା, ମଲ୍ଟି-କରେନ୍ସି, କଷ୍ଟମ୍ ଡୋମେନ୍, SEO ଏବଂ ବିନ୍ୟାସ ହେଲେ ବିକଳ୍ପ Gemini AI ବିଷୟବସ୍ତୁ ଉପକରଣ।',
     ctaLaunchBuilder: 'ୱେବସାଇଟ୍ ବିଲ୍ଡର୍ ଖୋଲନ୍ତୁ',
     ctaExploreStores: 'ଲାଇଭ୍ ଷ୍ଟୋର୍ ଦେଖନ୍ତୁ',
     ctaWhatsApp: 'ହ୍ୱାଟସଆପରେ ଆରମ୍ଭ କରନ୍ତୁ',
@@ -652,7 +652,7 @@ export const I18N: Record<Lang, Record<string, string>> = {
     heroKicker: 'وجے ویژولز · بھارت میں تیار کردہ۔ دنیا کے لیے بنایا گیا۔',
     heroTitle: 'ہر کاروبار کو ڈیجیٹل بنانے کا مضبوط پلیٹ فارم۔',
     heroSubtitle:
-      '16 کاروباری شعبوں کے لیے ویب سائٹ بلڈر، ای کامرس، 12 زبانیں، ملٹی کرنسی، کسٹم ڈومین، SEO ٹولز اور Gemini AI آٹومیشن۔',
+      '16 کاروباری شعبوں کے لیے ویب سائٹ بلڈر، ای کامرس، 12 زبانیں، ملٹی کرنسی، کسٹم ڈومین، SEO ٹولز اور ترتیب شدہ ہونے پر اختیاری Gemini AI مواد کے اوزار۔',
     ctaLaunchBuilder: 'ویب سائٹ بلڈر کھولیں',
     ctaExploreStores: 'لائیو اسٹورز دیکھیں',
     ctaWhatsApp: 'واٹس ایپ پر شروع کریں',

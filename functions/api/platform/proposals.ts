@@ -54,7 +54,7 @@ export const WEBSITE_PACKAGES: WebsitePackageSpec[] = [
       'Add, edit and delete products, services, descriptions and categories',
       'Orders and customer inquiries lead management panel',
       'Analytics reports, publish/unpublish controls & domain manager',
-      '18% GST Tax Invoice & instant platform activation',
+      'Written quotation with base prices; applicable taxes will be confirmed before payment',
     ],
     excluded: [
       'Domain registration/renewal (customer owns and pays registrar directly)',
@@ -70,16 +70,16 @@ export const WEBSITE_PACKAGES: WebsitePackageSpec[] = [
     optionalDomainHostingYearlyInr: 1999,
     gstPercent: 18,
     included: [
-      'Full online store with categories, variants, inventory & coupons',
-      'Verified customer reviews & ratings with shop owner moderation',
-      'Shop Owner Admin Dashboard, CRM leads & GST sales summaries',
-      'Cash on Delivery + Seller direct/Cashfree Easy Split readiness',
-      'Includes all Business Website SEO, custom domain DNS & CRM capabilities',
+      'E-commerce storefront with categories, variants, configured coupons and low-stock counts in dashboards',
+      'Cart, wishlist, COD/UPI & Cashfree checkout where configured, with basic order records',
+      'Customer reviews where enabled, CRM leads and sales reports',
+      'Includes Business Website SEO and custom domain connection for a customer-owned domain',
     ],
     excluded: [
+      'GST invoices, automated stock alerts, refund workflows and custom fulfilment are not included by default',
       'Payment gateway MDR fees (charged directly by Cashfree)',
       'Courier shipping charges (paid directly to carrier)',
-      'Domain registration renewal fees',
+      'Domain registration and renewal fees are paid to the registrar',
     ],
   },
   {
@@ -141,7 +141,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   return json({
     billingTransparencyNotice:
-      'One-time website development charges, optional monthly maintenance, and optional domain/hosting charges are itemized separately with 18% GST. Customers are never charged without explicit confirmation.',
+      'One-time website development charges, optional monthly maintenance, and optional domain/hosting charges are itemized as base prices. Applicable taxes will be confirmed before payment. Customers are never charged without explicit confirmation.',
     packages: WEBSITE_PACKAGES,
     proposals,
   });

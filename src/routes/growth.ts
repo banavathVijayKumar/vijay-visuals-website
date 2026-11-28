@@ -850,7 +850,7 @@ Include practical local SEO keywords, crisp title/meta description suggestions (
         req.dbUser?.email || parsed.data.customerEmail,
         req.dbUser?.role || 'customer',
         'PROPOSAL_CREATED',
-        `Locked quotation ${proposalNumber} for ${parsed.data.businessName} (₹${calc.grandTotalInr} incl. 18% GST)`,
+        `Locked quotation ${proposalNumber} for ${parsed.data.businessName}; base prices locked, applicable taxes will be confirmed before payment`,
         parsed.data.tenantId ?? null
       );
 

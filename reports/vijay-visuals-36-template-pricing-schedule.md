@@ -2,7 +2,7 @@
 
 Date: 2026-11-28
 Branch: `preview/vijay-visuals-p0-safe-2026-11-26`
-Status: **Approved Preview source/report release. Not written to D1, not activated.** Prices remain display-only. The schedule report is committed in `f58728b`; the customer-experience display source is part of this Preview-only release.
+Status: **Approved pricing schedule. Not written to D1, not activated.** Content-safety copy edits are part of the approved Preview-only release; all prices and SKUs are unchanged. Prices remain display-only. The committed schedule baseline is `f58728b`.
 
 ---
 
@@ -13,7 +13,7 @@ This document is the proposed final one-time price schedule for the 36 template 
 - These are **one-time template prices**, not website packages, subscriptions, hosting plans, payment-gateway accounts or service contracts.
 - No price in this schedule has been written to `subscription_plans`, no SKU has been activated, and the marketplace continues to read only server-configured values.
 - The schedule uses only the approved customer-friendly price levels: **₹999, ₹1,499, ₹1,999, ₹2,499, ₹3,499 and ₹4,999**.
-- Prices were assigned by actual design complexity, the number and depth of listed features, and the business use case. Simple small-business and content-led designs stay affordable; advanced commerce, booking, calculator, 360-view, high-value and integration-led designs are priced higher.
+- Prices were assigned by actual design complexity, the number and depth of listed editable sections, and the business use case. Simple small-business and content-led designs stay affordable; advanced commerce, booking, comparison, high-value and integration-led designs are priced higher. Delivery, certification, tax-invoice, immersive-viewer and AI outcomes are not included.
 
 ---
 
@@ -22,11 +22,11 @@ This document is the proposed final one-time price schedule for the 36 template 
 | Design class | Price | Typical basis |
 | --- | ---: | --- |
 | Essential | ₹999 | Content-led portfolio, inquiry or simple service brochure with limited interactivity. |
-| Standard | ₹1,499 | Small local-business catalogue or service page with one to three light customisations or booking controls. |
-| Intermediate | ₹1,999 | Mid-depth commerce/service flows with calculators, comparison, trackers or multiple booking paths. |
-| Advanced | ₹2,499 | High-consideration commerce or planning flows with multiple tools, rich product data or configuration. |
-| Premium | ₹3,499 | High-stakes service inventory, premium visual treatment, 360 views, secure/trust-led multi-step flows. |
-| Enterprise | ₹4,999 | Highest build complexity: modular sections, B2B modes, custom fields and API/webhook extension points. |
+| Standard | ₹1,499 | Small local-business catalogue or service page with one to three light customisations or enquiry controls. |
+| Intermediate | ₹1,999 | Mid-depth catalogue/service presentation with comparison, structured product data or multiple enquiry paths. |
+| Advanced | ₹2,499 | High-consideration catalogue or planning presentation with richer product data and configuration sections. |
+| Premium | ₹3,499 | High-stakes service information, premium visual treatment, carefully structured content and trust-led presentation. |
+| Enterprise | ₹4,999 | Highest build complexity: modular sections, mixed retail/service content and separately quoted extension points. |
 
 ---
 
@@ -35,42 +35,42 @@ This document is the proposed final one-time price schedule for the 36 template 
 <!-- PRICING_SCHEDULE_START -->
 | # | Template name | SKU | Category | Design class | One-time price | Reason |
 | ---: | --- | --- | --- | --- | ---: | --- |
-| 1 | Sri Krishna Kirana & Daily Provisions | tpl-grocery-store | Grocery Store | Standard | ₹1,499 | Neighbourhood catalogue with weight/unit customizer, WhatsApp list upload and monthly basket; small-shop scope, no deep checkout pipeline. |
-| 2 | MegaMart Hypermarket & Foods | tpl-supermarket | Supermarket | Intermediate | ₹1,999 | High-volume multi-aisle catalogue, loyalty points, bulk tiers and barcode search; more catalogue logic than a basic shop. |
-| 3 | Vastra Heritage Men & Women Apparel | tpl-clothing-store | Clothing Store | Standard | ₹1,499 | Apparel catalogue with size guide, fabric specs, trial-at-home and alteration notes; moderate variants, simple selling flow. |
-| 4 | Vogue Silk & Designer Couture | tpl-fashion-boutique | Fashion Boutique | Advanced | ₹2,499 | Bridal/couture visual design plus custom work estimator, video fitting slot, swatch picker and trousseau packages; high-touch configuration. |
-| 5 | Apex Mobile World & Smart Gadgets | tpl-mobile-store | Mobile Store | Intermediate | ₹1,999 | Gadgets catalogue with exchange valuation, EMI calculator, warranty badges and metro delivery; two calculators raise complexity. |
-| 6 | ElectroVision Home Appliances & TV | tpl-electronics-store | Electronics Store | Intermediate | ₹1,999 | Appliances catalogue with spec comparison, installation booking, extended warranty and same-day unboxing; structured product data. |
-| 7 | Sanjeevani Medico & Surgical Essentials | tpl-medical-store | Medical Store | Advanced | ₹2,499 | Prescription upload, pharmacist line, emergency delivery and cold-chain handling; compliance-sensitive workflow and trust UI. |
-| 8 | Aura Care Chemist & Wellness | tpl-pharmacy | Pharmacy | Advanced | ₹2,499 | Refill automation, cold-chain insulin scheduling, generic cost saver and timed delivery; recurring-care logic beyond a simple catalogue. |
-| 9 | Prana Multispeciality Hospital & Diagnostic Clinic | tpl-hospital-clinic | Hospital and Clinic | Premium | ₹3,499 | Doctor slot booking, lab sample collection, digital reports vault and ambulance dispatch; multiple high-stakes service flows and careful information design. |
-| 10 | Royal Feast Cloud Kitchen & Restaurant | tpl-restaurant | Restaurant | Intermediate | ₹1,999 | Dine-in QR menu, WhatsApp ordering, delivery-time calculator and spice filter; dual dine-in and delivery paths. |
-| 11 | SpiceRoute Express Cloud Kitchen & Delivery | tpl-cloud-kitchen | Cloud Kitchen | Standard | ₹1,499 | Delivery-first menu with combo/tiffin packs, quick reorder and prep-time indicator; narrow catalogue, simple direct ordering. |
-| 12 | Grand Heritage Palace Hotel & Suites | tpl-hotel | Hotel | Premium | ₹3,499 | Room availability engine, banquet booking, 360 suite walkthrough and in-room dining; hospitality inventory and rich media. |
-| 13 | Velvet Crumbs Artisan Bakery & Pastry | tpl-bakery | Bakery | Standard | ₹1,499 | Custom photo/message cake, midnight slot, eggless/vegan filter and sweet-box combos; personalisation without deep commerce. |
-| 14 | Kalyan Heritage Gold & Diamond Atelier | tpl-jewellery-store | Jewellery Store | Premium | ₹3,499 | Live gold-rate banner, 360 solitaire viewer, VIP video consultation and hallmark verification; premium visual treatment plus trust checks. |
-| 15 | Frame & Light Portrait Photography | tpl-photography-studio | Portrait & Event Photography | Essential | ₹999 | Portrait booking, proofing gallery, package list and inquiry form; service brochure with light interactivity. |
-| 16 | Frame Forward Creator Portfolio | tpl-video-editing-studio | Creator Video Portfolio | Essential | ₹999 | Portfolio gallery, service packages, quote request and project update page; content-led creator site. |
-| 17 | Royal Moments Wedding Photography | tpl-wedding-photography | Wedding Photography Business | Essential | ₹999 | Wedding date inquiry, package prices, gallery preview and booking calendar; focused lead-capture design. |
-| 18 | Shree Utsav Royal Wedding & Corporate Events | tpl-event-management | Event Management | Advanced | ₹2,499 | Budget estimator, 3D decor concepts, catering customizer and coordinator booking; multiple planning tools in one flow. |
-| 19 | Apex Luxury Villas & Prime Real Estate | tpl-real-estate | Real Estate | Advanced | ₹2,499 | Interactive floor plans, EMI calculator, brochure download and map coordinates; high-value property discovery tools. |
-| 20 | SpeedCraft Luxury Cars & Pre-Owned Motors | tpl-automobile-showroom | Automobile Showroom | Advanced | ₹2,499 | Test-drive booking, trade-in valuation, 360 view and loan eligibility checker; high-value catalogue with finance tools. |
-| 21 | MotoFix Superbike Care & Custom Garage | tpl-bike-garage | Bike Garage | Intermediate | ₹1,999 | Pickup/drop booking, service packages, job tracker and genuine-parts assurance; service workflow with status tracking. |
-| 22 | Luxe Aura Unisex Salon & Makeover Studio | tpl-beauty-salon | Beauty Salon | Intermediate | ₹1,999 | Stylist/seat booking, bridal package estimator, before/after showcase and combos; appointment-led retail-services mix. |
-| 23 | Ananda Ayurvedic Wellness Spa & Retreat | tpl-spa-wellness | Spa | Standard | ₹1,499 | Therapy slot booking, oil selection, couples packages and short assessment; calm service site with light configuration. |
-| 24 | Spartan Elite Crossfit & Strength Gym | tpl-gym-fitness | Gym and Fitness | Standard | ₹1,499 | Trial pass, trainer slots, BMI/diet estimator and member stories; membership-led brochure with one calculator. |
-| 25 | Chanakya IAS & Competitive Academy | tpl-education-coaching | Education and Coaching | Essential | ₹999 | Demo lecture access, PDF syllabus, batch timings and ranker page; content and enrollment enquiries, minimal commerce. |
-| 26 | WanderLust Global Holidays & Pilgrimage Tours | tpl-travel-agency | Travel Agency | Advanced | ₹2,499 | Itinerary cost estimator, flight/hotel combos, visa support line and day-by-day schedules; multi-step trip planning interface. |
-| 27 | TeakWood Artisans Handcrafted Furniture | tpl-furniture-store | Furniture Store | Advanced | ₹2,499 | Room measurement check, finish/fabric swatches, delivery and assembly notes, and certificate display; high-consideration product configuration. |
-| 28 | Sylvan Living Interiors & 3D Modular Spaces | tpl-interior-design | Interior Design | Advanced | ₹2,499 | Room cost estimator, 3D walkthrough gallery, palette board and site-visit booking; visual-heavy consultation funnel. |
-| 29 | BuildTech Tools, Paints & Sanitary Hardware | tpl-hardware-store | Hardware Store | Intermediate | ₹1,999 | Contractor wholesale mode, paint quantity calculator, site dispatch and GST invoice fields; trade-oriented commerce logic. |
-| 30 | HappyPaws Pet Store & Veterinary Care | tpl-pet-store | Pet Store | Standard | ₹1,499 | Grooming slots, monthly food subscription, vet teleconsultation and diet matcher; retail plus appointment mix at small-shop scale. |
-| 31 | Dharti Ratna Organic Farm & Fresh Harvest | tpl-organic-farming | Organic Farming | Standard | ₹1,499 | Farm traceability QR, weekly basket subscription, lab reports and harvest-day delivery; producer-led catalogue with simple subscription. |
-| 32 | Prakriti A2 Desi Cow Milk & Dairy | tpl-dairy-business | Dairy Business | Standard | ₹1,499 | Daily milk calendar, WhatsApp pause/resume, lab certificates and farm visit passes; recurring delivery with lightweight controls. |
-| 33 | Blossom & Petals Fresh Flowers & Luxury Gifts | tpl-florist-gift-store | Florist and Gift Store | Standard | ₹1,499 | Two-hour delivery, custom card note, luxury presentation and occasion combos; personalisation without complex checkout. |
-| 34 | Nyaya Legal & Corporate Tax Advisory | tpl-legal-financial | Legal and Financial Services | Essential | ₹999 | Confidential consultation booking, fixed-fee packages, document checklist and retainer enquiry; advisory lead capture, no transactional catalogue. |
-| 35 | Elevate Media Digital Marketing & Growth SEO | tpl-digital-marketing | Digital Marketing Agency | Intermediate | ₹1,999 | Manual metadata/schema checker, ad-spend worksheet, quoted plans and business-owned metrics dashboard; tool-led agency presentation. |
-| 36 | Enterprise Bespoke Multi-Tenant Business Portal | tpl-custom-business | Custom Business Template | Enterprise | ₹4,999 | Drag-and-drop sections, B2B/retail modes, custom fields and API/webhook extension points; highest build and integration complexity. |
+| 1 | Sri Krishna Kirana & Daily Provisions | tpl-grocery-store | Grocery Store | Standard | ₹1,499 | Editable grocery catalogue layout with categories, product photos, prices and enquiry-ready product pages; small catalogue scope only. |
+| 2 | MegaMart Hypermarket & Foods | tpl-supermarket | Supermarket | Intermediate | ₹1,999 | Editable supermarket layout with department categories, product photos, prices and inventory fields; more catalogue structure than a basic shop. |
+| 3 | Vastra Heritage Men & Women Apparel | tpl-clothing-store | Clothing Store | Standard | ₹1,499 | Editable apparel catalogue with size/colour options and product galleries; trials, alterations and timelines are business policies, not platform features. |
+| 4 | Vogue Silk & Designer Couture | tpl-fashion-boutique | Fashion Boutique | Advanced | ₹2,499 | Editable boutique showcase with galleries, product pages and quote enquiry forms; premium visual treatment, no fitting or custom work engine. |
+| 5 | Apex Mobile World & Smart Gadgets | tpl-mobile-store | Mobile Store | Intermediate | ₹1,999 | Editable mobile and accessory catalogue with model categories and enquiry forms; EMI and delivery guarantees are not included. |
+| 6 | ElectroVision Home Appliances & TV | tpl-electronics-store | Electronics Store | Intermediate | ₹1,999 | Editable electronics catalogue with specification fields, categories and enquiry forms; structured product data only. |
+| 7 | Sanjeevani Medico & Surgical Essentials | tpl-medical-store | Medical Store | Advanced | ₹2,499 | Editable pharmacy catalogue with product categories and enquiry forms; prescription verification, cold-chain handling and timing are not automatic platform features. |
+| 8 | Aura Care Chemist & Wellness | tpl-pharmacy | Pharmacy | Advanced | ₹2,499 | Editable pharmacy and wellness catalogue with categories, prices and enquiry forms; refill automation and cold-chain guarantees are not included. |
+| 9 | Prana Multispeciality Hospital & Diagnostic Clinic | tpl-hospital-clinic | Hospital and Clinic | Premium | ₹3,499 | Editable clinic information, service pages and appointment enquiry forms; ambulance dispatch and report delivery are not provided by this template. |
+| 10 | Royal Feast Cloud Kitchen & Restaurant | tpl-restaurant | Restaurant | Intermediate | ₹1,999 | Editable menu catalogue with categories, prices and configured enquiry or checkout flows; no embedded delivery-time promise. |
+| 11 | SpiceRoute Express Cloud Kitchen & Delivery | tpl-cloud-kitchen | Cloud Kitchen | Standard | ₹1,499 | Editable delivery-focused menu layout with categories, combo pages and configured enquiry or checkout flows; no prep-time guarantee. |
+| 12 | Grand Heritage Palace Hotel & Suites | tpl-hotel | Hotel | Premium | ₹3,499 | Editable hotel showcase with room/service listings, galleries and enquiry forms; no 360-degree walkthrough or live availability engine. |
+| 13 | Velvet Crumbs Artisan Bakery & Pastry | tpl-bakery | Bakery | Standard | ₹1,499 | Editable bakery catalogue with product categories, photos and enquiry or checkout flows; no midnight-slot promise. |
+| 14 | Kalyan Heritage Gold & Diamond Atelier | tpl-jewellery-store | Jewellery Store | Premium | ₹3,499 | Editable jewellery catalogue with product galleries and enquiry forms; live rate feeds and 360° viewers are not included. |
+| 15 | Frame & Light Portrait Photography | tpl-photography-studio | Portrait & Event Photography | Essential | ₹999 | Editable portfolio/gallery site with service packages and enquiry forms; light service brochure scope. |
+| 16 | Frame Forward Creator Portfolio | tpl-video-editing-studio | Creator Video Portfolio | Essential | ₹999 | Editable creator portfolio with service packages, quote request forms and text-only project updates; content-led scope. |
+| 17 | Royal Moments Wedding Photography | tpl-wedding-photography | Wedding Photography Business | Essential | ₹999 | Editable wedding portfolio with service packages, gallery pages and enquiry forms; focused lead-capture design. |
+| 18 | Shree Utsav Royal Wedding & Corporate Events | tpl-event-management | Event Management | Advanced | ₹2,499 | Editable event portfolio with service packages and enquiry forms; budget calculators and on-site coordination are not included. |
+| 19 | Apex Luxury Villas & Prime Real Estate | tpl-real-estate | Real Estate | Advanced | ₹2,499 | Editable property listing layout with photos, details and enquiry forms; floor-plan viewers and EMI calculators are not included. |
+| 20 | SpeedCraft Luxury Cars & Pre-Owned Motors | tpl-automobile-showroom | Automobile Showroom | Advanced | ₹2,499 | Editable vehicle listing layout with photos, details and enquiry forms; test-drive scheduling and loan approval are not included. |
+| 21 | MotoFix Superbike Care & Custom Garage | tpl-bike-garage | Bike Garage | Intermediate | ₹1,999 | Editable service catalogue with prices, descriptions and appointment enquiry forms; job status tracking is not included. |
+| 22 | Luxe Aura Unisex Salon & Makeover Studio | tpl-beauty-salon | Beauty Salon | Intermediate | ₹1,999 | Editable salon service catalogue with prices, galleries and appointment enquiry forms; appointment-led retail-services presentation. |
+| 23 | Ananda Ayurvedic Wellness Spa & Retreat | tpl-spa-wellness | Spa | Standard | ₹1,499 | Editable therapy service catalogue with prices, descriptions and appointment enquiry forms; calm service site with light configuration. |
+| 24 | Spartan Elite Crossfit & Strength Gym | tpl-gym-fitness | Gym and Fitness | Standard | ₹1,499 | Editable gym service and class listing layout with enquiry forms; membership-led brochure scope, no diet or BMI engine. |
+| 25 | Chanakya IAS & Competitive Academy | tpl-education-coaching | Education and Coaching | Essential | ₹999 | Editable course listing layout with manually entered batch details and enquiry forms; video lectures and test engines are not included. |
+| 26 | WanderLust Global Holidays & Pilgrimage Tours | tpl-travel-agency | Travel Agency | Advanced | ₹2,499 | Editable travel package listing layout with photos and enquiry forms; itinerary builders and visa services are not included. |
+| 27 | TeakWood Artisans Handcrafted Furniture | tpl-furniture-store | Furniture Store | Advanced | ₹2,499 | Editable furniture catalogue with categories, photos and enquiry or checkout flows; high-consideration product presentation only. |
+| 28 | Sylvan Living Interiors & 3D Modular Spaces | tpl-interior-design | Interior Design | Advanced | ₹2,499 | Editable project portfolio and service-page layout with enquiry forms; 3D walkthroughs and site-visit scheduling are not included. |
+| 29 | BuildTech Tools, Paints & Sanitary Hardware | tpl-hardware-store | Hardware Store | Intermediate | ₹1,999 | Editable product catalogue with categories, prices and inventory fields; tax invoicing and contractor pricing modes are not included. |
+| 30 | HappyPaws Pet Store & Veterinary Care | tpl-pet-store | Pet Store | Standard | ₹1,499 | Editable pet product catalogue with categories, photos and enquiry or checkout flows; grooming bookings and tele-consultation are not included. |
+| 31 | Dharti Ratna Organic Farm & Fresh Harvest | tpl-organic-farming | Organic Farming | Standard | ₹1,499 | Editable farm-produce catalogue with categories, photos and enquiry or checkout flows; certification claims and lab reports are not provided. |
+| 32 | Prakriti A2 Desi Cow Milk & Dairy | tpl-dairy-business | Dairy Business | Standard | ₹1,499 | Editable dairy product catalogue with categories, prices and enquiry forms; subscription billing and lab certificates are not included. |
+| 33 | Blossom & Petals Fresh Flowers & Luxury Gifts | tpl-florist-gift-store | Florist and Gift Store | Standard | ₹1,499 | Editable flower and gift catalogue with categories, photos and enquiry or checkout flows; no two-hour delivery promise. |
+| 34 | Nyaya Legal & Corporate Tax Advisory | tpl-legal-financial | Legal and Financial Services | Essential | ₹999 | Editable service pages and enquiry form for advisory businesses; legal advice, tax filing and document handling are not provided. |
+| 35 | Elevate Media Digital Marketing & Growth SEO | tpl-digital-marketing | Digital Marketing Agency | Intermediate | ₹1,999 | Editable portfolio and service-page layout with a Manual Metadata & Schema Checker and enquiry forms; ranking guarantees and campaign dashboards are not included. |
+| 36 | Enterprise Bespoke Multi-Tenant Business Portal | tpl-custom-business | Custom Business Template | Enterprise | ₹4,999 | Editable general-purpose layout for mixed retail and service content; API/webhook integrations require a separately approved custom-development proposal. |
 <!-- PRICING_SCHEDULE_END -->
 
 ---
@@ -79,7 +79,8 @@ This document is the proposed final one-time price schedule for the 36 template 
 
 The following disclosures apply to **all 36 rows** above wherever the customer uses the template:
 
-- **Domain name** registration and renewal are separate and are billed by the domain registrar. A domain is not included in any template price.
+- **Taxes:** applicable taxes will be confirmed before payment. No template price includes a verified tax rate or tax invoice.
+- **Domain name** registration and renewal are separate and are billed by the domain registrar. A domain is not included in any template price; connection/setup is not a free domain.
 - **Hosting/deployment**, CDN, storage overages and email accounts are separate infrastructure costs. No template price includes hosting, and no free hosting is promised.
 - **Payment gateway/merchant account** approval, gateway charges, MDR, settlement charges and refunds are separate. In Preview, only Sandbox-style testing may be discussed; Live gateway use requires separate approval.
 - **Custom development** beyond the listed template features — bespoke sections, extra calculators, API integrations, webhooks, data migration, third-party licences, content creation, photography, paid ads and SEO services — is separately quoted and accepted only as a distinct scope.

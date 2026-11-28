@@ -111,13 +111,13 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       {
         item: 'Website Setup Fee',
         billing: 'One-Time',
-        ownerCostNote: 'Configurable per package (₹4,999 – ₹24,999 + 18% GST). No hidden setup fees.',
+        ownerCostNote: 'Configurable per package (₹4,999 – ₹24,999 base). Applicable taxes will be confirmed before payment. No hidden setup fees.',
       },
       {
         item: 'Custom Domain (.com / .in / .co.in)',
         billing: 'Annual (Registrar Direct)',
         ownerCostNote:
-          'Indicative ₹499–₹1,099/yr + GST paid directly to your registrar (Cloudflare, GoDaddy, Namecheap) under 100% customer ownership.',
+          'Indicative ₹499–₹1,099/yr paid directly to your registrar (Cloudflare, GoDaddy, Namecheap) under 100% customer ownership; registrar taxes, if any, are confirmed by the registrar.',
       },
       {
         item: 'Cloud Hosting & Bandwidth',

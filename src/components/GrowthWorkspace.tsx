@@ -550,7 +550,7 @@ export const GrowthWorkspace: React.FC<GrowthWorkspaceProps> = ({ tenant, active
               <span>Legacy Pricing Cart Quotations ({proposalsList.length})</span>
             </h3>
             <span className="text-[11px] text-[#8E8EA2]">
-              Accepted quotations lock all line-item prices & 18% GST permanently.
+              Accepted quotations lock line-item base prices; applicable taxes will be confirmed before payment.
             </span>
           </div>
 
@@ -581,8 +581,7 @@ export const GrowthWorkspace: React.FC<GrowthWorkspaceProps> = ({ tenant, active
                         <p className="text-sm font-bold text-white">₹{prop.grandTotalInr.toLocaleString('en-IN')}</p>
                         <p className="text-[10px] text-[#8E8EA2]">
                           One-Time ₹{prop.oneTimeSubtotalInr.toLocaleString('en-IN')} + Recurring ₹
-                          {prop.recurringSubtotalInr.toLocaleString('en-IN')} + 18% GST ₹
-                          {prop.gstInr.toLocaleString('en-IN')}
+                          {prop.recurringSubtotalInr.toLocaleString('en-IN')} base · Applicable taxes will be confirmed before payment.
                         </p>
                       </div>
                     </div>

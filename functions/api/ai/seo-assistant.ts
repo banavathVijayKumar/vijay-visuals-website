@@ -91,7 +91,7 @@ Please produce an actionable SEO Action Plan:
       executeAiCall: async () => {
         const hasKey = Boolean(env.GEMINI_API_KEY || env.GOOGLE_API_KEY);
         if (!hasKey) {
-          return `SEO Action Plan for ${businessName} in ${targetCity}:\n1. High-Intent Keywords: Best ${category} in ${targetCity}, Top ${businessName} reviews, Buy ${category} online.\n2. Meta Title: ${businessName} — Leading ${category} in ${targetCity}\n3. Meta Description: Discover premium ${category} at ${businessName} in ${targetCity}. High quality, certified products with fast delivery.\n4. Local SEO: Verify Google Business Profile address, pin location, and customer reviews.`;
+          return `SEO Action Plan for ${businessName} in ${targetCity}:\n1. High-Intent Keywords: Best ${category} in ${targetCity}, Top ${businessName} reviews, Buy ${category} online.\n2. Meta Title: ${businessName} — Leading ${category} in ${targetCity}\n3. Meta Description: Explore ${category} at ${businessName} in ${targetCity} with clear product details and business-provided service policies.\n4. Local SEO: Verify Google Business Profile address, pin location, and customer reviews.`;
         }
         return callGeminiEdge(prompt, env, { systemInstruction });
       },

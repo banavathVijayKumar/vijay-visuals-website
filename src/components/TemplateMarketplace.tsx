@@ -16,11 +16,12 @@ import { getDemoStorefront } from '../data/demo';
 import { PackagePurchaseGuide } from './PackagePurchaseGuide';
 import { getProposedTemplatePrice, formatInr } from '../lib/customerPricing';
 import { DEMO_STORE_TEMPLATE_MAP } from '../lib/templateTransfer';
-import { TEMPLATES_DATA, type BusinessTemplate } from '../lib/templatesData';
+import { TEMPLATE_CLAIM_DISCLOSURE, TEMPLATES_DATA, type BusinessTemplate } from '../lib/templatesData';
 import {
   TEMPLATE_PURCHASE_DETAILS,
   TEMPLATE_PURCHASE_EXCLUSIONS,
   TEMPLATE_PURCHASE_INCLUSIONS,
+  TEMPLATE_TAX_NOTE,
   TEMPLATE_UPDATE_TERMS,
   describeTemplatePrice,
   type TemplatePriceView,
@@ -71,8 +72,8 @@ function customerPriceDisplay(templateId: string, server: TemplatePriceView): Cu
   }
   if (server.active && server.priceInr === proposed.priceInr) {
     return {
-      label: `${formatInr(proposed.priceInr)} one-time + GST at checkout`,
-      note: 'Owner-activated price matches the approved schedule.',
+      label: `${formatInr(proposed.priceInr)} one-time base price`,
+      note: `Owner-activated price matches the approved schedule. ${TEMPLATE_TAX_NOTE}`,
       conflict: false,
       purchasable: true,
     };
@@ -273,6 +274,10 @@ export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
       </section>
 
       <section className="max-w-7xl mx-auto px-4 py-10 sm:px-6">
+        <div className="mb-4 rounded-lg border border-amber-500/25 bg-amber-950/10 px-4 py-3 text-[11px] leading-relaxed text-[#D8C99A]">
+          <strong className="text-[#ECC86A]">Design scope:</strong> {TEMPLATE_CLAIM_DISCLOSURE}{' '}
+          <strong className="text-[#ECC86A]">Taxes:</strong> {TEMPLATE_TAX_NOTE}
+        </div>
         <div className="mb-5 flex items-center justify-between text-xs text-[#8E8EA2]">
           <span>Showing {filteredTemplates.length} of {TEMPLATES_DATA.length} templates</span>
           <span>Demo availability is shown per template</span>

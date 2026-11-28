@@ -1,273 +1,197 @@
-# Customer Pricing Experience — Local Source + Browser QA Report (Final Pending QA Completion)
+# Customer Pricing Experience — Local Content Safety & QA Report
 
 Date: 2026-11-28  
 Branch: `preview/vijay-visuals-p0-safe-2026-11-26`  
 Base commit: `f58728bd8446e763b3dbaf09466a265f0d948d85`  
-Scope: **Preview source only**. QA was performed while the changes were local; Vijay subsequently approved Preview-only commit/push/deploy on 2026-11-28. No Production access, DNS/domain/hosting change, Cashfree Live action, secret/OTP/email, real payment, refund, payout, deletion, or historical-record change was performed.
+Scope: **Preview source, local reports and the approved Preview-only release**. Content-safety QA was completed locally before the authorized commit/push/deploy. No Production, D1, Supabase, DNS, domain registrar, hosting, Cashfree Live, OTP, email, message, payment, refund, payout or external approval action was performed.
 
 ---
 
-## 1. Outcome
+## 1. Final outcome
 
-A clearly separated, Preview-safe customer journey is implemented in source:
+The misleading-claim cleanup is complete in source and locally verified.
 
-- **Section A — Website Templates**: 36 templates with exact proposed SKU prices, honest demo availability, template-only inclusions/exclusions, and a purchase-summary modal that explicitly says a template alone is not a hosted/published website.
-- **Section B — Complete Website Packages**: the existing server-configured `business-website` package at **₹7,999**, with the selected template included at **₹0**, 18% configured GST of **₹1,440**, and final payable **₹9,439**.
-- Out-of-package requirements are labelled exactly **`Custom Requirement — Quote Required`** and cannot be charged without an Owner-approved proposal.
-- Checkout summaries show item/package, selected template, base price, optional extras, tax treatment, final payable, recurring costs, refund/cancellation honesty, and support contact.
-- Payment success remains gated on genuine server-side Cashfree verification; the browser never infers success from return URL state.
-- The deployed Preview bundle was **not changed** and still predates these local source edits.
+- All **36 templates** now describe editable design layouts and configured platform capabilities. Delivery-time promises, cold-chain guarantees, 360° viewer promises, AI-engine promises, warranty/certification promises and similar unsupported outcomes were removed or explicitly marked as not included.
+- Customer-facing tax copy uses the exact wording: **`Applicable taxes will be confirmed before payment.`** No verified GST rate or tax-invoice promise is shown in customer marketing copy.
+- The free tier shows **`Total ₹0 · no tax`**. Paid optional services remain separate and are not folded into the ₹0 total.
+- The ₹7,999 package keeps its base price and shows the selected template at **₹0**. Custom domain connection/setup is explicitly **not** a free domain; registration, renewal and hosting are separate.
+- The ₹14,999 e-commerce tier advertises only implemented behaviour. Automated stock alerts, GST invoices, custom fulfilment and ERP/POS/AI engines are marked not included or separately quoted.
+- The Sri Lakshmi Silks & Boutique fixture is labelled **`Illustrative Demo — Not a real business`**; its phone, address, hours, delivery, returns, reviews and products are fictional, and write/contact/payment paths are blocked. Real tenant storefronts are unaffected.
+- Genuine Cashfree-verified entitlement remains externally **BLOCKED**; no mock or browser return was allowed to claim `verified: true`.
+
+**Final classification:** local implementation QA **PASS — 23 checks, 0 failed**. External proof items: **BLOCKED 2** (genuine verified payment-to-entitlement; live published-store/custom-domain proof). No FAIL remains.
 
 ---
 
-## 2. Exact changes made
+## 2. Exact safety changes made in this pass
 
-### New files
-
-| File | Purpose |
-| --- | --- |
-| `src/lib/customerPricing.ts` | Single source for the 36 exact proposed prices, `formatInr`, `₹7,999` price breakdown, bounded scope, milestones, customer responsibilities, exclusions, `CUSTOM_REQUIREMENT_MESSAGE`, and `detectCustomRequirement`. Display-only; writes nothing to D1. |
-| `src/components/PackagePurchaseGuide.tsx` | Complete-package section: transparent price breakdown, itemized scope, requirement form, quote-required detection, milestones, responsibilities, exclusions, refund/support honesty, and own-data language. |
-| `scripts/test-customer-pricing-experience.ts` | 18 source-only assertions for the new customer journey, payment gating, dashboards, owner separation, package-price preservation, white-label source, and mobile-first layout. |
-| `reports/customer-pricing-experience-local-qa-report.md` | This report. |
-
-### Modified files
+### 2.1 Template catalogue and pricing
 
 | File | Change |
 | --- | --- |
-| `src/components/TemplateMarketplace.tsx` | Added Section A/B labels; exact proposed SKU prices; clear “Proposed … not active yet” and conflict states; `View Demo` only for the 3 verified fixtures and `No live demo yet` for the other 33; template-only disclosure modal with full checkout summary; disabled `Buy Template — activation pending`; mounted `PackagePurchaseGuide`; passes selected template into package guide; support contact added. |
-| `src/data/content.ts` | Added English/Telugu heading and subtitle keys for the two customer-choice sections to the shared i18n registry. |
-| `src/App.tsx` | Passes `lang` to `TemplateMarketplace`. Existing Cashfree return handler still calls `/api/payments/cashfree/verify` and only reports success when `res.verified` is true. |
-| `src/components/StudioLanding.tsx` | Package cards now filter to `p.category === 'website'`, so template SKUs are not presented as complete packages. |
-| `functions/api/proposals/calculate.ts` | Rejects template SKUs in the package quotation endpoint with: `Template SKUs are priced separately and cannot be added to the package quotation. Choose either a template or a complete website package.` |
-| `src/components/OwnerTemplatePricing.tsx` | Clarifies that template prices are one-time design SKUs, separate from one-time website package plans and recurring SaaS plans. |
-| `src/components/BusinessOwnerDashboard.tsx` | `Pricing & Offers` now visibly separates `Existing Packages & Subscriptions`, `36 Website Template Prices`, and `Special Offers` without changing stored plans/offers. |
-| `src/components/DashboardsHub.tsx` | Added a transparent “My Website Project, Requirements & Handover” panel using only the signed-in customer’s own data APIs/state; replaced hardcoded `₹7,999 Business Website Package` copy with server-neutral package wording. |
-| `package.json` | Added `test:customer-experience` script. |
-| `reports/vijay-visuals-36-template-pricing-schedule.md` | Corrected stale status line to state the report is committed in `f58728b`, while the current experience source changes are local/uncommitted. Preserved `Not written to D1, not activated, not deployed`. |
+| `src/lib/templatesData.ts` | Rewrote all 36 descriptions/features with honest design-layout wording and neutral badges. Added `TEMPLATE_CLAIM_DISCLOSURE`, which states that delivery promises, certifications, AI engines, immersive viewers and temperature-controlled logistics are not included. Removed the stale `UNUSED_OLD_TEMPLATES` block from `src/lib/supabase.ts`. |
+| `src/lib/templatePricing.ts`, `src/components/TemplateMarketplace.tsx` | Removed `+ GST at checkout`; added the exact tax-confirmation wording, base-price wording, and clear template-only disclosure. |
+| `reports/vijay-visuals-36-template-pricing-schedule.md` | Rewrote all 36 reason cells as honest design-layout descriptions. Preserved every SKU, name, category, design class, price, distribution and the ₹73,964 total. Removed unsupported reason text such as `same-day unboxing`, `cold-chain handling`, `360 suite walkthrough`, `EMI calculator` and `refill automation` as positive promises. |
 
-Pre-existing modified report files were preserved and are not part of this task’s edits.
+### 2.2 Customer packages, tax and domain disclosure
 
----
+| File | Change |
+| --- | --- |
+| `src/lib/customerPricing.ts`, `src/components/PackagePurchaseGuide.tsx`, `src/components/WebsiteBuilder.tsx` | Added the exact tax note; free tier shows `Total ₹0 · no tax`; ₹7,999 base price and ₹0 selected template are preserved; paid optional services are itemised separately. Domain note: `Custom domain connection/setup does not include a free domain. Domain registration, renewal and any hosting charges are shown or paid separately wherever applicable.` |
+| `functions/api/plans.ts`, `src/db/seed.ts`, `src/data/content.ts` | Narrowed ₹14,999 e-commerce, ERP/POS, dedicated AI-engine, GST-invoice and delivery claims. Features are now conditional on configuration or marked not included/custom-quoted. |
+| `src/components/StudioLanding.tsx` | Removed GST quotation, `*1.18` and `₹9439` checkout wording. Base-price checkout labels are used instead. |
+| `src/routes/businessOs.ts`, `src/routes/growth.ts`, `src/components/GrowthWorkspace.tsx` | Proposal and cost copy now separates base prices from taxes and uses the exact tax note. |
+| `functions/api/platform/proposals.ts`, `functions/api/platform/subscriptions.ts`, `functions/api/admin/overview.ts`, `functions/api/admin/plans/[id].ts` | Package disclosures no longer claim verified GST; exact tax wording is used. Domain registration/renewal is stated as a registrar charge. |
 
-## 3. 36-template pricing status
+### 2.3 Proposal, PDF and email surfaces
 
-The authoritative schedule remains `reports/vijay-visuals-36-template-pricing-schedule.md`. The client mirror in `src/lib/customerPricing.ts` matches it row by row. **No price was written to Preview D1, no SKU was activated, and no purchase was enabled.**
+| File | Change |
+| --- | --- |
+| `src/lib/proposalPdfGenerator.ts` | Removed stored-GST display logic and GST-percentage labels. All proposal totals are labelled base price/quoted amount with the exact tax note. Replaced fixed timelines, lifetime/free-support claims, verified-review/promo-engine/courier/AI concierge claims with conditional or not-included wording. |
+| `src/components/CustomerProposalView.tsx`, `src/components/ProposalManager.tsx` | Same tax and scope treatment in the customer-facing proposal view and manager. Removed `3–5 Business Days`, `30 Days Complimentary Assistance`, `One-Click WhatsApp Order Alerts` and lifetime self-editing promises. |
+| `functions/api/proposals/[id]/delivery.ts` | WhatsApp and email delivery copy now says `Quoted Amount`, uses the exact tax note, and says the timeline is quoted after scope review. |
+| `functions/api/_email.ts`, `functions/api/webhooks/cashfree.ts` | Removed `3–5 Business Days` and `Scheduled for Development` claims. Payment-verified email now says work begins after scope confirmation. |
+| `src/components/DashboardsHub.tsx` | Payment history no longer claims authoritative GST receipts. Stored tax fields are labelled unverified; the exact tax note is shown. |
 
-| # | SKU | Proposed one-time price | Preview status |
-| ---: | --- | ---: | --- |
-| 1 | `tpl-grocery-store` | ₹1,499 | Proposed / not active |
-| 2 | `tpl-supermarket` | ₹1,999 | Proposed / not active |
-| 3 | `tpl-clothing-store` | ₹1,499 | Proposed / not active |
-| 4 | `tpl-fashion-boutique` | ₹2,499 | Proposed / not active |
-| 5 | `tpl-mobile-store` | ₹1,999 | Proposed / not active |
-| 6 | `tpl-electronics-store` | ₹1,999 | Proposed / not active |
-| 7 | `tpl-medical-store` | ₹2,499 | Proposed / not active |
-| 8 | `tpl-pharmacy` | ₹2,499 | Proposed / not active |
-| 9 | `tpl-hospital-clinic` | ₹3,499 | Proposed / not active |
-| 10 | `tpl-restaurant` | ₹1,999 | Proposed / not active |
-| 11 | `tpl-cloud-kitchen` | ₹1,499 | Proposed / not active |
-| 12 | `tpl-hotel` | ₹3,499 | Proposed / not active |
-| 13 | `tpl-bakery` | ₹1,499 | Proposed / not active |
-| 14 | `tpl-jewellery-store` | ₹3,499 | Proposed / not active |
-| 15 | `tpl-photography-studio` | ₹999 | Proposed / not active |
-| 16 | `tpl-video-editing-studio` | ₹999 | Proposed / not active |
-| 17 | `tpl-wedding-photography` | ₹999 | Proposed / not active |
-| 18 | `tpl-event-management` | ₹2,499 | Proposed / not active |
-| 19 | `tpl-real-estate` | ₹2,499 | Proposed / not active |
-| 20 | `tpl-automobile-showroom` | ₹2,499 | Proposed / not active |
-| 21 | `tpl-bike-garage` | ₹1,999 | Proposed / not active |
-| 22 | `tpl-beauty-salon` | ₹1,999 | Proposed / not active |
-| 23 | `tpl-spa-wellness` | ₹1,499 | Proposed / not active |
-| 24 | `tpl-gym-fitness` | ₹1,499 | Proposed / not active |
-| 25 | `tpl-education-coaching` | ₹999 | Proposed / not active |
-| 26 | `tpl-travel-agency` | ₹2,499 | Proposed / not active |
-| 27 | `tpl-furniture-store` | ₹2,499 | Proposed / not active |
-| 28 | `tpl-interior-design` | ₹2,499 | Proposed / not active |
-| 29 | `tpl-hardware-store` | ₹1,999 | Proposed / not active |
-| 30 | `tpl-pet-store` | ₹1,499 | Proposed / not active |
-| 31 | `tpl-organic-farming` | ₹1,499 | Proposed / not active |
-| 32 | `tpl-dairy-business` | ₹1,499 | Proposed / not active |
-| 33 | `tpl-florist-gift-store` | ₹1,499 | Proposed / not active |
-| 34 | `tpl-legal-financial` | ₹999 | Proposed / not active |
-| 35 | `tpl-digital-marketing` | ₹1,999 | Proposed / not active |
-| 36 | `tpl-custom-business` | ₹4,999 | Proposed / not active |
+### 2.4 Demo and sample-data safety
 
-Distribution: ₹999 × 5, ₹1,499 × 10, ₹1,999 × 8, ₹2,499 × 9, ₹3,499 × 3, ₹4,999 × 1.  
-Proposed one-time list-price total: **₹73,964**.
+| File | Change |
+| --- | --- |
+| `src/components/StorefrontView.tsx`, `src/components/BusinessFuturePreview.tsx`, `src/components/WebsiteBuilder.tsx` | Sri Lakshmi demo is labelled fictional/non-contactable. Phone/address/hours are labelled sample; orders, payments, chat, reviews, quote requests and other write paths are blocked in demo mode. Sample WhatsApp placeholder is non-dialable. |
+| `src/data/demoBuilder.ts`, `src/db/seed.ts`, `src/lib/saasServices.ts` | Sample warranty and SSL-timing claims were changed to sample/conditional wording. |
+| `src/components/StorefrontReviews.tsx` | `Verified Purchase Guarantee` was replaced with `Verified purchase badges where enabled` and an explanation that the badge appears only when a completed order matches the reviewer. |
+| `src/components/InteractiveDemoHub.tsx` | Simulated tax line is labelled simulated and the cart shows the exact tax note plus `This transaction is 100% simulated.` |
+| `functions/api/help-center.ts`, `functions/api/ai/seo-assistant.ts`, `src/components/GlobalGrowthHub.tsx`, `src/components/PolicyView.tsx`, `src/components/DomainManagementCenter.tsx`, `src/components/AiAutomationCenter.tsx`, `src/components/OrderTrackerModal.tsx` | Removed certified-products/fast-delivery SEO text, GST-invoice promises, `+GST` domain labels and other unsupported claims. |
 
-Previously verified Preview D1 state remains: `total_tpl_rows=36`, `unique_codes=36`, `inactive_rows=36`, `zero_price_rows=36`, `non_template_rows=12`; migration `0029` already applied; `wrangler d1 migrations list vijay-visuals-preview --remote` → `No migrations to apply!`.
+### 2.5 Test coverage
 
-Activation prerequisites still require separate explicit approval and verification: final SKU/price, inclusions, exclusions, support/update/maintenance terms, builder transfer, and entitlement flow.
+`scripts/test-customer-pricing-experience.ts` was expanded to assert the exact tax note, `Total ₹0 · no tax`, domain/hosting disclosure, ₹14,999 honesty, all 36 template claims and Sri Lakshmi demo safety. It now reports **23 passed, 0 failed**.
 
 ---
 
-## 4. Exact ₹7,999 package economics and scope
+## 3. Pricing verification
 
-The displayed package is the existing server-configured `business-website` plan. It was not renamed, duplicated, or re-priced.
+### 3.1 36 template schedule
 
-| Line | Amount |
+| Check | Result |
 | --- | ---: |
-| Exact base price | ₹7,999 |
-| Selected template add-on | ₹0 |
-| Optional extras selected | ₹0 |
-| GST (18%, configured tax) | ₹1,440 |
-| Separate recurring costs stated now | ₹0 |
-| **Final payable before Cashfree payment** | **₹9,439** |
+| Catalogue templates | 36 |
+| Schedule rows | 36 |
+| Unique `tpl-*` SKUs | 36 |
+| Approved price levels | 6 / 6 |
+| ₹999 / ₹1,499 / ₹1,999 / ₹2,499 / ₹3,499 / ₹4,999 | 5 / 10 / 8 / 9 / 3 / 1 |
+| Proposed one-time list-price total | ₹73,964 |
+| SKUs activated | 0 |
+| Prices written to D1 | 0 |
 
-Exact customer-facing statement: **`Your selected template is included in this package.`**
+The authoritative schedule is `reports/vijay-visuals-36-template-pricing-schedule.md`; `npm run check:template-pricing-schedule` passes **11/0**. All prices remain display-only.
 
-### Itemized package scope
+### 3.2 ₹7,999 package
 
-Items marked **Owner service** are bounded proposed deliverables requiring an agreed written scope; they are not advertised as automatic software.
+| Line | Display treatment |
+| --- | ---: |
+| Base price | ₹7,999 |
+| Selected template | ₹0 |
+| Optional extras | shown separately; no hidden duplicate charge |
+| Taxes | `Applicable taxes will be confirmed before payment.` |
+| Domain/registration/renewal/hosting | separate registrar/infrastructure charges |
+| Recurring costs | separated from the one-time base price |
 
-| Scope item | Type |
-| --- | --- |
-| One selected premium template; builder seeds an independent editable draft | Platform capability |
-| Up to 7 agreed website pages; extra pages require an approved quote | Owner service |
-| Business logo, brand colours and business details setup | Platform capability |
-| Product/service catalogue setup: names, descriptions, categories, prices, availability, inventory | Platform capability |
-| WhatsApp enquiry integration using a verified business number | Platform capability |
-| Contact form and Google Maps integration; map display depends on configured URL/API and supported tenant view | Owner service |
-| Responsive desktop, tablet and mobile design where the selected template supports it | Platform capability |
-| Basic SEO: title, description, sitemap/robots and structured metadata where configured | Platform capability |
-| Customer Dashboard access after verified entitlement | Platform capability |
-| Admin Dashboard access where applicable, with role separation preserved | Platform capability |
-| Two agreed revision rounds; additional rounds need an Owner-approved proposal | Owner service |
-| 30 days of technical support after handover; not lifetime or unlimited support | Owner service |
-| Website handover and basic usage training; recorded only when actually completed | Owner service |
+The stale `₹7,999 + ₹1,440 GST = ₹9,439` statement was removed from the report and customer-facing copy. It is not presented as a verified final payable amount.
 
-### Milestones
+### 3.3 Backend caveat — disclosed, not hidden
 
-1. Confirm package, template, page list and requirements in writing.
-2. Prepare the editable template draft and agreed page structure.
-3. Apply approved brand details, catalogue and enquiry settings.
-4. Share preview for the two agreed revision rounds.
-5. Handover, basic training and support period start.
-
-### Customer responsibilities
-
-- Business name, category, logo, brand colours and approved business details.
-- Final page list (maximum 7), products/services and prices.
-- Verified WhatsApp/contact information and any domain access requested.
-- Timely review and consolidated revision feedback.
-- Domain, gateway merchant approval or third-party account credentials the customer chooses to use.
-
-### Explicit exclusions
-
-Domain registration/renewal; hosting renewals, storage overages and business email; premium plugins/third-party licences; gateway approval, MDR and settlement charges; custom integrations/development/data migration; content creation, photography and paid marketing; ongoing paid maintenance after the support period; unlimited revisions/support, free lifetime hosting or guaranteed rankings.
-
-### Requirement flow
-
-Collects business name, business category, email, preferred template, logo/brand colours, page count, products/services, contact/WhatsApp information, domain preference and special features. It sends `whatsappOptIn: false`, requests no OTP, creates no account, starts no payment, and requests no external WhatsApp reply. Out-of-package detection triggers exactly **`Custom Requirement — Quote Required`** with no auto-generated price.
+`functions/api/payments/cashfree/create-order.ts` was **not** changed. It still computes GST from `subscription_plans.gst_percent`, and `npm run test:cashfree-architecture` explicitly verifies exact 18% GST calculation for the configured packages. This pass removes misleading customer-facing claims; it does **not** claim that backend charge behaviour was removed or that tax applicability was verified.
 
 ---
 
-## 5. Conflicts and duplicate-pricing checks
+## 4. Demo safety verification
 
-| Finding | Resolution |
-| --- | --- |
-| 36 template SKUs existed inactive at ₹0 while proposed prices existed only in a report. | Source displays exact proposed prices with a prominent “not active yet” label and disabled purchase. No D1 write or activation occurred. |
-| An active configured price could differ from the approved schedule. | `customerPriceDisplay` detects the mismatch, shows “configured price differs”, and blocks purchase pending Owner review. |
-| Template SKUs could previously be accepted by the package quotation endpoint. | `functions/api/proposals/calculate.ts` now rejects them with the exact message quoted in section 2. |
-| Package cards could mix template SKUs into package choices. | `StudioLanding.tsx` filters to `category === 'website'`. |
-| Customer dashboard copy hardcoded a package price. | Replaced with server-neutral “eligible Business Website Package” wording. |
-| Owner pricing UI could blur templates, packages and SaaS. | Owner manager wording and dashboard section headings now separate all three. |
-| Existing packages/offers could be accidentally modified by test activity. | Local mocked regressions confirm package pricing and offer/proposal rows remain unchanged. |
-| Refund/cancellation policy is not published. | UI states this plainly and promises no refund; support contact is shown before payment. |
+The Sri Lakshmi Silks & Boutique fixture is treated as an illustrative preview only:
 
-No fake reviews, ratings, guarantees, discounts, demo claims, or hidden fees were introduced. Only the three verified fixtures expose `View Demo`; catalogue `demo_slug` values were not silently substituted.
+- Entire demo storefront is labelled **`Illustrative Demo — Not a real business`**.
+- Phone, address, hours, delivery, returns, reviews and products are labelled fictional/sample.
+- No real order, payment, message, review, quote request or form submission is allowed in demo mode.
+- Real tenant storefronts continue to use their own verified data and are not changed by demo guards.
+- Source assertion: `Sri Lakshmi demo storefront is fictional, labelled and non-contactable` PASS.
 
 ---
 
-## 6. Automated verification
+## 5. Automated QA results — final run
 
 | Command | Result |
 | --- | --- |
-| `npm run lint` | PASS (`tsc --noEmit`, no errors) |
-| `npm run build` | PASS; only the known non-blocking Vite `__dirname` config-loader warning |
-| `npm run test:customer-experience` | **18 passed, 0 failed** |
-| `npm run check:template-pricing-schedule` | **11 passed, 0 failed** |
+| `npm run lint` | PASS — `tsc --noEmit`, no errors |
+| `npm run build` | PASS — Vite build succeeded; known non-blocking `__dirname` config-loader and chunk-size warnings only |
+| `npm run test:customer-experience` | **23 passed, 0 failed** |
 | `npm run test:template-pricing` | **27 passed, 0 failed** |
-| `npm test` | **20 passed, 0 failed** |
-| `npm run test:preview` | **9 passed, 0 failed** |
+| `npm run check:template-pricing-schedule` | **11 passed, 0 failed** |
+| `npm test` | **20 passed, 0 failed** — SEO/metadata regressions |
 | `npm run test:cashfree-safety` | **13 passed, 0 failed** |
+| `npm run test:preview` | **9 passed, 0 failed** |
+| `npm run test:website` | **19 passed, 0 failed** |
+| `npx tsx scripts/test-demo-business-builder.ts` | **11 passed, 0 failed** |
+| `npx tsx scripts/test-brand-cleanup.ts` | **6 passed, 0 failed** |
+| `npx tsx scripts/test-priority-fix-consolidated.ts` | **46 passed, 0 failed** |
 | `npm run test:cashfree-architecture` | **9 passed, 0 failed** |
+| `npm run test:webhooks` | **16 passed, 0 failed** |
+| `npm run test:cashfree-security` | **36 passed, 0 failed** |
 | `npm run test:cashfree-webhook-freshness` | **11 passed, 0 failed** |
 | `npm run test:cashfree-hardening` | **15 passed, 0 failed** |
-| `npm run test:cashfree-security` | **36 passed, 0 failed** |
 | `npm run test:sandbox-payment` | **34 passed, 0 failed** |
-| `npm run test:webhooks` | **16 passed, 0 failed** |
-| `npx tsx scripts/test-priority-fix-13.ts` | **41 passed, 0 failed** (includes white-label middleware/domain/email fixtures) |
-| `npx tsx scripts/test-priority-fix-consolidated.ts` | **46 passed, 0 failed** (includes white-label and entitlement/display gates) |
-| `npx tsx scripts/test-website-workflow-regressions.ts` | **19 passed, 0 failed** |
-| `npx tsx scripts/test-demo-business-builder.ts` | **11 passed, 0 failed** (public preview has no platform branding) |
-| `npm run test:preview-targeted-fixes` | **FAIL — stale, unrelated assertion**: it expects `/marketplace` to be absent from `SPA_SHELL_EXACT_ROUTES`, but `functions/_middleware.ts` already includes it. Neither `functions/_middleware.ts` nor this test was modified by this task (`git diff` clean). Not a customer-pricing regression. |
 
-Browser QA used the built `dist` behind temporary **read-only local mocks** at `http://127.0.0.1:3012` and `http://127.0.0.1:3013`; all mutation endpoints returned 405. The 3013 fixture used mock Supabase sessions and identity-scoped GET responses for Owner, Customer A and Customer B; no real account, OTP, email, secret, payment or external API was used. Desktop viewport and a 390px iframe viewport were checked. Observed: 36 `Proposed ₹` labels, 3 `View Demo`, 33 `No live demo yet`, exact inclusion message, ₹9,439 final payable, quote-required dynamic state, no horizontal overflow at 390px, three Owner pricing sections, two isolated customer sessions, and no successful payment claim from an unverified Cashfree return. The temporary servers and QA tabs were closed after verification.
+Known unrelated stale suite: `npm run test:preview-targeted-fixes` was not used as a gate. Its `/marketplace` assertion is stale relative to unchanged `functions/_middleware.ts`; no middleware change was made in this pass.
 
 ---
 
-## 7. 13-scenario QA report
+## 6. 390px browser layout verification
 
-| # | Scenario | Status | Evidence |
-| ---: | --- | --- | --- |
-| 1 | Price understanding | **PASS** | 36 exact proposed SKU prices shown; schedule total ₹73,964; row-by-row client/report assertion PASS. |
-| 2 | Template/package distinction | **PASS** | Section A `Choose Your Website Design`; Section B `Get Your Complete Business Website`; template-only modal states it is not a hosted/published website. |
-| 3 | Template-only selection | **PASS** | 36 `Buy / Customize` actions open a modal with inclusions, exclusions, update/support terms, and disabled activation-dependent purchase. |
-| 4 | ₹7,999 package + template, no duplicate charge | **PASS** | Exact inclusion message shown; template add-on ₹0; final ₹9,439; proposal calculator rejects template SKUs. |
-| 5 | Custom feature quote-required | **PASS** | Browser test with 9 pages + “custom API integration and data migration” showed exact `Custom Requirement — Quote Required`, reasons, and Owner-review-only wording; no POST was made. |
-| 6 | Final price before checkout | **PASS** | Base ₹7,999, GST 18% ₹1,440, final ₹9,439 visible before any payment action. |
-| 7 | Unverified payment cannot show success | **PASS** | Disabled template purchase clicked without URL change, success toast, or non-GET request; source gates success on `res.verified`. |
-| 8 | Verified entitlement after genuine payment | **BLOCKED** | Source wiring to authenticated `/api/customer/package-status` and `signatureVerified` checked; Cashfree safety/hardening/security/webhook/freshness/sandbox suites pass. A browser return with an unverified order produced only a status toast, no success claim. Genuine entitlement proof still requires an explicitly authorized Cashfree-verified payment, which is outside scope. |
-| 9 | Customer dashboard own-data isolation | **PASS** | Read-only local mock with two isolated sessions: Customer A saw only `Customer A Own Package`, `A-ONLY-RECEIPT`, and 1 own change request; Customer B saw only `Customer B Own Package`, `B-ONLY-RECEIPT`, and 1 own support ticket. Neither session saw the other’s email, plan, receipt or request. No local writes or app console errors. |
-| 10 | Owner dashboard pricing separation | **PASS** | Mock Owner session loaded `Existing Packages & Subscriptions`, `36 Website Template Prices`, `Special Offers`, and the 36-row `Pricing Manager`; separation copy confirmed one-time templates are distinct from package plans and recurring SaaS. Owner API 200; non-owner paths stayed 403 in regression suites. No local writes. |
-| 11 | Existing packages/offers unchanged | **PASS** | No D1 writes; previous read-only verification showed 12 non-template rows, `platform_proposals=2`, `store_coupons=0`; regression suites confirm unchanged package and offer rows. |
-| 12 | White-label has no VIJAY VISUALS branding | **PASS** | Local middleware/fixture suites prove platform head metadata is replaced on `/site/{slug}`, delivery subdomains and custom domains; tenant emails/notifications are tenant-branded; public preview fixture is customer-branded. Live custom-domain/DNS proof is separately noted in section 8 and is not claimed here. |
-| 13 | Mobile layout | **PASS** | 390px iframe: width 390, scrollWidth 382, no horizontal overflow, single-column responsive grids; both required sections and ₹9,439 summary rendered. |
+A local read-only static server served the newly built `dist` at `http://127.0.0.1:3015`. It had no API/D1 access and performed no writes. The expected `API endpoint is unavailable` console message appeared because the static fixture intentionally has no API backend; no app-initiated mutation was observed.
 
-### Summary
+| Page | Measured result |
+| --- | --- |
+| `/marketplace` inside a 390px iframe | `innerWidth=390`, `clientWidth=382`, `scrollWidth=382`, horizontal overflow `0px` |
+| `/marketplace` content | 36 `Proposed ₹` labels, 3 `View Demo`, 33 `No live demo yet`, `Choose Your Website Design`, `Get Your Complete Business Website`, exact tax note present |
+| `/builder` inside a 390px iframe | `innerWidth=390`, `clientWidth=382`, `scrollWidth=382`, horizontal overflow `0px` |
+| `/builder` content | `Not a real business`, `Sample phone`, `Sample address`, `Total ₹0 · no tax`, exact tax note present |
 
-- **PASS: 12**
-- **FAIL: 0**
-- **PENDING: 0**
-- **BLOCKED: 1**
+The browser tab was closed and the temporary local server was stopped after verification.
 
 ---
 
-## 8. Unavailable or deliberately withheld features
+## 7. Misleading-claim grep classification
 
-- 36 proposed template prices remain **display-only**; activation and D1 writes need explicit approval.
-- No template purchase is possible until an Owner configures and activates the SKU.
-- **Exact remaining QA blocker — verified entitlement:** proving a genuine payment-to-entitlement transition requires an explicitly authorized Cashfree-verified Preview transaction with a real signed-in customer and successful server-to-server verification. Local mocks deliberately never returned `verified: true`; no payment, receipt, refund, payout or entitlement was simulated as real.
-- Live white-label *deployment* proof still requires a published tenant fixture and verified custom domain/DNS/TLS (or wildcard delivery host). The local QA scenario is PASS via middleware fixtures, but no live published-domain claim is made.
-- Authenticated live dashboard checks with real accounts/OTP/email were not used; the Owner-separation and customer-isolation scenarios were closed with read-only local mock sessions instead.
-- 33 templates have no live demo; only `deccan-royal-couture`, `nocturne-audio-tech`, and `nizam-heritage-kitchen` are verified fixtures.
-- Two revisions, 30-day support, handover/training, and “up to 7 agreed pages” are bounded **Owner-service** terms; they are not automatic software and need written Owner/service-process approval.
-- A refund/cancellation policy has not been published; no refund is promised.
-- Razorpay is retired. Historical ledger fields are preserved, but no new Razorpay checkout or active gateway path was introduced.
+Scoped grep was run over active `src/**/*.{ts,tsx}` and `functions/**/*.ts` for delivery guarantees, 30-minute/same-day claims, cold-chain, 360 viewers, AI engines, warranties/certifications, `free domain`, `Total Free`, `₹0 + 18`, EMI calculators, refill automation, fixed proposal timelines and GST claims.
+
+Residual matches are classified as follows:
+
+1. **Negations and disclosures — allowed.** Examples: `templatesData.ts` says delivery/certification/AI/immersive/temperature-controlled outcomes are *not included*; `customerPricing.ts` and `WebsiteBuilder.tsx` say domain connection is *not* a free domain; `functions/api/plans.ts` says dedicated AI engines require a separate proposal.
+2. **Technical DNS timing — allowed.** `src/routes/domains.ts` says DNS changes typically propagate within `5–30 minutes` and may take up to 24 hours. This is DNS propagation guidance, not a 30-minute delivery promise. `test-brand-cleanup` explicitly preserves non-technical 24-hour claims while confirming non-technical ones are gone.
+3. **Numeric false positives — allowed.** `360` matches in SVG paths, image heights, rate-limit windows and image-data limits are not 360° viewer claims.
+4. **GST fields and calculations — allowed with caveat.** Schema/type fields, internal finance ledgers, regional tax configuration and Cashfree calculation code remain. Customer-facing marketing/UI/API disclosure copy uses the exact tax note. Backend GST calculation was not removed and is reported in section 3.3.
+5. **Local test fixtures — allowed, non-customer-facing.** `scripts/test-purchase-system.ts`, `scripts/test-cashfree-integration.ts`, `scripts/run-local-integration-tests.ts` contain 18% GST fixtures; `scripts/test-priority-fix-consolidated.ts` asserts that `3–5 Business Days` is absent; `scripts/verify-branding-and-pdf.cjs` contains non-runtime PDF fixture substitutions. None are active storefront or package marketing copy.
+
+No unclassified customer-facing promise remained in the scoped active source.
+
+---
+
+## 8. BLOCKED / deliberately not claimed
+
+- **Genuine verified entitlement:** BLOCKED. Source and local Cashfree suites verify server-side verification, signature freshness, amount mismatch rejection, duplicate protection, refund safety and entitlement logic. No mock returned `verified: true`; no real payment was made.
+- **Live published-store e-commerce and custom-domain proof:** BLOCKED. Only source and local fixture verification was performed. No live published tenant, DNS/TLS/custom-domain validation or external merchant approval was attempted.
+- **GST applicability:** still unverified. The exact confirmation wording is shown; no new GSTIN/tax-provider configuration was written.
+- **Template activation:** not performed. All 36 SKUs remain inactive at zero price in Preview D1.
 
 ---
 
 ## 9. Deployment and safety statement
 
-No commit, push, merge, deploy, Production D1/Supabase access, DNS/domain/hosting/Cloudflare Production change, Cashfree Live action, secret access, OTP, external email/message, real account, real payment/refund/payout, deletion, or historical-record modification was performed. The currently deployed Preview URL continues to serve the earlier committed bundle and does **not** include these local customer-experience changes.
+The content-safety QA pass made **source and report edits only**. Commit, push and Preview-only deploy were performed afterwards under Vijay's explicit authorization:
 
-A separate explicit approval is required before writing the 36 prices, activating SKUs, committing/pushing, merging, or deploying this work.
+- Commit, push and deploy were limited to `preview/vijay-visuals-p0-safe-2026-11-26`; no Production change, merge to `main`/`master`, or other branch action.
+- No D1 or Supabase write. Earlier read-only D1 checks reported `changes: 0`, `rows_written: 0`, `changed_db: false`.
+- No SKU activation, price write, package-price or backend-GST configuration change, external approval, payment, refund, payout, message, email, OTP, secret access or account action.
+- Pre-existing unrelated modified/untracked report files were left untouched.
+- The earlier approved Preview deployment was the baseline; only this content-safety release was deployed to the existing Preview project.
 
----
-
-## 10. Final pending QA completion evidence
-
-The single original PENDING item and two of the three original BLOCKED items were closed using only the existing local Preview build, read-only mocks and source fixtures.
-
-| Original item | Closure evidence | Final status |
-| --- | --- | --- |
-| Owner dashboard pricing separation (was PENDING) | Mock Owner session opened `/dashboards/platform-owner`; `Existing Packages & Subscriptions`, `36 Website Template Prices`, `Special Offers`, the 36-row template pricing manager, and the explicit template/package/SaaS separation copy were visible. `/api/platform-owner/dashboard` and `/api/platform-owner/template-pricing` returned 200 for the mock Owner. No local mutation requests were made. | **PASS** |
-| Customer dashboard own-data isolation (was BLOCKED) | Two identity-scoped mock sessions were checked at `/dashboards`. Customer A showed only A’s package, receipt and change request; Customer B showed only B’s package, receipt and support ticket. Each isolation sentence named the signed-in email; the other customer’s email, plan, receipt and request were absent. No local writes and no app console errors. | **PASS** |
-| White-label branding (was BLOCKED) | Local suites verified platform head metadata replacement on `/site/{slug}`, delivery subdomains and custom domains; blocked custom domains contain no platform branding; tenant store-order email is tenant-branded; the public demo fixture body is customer-branded; source guard confirms no platform credit in tenant head injection. | **PASS** |
-| Verified entitlement after genuine payment (BLOCKED) | Server-side verification, signature freshness, amount mismatch rejection, duplicate protection, webhook idempotency, refund safety and entitlement provisioning are covered by passing local suites. A browser Cashfree return with an unverified order produced only a status toast, no success toast. No mock ever returned `verified: true`. | **BLOCKED** |
-
-Pricing re-verification in this pass: 36 exact proposed SKU prices and ₹73,964 total PASS; ₹7,999 base + ₹0 selected template + ₹1,440 GST = ₹9,439 PASS; template SKU rejection from package quotations PASS; out-of-package `Custom Requirement — Quote Required` PASS; no duplicate template charge PASS.
-
-**Final QA classification: PASS 12, FAIL 0, PENDING 0, BLOCKED 1.** The customer pricing journey is ready for the approved Preview-only release. The one BLOCKED item requires an external, explicitly authorized genuine Cashfree verification and must not be claimed as complete until that occurs.
+**Final status: local content-safety work PASS and Preview-only release authorized; external entitlement and live-domain proofs remain BLOCKED pending explicit authorisation.**

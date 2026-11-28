@@ -658,8 +658,9 @@ export const ProposalManager: React.FC<ProposalManagerProps> = ({ onNotify, onOp
                     <p className="text-[10px] text-[#8E8EA2]">Default 9 allocations total ₹7,999. Edit any feature price as needed.</p>
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] text-[#8E8EA2]">Calculated Grand Total:</span>
-                    <span className="block text-sm font-extrabold text-[#ECC86A]">₹{totalCalculatedGrand.toLocaleString('en-IN')} (incl. 18% GST)</span>
+                    <span className="text-[10px] text-[#8E8EA2]">Base Allocation Total:</span>
+                    <span className="block text-sm font-extrabold text-[#ECC86A]">₹{totalCalculatedDevFee.toLocaleString('en-IN')}</span>
+                    <span className="block text-[10px] text-[#8E8EA2]">Applicable taxes will be confirmed before payment.</span>
                   </div>
                 </div>
 
