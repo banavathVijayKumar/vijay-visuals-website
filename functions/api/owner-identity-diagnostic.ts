@@ -1,7 +1,7 @@
 ﻿// TEMPORARY Preview-only read-only Owner identity inspection. Removed after inspection.
 import { createClient } from '@supabase/supabase-js';
-import { PagesContext, jsonResponse } from '../_shared';
-import { createSupabaseAdminClient, getSupabaseAdminConfig } from './_supabaseAdmin';
+import { PagesContext, jsonResponse } from './_shared';
+import { createSupabaseAdminClient, getSupabaseAdminConfig } from './auth/_supabaseAdmin';
 
 const DIAG_TOKEN = '8a3a34beff2d4577a14e2fe9f18e5965';
 const OWNER_EMAIL = 'vk66278@gmail.com';
