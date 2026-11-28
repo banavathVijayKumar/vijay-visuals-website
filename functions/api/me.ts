@@ -17,9 +17,12 @@ import { hasDurableOwnerApproval, readRiderState } from './delivery/_riderState'
 
 function mapRoleToUi(
   role: string,
-  hasOwnedTenants: boolean = false
-): 'super_admin' | 'business_owner' | 'staff' | 'delivery_partner' | 'customer' {
+  hasOwnedTenants: boolean = false,
+  isOwner: boolean = false
+): 'platform_owner' | 'super_admin' | 'business_owner' | 'staff' | 'delivery_partner' | 'customer' {
   const r = (role || 'customer').toLowerCase();
+  if (isOwner) return 'platform_owner';
+  if (r === 'platform_owner') return 'customer';
   if (r === 'super_admin' || r === 'admin') return 'super_admin';
   if (
     r === 'shop_owner' ||
@@ -214,8 +217,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       email: auth.user.email,
       name: auth.user.fullName || auth.user.email.split('@')[0],
       phone: savedPhone,
-      role: mapRoleToUi(auth.user.supabaseRole, ownedTenants.length > 0),
+      role: mapRoleToUi(auth.user.supabaseRole, ownedTenants.length > 0, auth.user.isOwner),
       supabaseRole: auth.user.supabaseRole,
+      isPlatformOwner: auth.user.isOwner,
       preferredLang: 'en',
       savedAddressesJson: JSON.stringify(savedAddresses),
     },
@@ -320,8 +324,9 @@ export async function onRequestPatch(context: PagesContext): Promise<Response> {
       email: nextEmail || auth.user.email,
       name: nextName,
       phone: nextPhone,
-      role: mapRoleToUi(auth.user.supabaseRole, hasOwnedTenants),
+      role: mapRoleToUi(auth.user.supabaseRole, hasOwnedTenants, auth.user.isOwner),
       supabaseRole: auth.user.supabaseRole,
+      isPlatformOwner: auth.user.isOwner,
       preferredLang: nextLang,
       savedAddressesJson: JSON.stringify(parsedAddresses),
     },

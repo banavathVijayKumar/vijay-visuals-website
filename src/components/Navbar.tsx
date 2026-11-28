@@ -13,7 +13,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) => {
-  const { profile, signInWithGoogle, logout, loading } = useAuth();
+  const { profile, isPlatformOwner, signInWithGoogle, logout, loading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
@@ -240,6 +240,15 @@ export const Navbar: React.FC<NavbarProps> = ({ activeView, onNavigate, lang }) 
                     <p className="text-[#8B8B9C] truncate">{profile.email}</p>
                     <p className="text-[#D4AF37] mt-1 capitalize font-mono text-[11px]">Role: {profile.role.replace('_', ' ')}</p>
                   </div>
+                  {isPlatformOwner && (
+                    <button
+                      type="button"
+                      onClick={() => handleNavigateView('owner-dashboard')}
+                      className="w-full text-left px-2.5 py-2 rounded-lg bg-[#D4AF37]/10 text-[#F5E2AC] font-semibold hover:bg-[#D4AF37]/20"
+                    >
+                      Business Owner Dashboard
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleNavigateView('dashboards')}

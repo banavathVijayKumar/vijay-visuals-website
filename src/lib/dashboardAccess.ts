@@ -36,3 +36,11 @@ export function canViewDashboardTab(
 ): boolean {
   return tabs.includes(tab);
 }
+
+/**
+ * Platform Owner is a distinct, server-verified role. It is intentionally not
+ * a DashboardRoleTab: the legacy 'owner' tab is a tenant workspace.
+ */
+export function canAccessBusinessOwnerDashboard(isPlatformOwner: boolean = false): boolean {
+  return isPlatformOwner === true;
+}

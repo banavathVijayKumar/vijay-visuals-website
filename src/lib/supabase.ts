@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Types for Multi-Tenant Website Builder & Delivery System
-export type UserRole = 'super_admin' | 'admin' | 'shop_owner' | 'delivery_boy' | 'customer' | 'support_agent';
+export type UserRole = 'platform_owner' | 'super_admin' | 'admin' | 'shop_owner' | 'delivery_boy' | 'customer' | 'support_agent';
 export type AccountStatus = 'active' | 'inactive' | 'pending_invite' | 'suspended';
 export type OrderStatus =
   | 'placed'

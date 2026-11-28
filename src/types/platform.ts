@@ -7,7 +7,7 @@ export interface UserProfile {
   email: string;
   name: string;
   phone: string;
-  role: 'super_admin' | 'business_owner' | 'staff' | 'delivery_partner' | 'customer';
+  role: 'platform_owner' | 'super_admin' | 'business_owner' | 'staff' | 'delivery_partner' | 'customer';
   preferredLang: string;
   savedAddressesJson: string;
   marketingConsent?: boolean;
@@ -606,4 +606,4 @@ export interface CartItem {
   variant: string;
 }
 
-export type AppView = 'studio' | 'builder' | 'demo-builder' | 'marketplace' | 'storefront' | 'dashboards' | 'ai' | 'demo' | 'proposal' | 'not-found';
+export type AppView = 'studio' | 'builder' | 'demo-builder' | 'marketplace' | 'storefront' | 'dashboards' | 'owner-dashboard' | 'ai' | 'demo' | 'proposal' | 'not-found';

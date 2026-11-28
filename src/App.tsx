@@ -12,6 +12,7 @@ import { StudioLanding } from './components/StudioLanding';
 import { WebsiteBuilder } from './components/WebsiteBuilder';
 import { StorefrontView } from './components/StorefrontView';
 import { DashboardsHub } from './components/DashboardsHub';
+import { BusinessOwnerDashboard } from './components/BusinessOwnerDashboard';
 import { AiAutomationCenter } from './components/AiAutomationCenter';
 import { OrderTrackerModal } from './components/OrderTrackerModal';
 import { InvoiceModal } from './components/InvoiceModal';
@@ -76,6 +77,7 @@ function parseRouteFromPath(): { view: AppView; slug: string | null } {
   if (pathname.startsWith('/demo')) return { view: 'demo', slug: null };
   if (pathname.startsWith('/builder')) return { view: 'builder', slug: null };
   if (pathname.startsWith('/marketplace')) return { view: 'marketplace', slug: null };
+  if (pathname.startsWith('/dashboards/platform-owner')) return { view: 'owner-dashboard', slug: null };
   if (pathname.startsWith('/dashboards')) return { view: 'dashboards', slug: null };
   if (pathname.startsWith('/ai')) return { view: 'ai', slug: null };
   return { view: 'not-found', slug: null };
@@ -285,7 +287,9 @@ function PlatformShell() {
             ? `/proposal/${slug}`
             : view === 'studio'
               ? '/'
-              : `/${view}`;
+              : view === 'owner-dashboard'
+                ? '/dashboards/platform-owner'
+                : `/${view}`;
       window.history.pushState({}, '', appendLangParam(route, lang));
       window.scrollTo({ top: 0, behavior: getScrollBehavior() });
     },
@@ -542,6 +546,15 @@ function PlatformShell() {
               }}
               onGoAiCenter={() => navigateTo('ai')}
               onNotify={showToast}
+            />
+          </ErrorBoundary>
+        )}
+
+        {activeView === 'owner-dashboard' && (
+          <ErrorBoundary sectionName="Business Owner Dashboard">
+            <BusinessOwnerDashboard
+              onNotify={showToast}
+              onGoDashboards={() => navigateTo('dashboards')}
             />
           </ErrorBoundary>
         )}

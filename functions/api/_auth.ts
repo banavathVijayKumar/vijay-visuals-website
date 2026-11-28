@@ -5,8 +5,10 @@
 
 import { CloudflareEnv, errorJson } from './_shared';
 import { resolveSupabaseBootstrap } from './_previewSupabase';
+import { isAuthorizedPlatformOwnerRow, PlatformOwnerRow } from './_ownerRole';
 
 export type PlatformRole =
+  | 'platform_owner'
   | 'super_admin'
   | 'platform_staff'
   | 'business_owner'
@@ -28,6 +30,8 @@ export interface AuthenticatedUser {
   fullName: string;
   supabaseRole: string;
   platformRole: PlatformRole;
+  /** True only from the verified singleton D1 platform_owner row. */
+  isOwner: boolean;
   isSuperAdmin: boolean;
   isPlatformStaff: boolean;
   staffPermissions: string[];
@@ -81,6 +85,9 @@ export function getSupabaseConfig(env: CloudflareEnv): { url: string; anonKey: s
 
 function mapSupabaseRoleToPlatformRole(rawRole: string): PlatformRole {
   const role = (rawRole || 'customer').trim().toLowerCase();
+  // A raw Supabase profile string can never grant platform Owner. The only
+  // authoritative grant is the singleton D1 row checked in requireUser().
+  if (role === 'platform_owner') return 'end_customer';
   if (role === 'admin' || role === 'super_admin') return 'super_admin';
   if (role === 'platform_staff' || role === 'support_staff') return 'platform_staff';
   if (role === 'shop_owner' || role === 'business_owner' || role === 'owner') return 'business_owner';
@@ -184,15 +191,35 @@ export async function requireUser(request: Request, env: CloudflareEnv): Promise
 
   const mappedRole = mapSupabaseRoleToPlatformRole(profileRole);
   const vvRole: 'admin' | 'customer' = mappedRole === 'super_admin' ? 'admin' : 'customer';
+  const normalizedEmail = (supaUser.email || '').trim().toLowerCase();
 
-  // 3. Synchronize with existing D1 `vv_users` table and check suspension status
+  // 3. Resolve the platform Owner from the singleton D1 table. This is the only
+  // Owner grant: Supabase profile strings and client input cannot create one.
+  let isOwner = false;
+  let ownerFullName = '';
+  if (env.DB) {
+    try {
+      const ownerRow = await env.DB.prepare(
+        `SELECT singleton_id, user_id, email, full_name, status FROM platform_owner WHERE singleton_id = 1 LIMIT 1`
+      ).first<PlatformOwnerRow>();
+      isOwner = isAuthorizedPlatformOwnerRow(ownerRow, supaUser.id, normalizedEmail);
+      if (isOwner && ownerRow?.full_name) ownerFullName = String(ownerRow.full_name);
+    } catch {
+      // Missing migration/table means Owner access fails closed. Normal users
+      // continue through the unchanged vv_users path below.
+    }
+  }
+  if (isOwner && !fullName && ownerFullName) fullName = ownerFullName;
+
+  // 4. Synchronize with existing D1 `vv_users` table and check suspension status.
+  // The Owner deliberately bypasses this sync: it has no vv_users row and must
+  // never be written back as 'customer' or 'admin'.
   let status: 'active' | 'suspended' = 'active';
   let userId = supaUser.id;
-  let isPlatformStaff = mappedRole === 'platform_staff';
+  let isPlatformStaff = !isOwner && mappedRole === 'platform_staff';
   let staffPermissions: string[] = [];
 
-  if (env.DB) {
-    const normalizedEmail = (supaUser.email || '').trim().toLowerCase();
+  if (env.DB && !isOwner) {
     let existing: {
       id: string;
       auth_subject: string;
@@ -289,8 +316,9 @@ export async function requireUser(request: Request, env: CloudflareEnv): Promise
     };
   }
 
-  const finalPlatformRole: PlatformRole =
-    mappedRole === 'super_admin'
+  const finalPlatformRole: PlatformRole = isOwner
+    ? 'platform_owner'
+    : mappedRole === 'super_admin'
       ? 'super_admin'
       : isPlatformStaff
         ? 'platform_staff'
@@ -305,8 +333,10 @@ export async function requireUser(request: Request, env: CloudflareEnv): Promise
       fullName: fullName || supaUser.email || 'User',
       supabaseRole: profileRole,
       platformRole: finalPlatformRole,
-      isSuperAdmin: finalPlatformRole === 'super_admin',
-      isPlatformStaff: finalPlatformRole === 'platform_staff' || finalPlatformRole === 'super_admin',
+      isOwner: finalPlatformRole === 'platform_owner',
+      isSuperAdmin: !isOwner && finalPlatformRole === 'super_admin',
+      isPlatformStaff:
+        !isOwner && (finalPlatformRole === 'platform_staff' || finalPlatformRole === 'super_admin'),
       staffPermissions,
       status,
       emailVerified: Boolean(supaUser.email_confirmed_at),
@@ -336,6 +366,23 @@ export async function requirePlatformStaff(
     return {
       ok: false,
       response: errorJson('Vijay Visuals Platform Staff or Super Admin access is required.', 403),
+    };
+  }
+  return auth;
+}
+
+/**
+ * Owner-only guard. Deliberately separate from requireAdmin: a Super Admin or
+ * platform staff member never passes this check, and an Owner never passes
+ * requireAdmin/requirePlatformStaff.
+ */
+export async function requireOwner(request: Request, env: CloudflareEnv): Promise<AuthResult> {
+  const auth = await requireUser(request, env);
+  if (!auth.ok) return auth;
+  if (!auth.user.isOwner) {
+    return {
+      ok: false,
+      response: errorJson('Business Owner privileges are required for this action.', 403),
     };
   }
   return auth;

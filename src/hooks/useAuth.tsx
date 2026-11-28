@@ -16,8 +16,11 @@ import { DeliveryPartnerRecord, TenantRecord, UserProfile } from '../types/platf
 
 function mapSupabaseRoleToPlatformRole(
   role?: string | null
-): 'super_admin' | 'business_owner' | 'staff' | 'delivery_partner' | 'customer' {
+): 'platform_owner' | 'super_admin' | 'business_owner' | 'staff' | 'delivery_partner' | 'customer' {
   const r = (role || 'customer').toLowerCase();
+  // The browser never grants Owner from a profile string. /api/me is the only
+  // source of the server-verified isPlatformOwner flag.
+  if (r === 'platform_owner') return 'customer';
   if (r === 'super_admin' || r === 'admin') return 'super_admin';
   if (r === 'shop_owner' || r === 'business_owner' || r === 'business_manager') return 'business_owner';
   if (r === 'delivery_boy' || r === 'delivery_partner') return 'delivery_partner';
@@ -56,6 +59,8 @@ interface AuthContextValue {
   deliveryProfiles: DeliveryPartnerRecord[];
   /** Server-computed from active tenant_memberships; never inferred from role alone. */
   deliveryEligible: boolean;
+  /** Server-computed from the singleton platform_owner D1 row. */
+  isPlatformOwner: boolean;
   loading: boolean;
   authError: string | null;
   authModalOpen: boolean;
@@ -77,6 +82,7 @@ const AuthContext = createContext<AuthContextValue>({
   ownedTenants: [],
   deliveryProfiles: [],
   deliveryEligible: false,
+  isPlatformOwner: false,
   loading: true,
   authError: null,
   authModalOpen: false,
@@ -97,6 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [ownedTenants, setOwnedTenants] = useState<TenantRecord[]>([]);
   const [deliveryProfiles, setDeliveryProfiles] = useState<DeliveryPartnerRecord[]>([]);
   const [deliveryEligible, setDeliveryEligible] = useState(false);
+  const [isPlatformOwner, setIsPlatformOwner] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -112,6 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setOwnedTenants([]);
       setDeliveryProfiles([]);
       setDeliveryEligible(false);
+      setIsPlatformOwner(false);
       return;
     }
 
@@ -139,11 +147,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ownedTenants?: TenantRecord[];
         deliveryProfiles?: DeliveryPartnerRecord[];
         deliveryEligible?: boolean;
+        isPlatformOwner?: boolean;
       }>('/api/me');
       setProfile(data.user || mappedProfile);
       setOwnedTenants(data.ownedTenants || []);
       setDeliveryProfiles(data.deliveryProfiles || []);
       setDeliveryEligible(data.deliveryEligible === true);
+      setIsPlatformOwner(data.isPlatformOwner === true);
       setAuthError(null);
     } catch {
       // Even if /api/me is unreachable in local static preview, keep verified Supabase profile active.
@@ -152,6 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setOwnedTenants([]);
       setDeliveryProfiles([]);
       setDeliveryEligible(false);
+      setIsPlatformOwner(false);
     }
   }, []);
 
@@ -162,6 +173,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setOwnedTenants([]);
       setDeliveryProfiles([]);
       setDeliveryEligible(false);
+      setIsPlatformOwner(false);
       return;
     }
     setSupabaseReady(true);
@@ -279,6 +291,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setOwnedTenants([]);
       setDeliveryProfiles([]);
       setDeliveryEligible(false);
+      setIsPlatformOwner(false);
     }
   }, []);
 
@@ -292,6 +305,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ownedTenants,
         deliveryProfiles,
         deliveryEligible,
+        isPlatformOwner,
         loading,
         authError,
         authModalOpen,
