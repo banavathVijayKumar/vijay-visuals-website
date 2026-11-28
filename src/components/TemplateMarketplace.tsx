@@ -10,9 +10,11 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { BUSINESS_CATEGORIES } from '../data/content';
+import { BUSINESS_CATEGORIES, CONTACT_INFO, getI18n, type Lang } from '../data/content';
 import { DEMO_CATEGORY_PROFILES, categoryForTemplate } from '../data/demoBuilder';
 import { getDemoStorefront } from '../data/demo';
+import { PackagePurchaseGuide } from './PackagePurchaseGuide';
+import { getProposedTemplatePrice, formatInr } from '../lib/customerPricing';
 import { DEMO_STORE_TEMPLATE_MAP } from '../lib/templateTransfer';
 import { TEMPLATES_DATA, type BusinessTemplate } from '../lib/templatesData';
 import {
@@ -21,12 +23,13 @@ import {
   TEMPLATE_PURCHASE_INCLUSIONS,
   TEMPLATE_UPDATE_TERMS,
   describeTemplatePrice,
-  findTemplatePlan,
+  type TemplatePriceView,
 } from '../lib/templatePricing';
 import type { PlatformPlanRecord } from '../types/platform';
 
 interface TemplateMarketplaceProps {
   plans: PlatformPlanRecord[];
+  lang?: Lang;
   onUseTemplate: (templateId: string) => void;
   onOpenStorefront: (slug: string) => void;
   onNotify: (message: string) => void;
@@ -49,17 +52,62 @@ const templateThumbnail = (template: BusinessTemplate): string => {
   return DEMO_CATEGORY_PROFILES[categoryId]?.banner || '';
 };
 
+interface CustomerPriceDisplay {
+  label: string;
+  note: string;
+  conflict: boolean;
+  purchasable: boolean;
+}
+
+/**
+ * Shows the exact proposed price even while the SKU is inactive in Preview D1.
+ * If an Owner-configured active price disagrees with the approved schedule, we
+ * surface the conflict instead of silently inventing a price.
+ */
+function customerPriceDisplay(templateId: string, server: TemplatePriceView): CustomerPriceDisplay {
+  const proposed = getProposedTemplatePrice(templateId);
+  if (!proposed) {
+    return { label: 'Schedule missing', note: 'No approved price row found.', conflict: true, purchasable: false };
+  }
+  if (server.active && server.priceInr === proposed.priceInr) {
+    return {
+      label: `${formatInr(proposed.priceInr)} one-time + GST at checkout`,
+      note: 'Owner-activated price matches the approved schedule.',
+      conflict: false,
+      purchasable: true,
+    };
+  }
+  if (server.active) {
+    return {
+      label: `Proposed ${formatInr(proposed.priceInr)} · configured price differs`,
+      note: `Server price is ${formatInr(Number(server.priceInr || 0))}; Owner review required.`,
+      conflict: true,
+      purchasable: false,
+    };
+  }
+  return {
+    label: `Proposed ${formatInr(proposed.priceInr)} · not active yet`,
+    note: 'Preview display only. Purchasing starts after Owner configuration and activation.',
+    conflict: false,
+    purchasable: false,
+  };
+}
+
 export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
   plans,
+  lang = 'en',
   onUseTemplate,
   onOpenStorefront,
   onNotify,
 }) => {
+  const t = getI18n(lang);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [sort, setSort] = useState<SortMode>('featured');
   const [demoOnly, setDemoOnly] = useState(false);
   const [detailTemplateId, setDetailTemplateId] = useState<string | null>(null);
+  const [purchaseTemplateId, setPurchaseTemplateId] = useState<string | null>(null);
+  const [preferredTemplateId, setPreferredTemplateId] = useState<string | null>(null);
 
   const filteredTemplates = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -75,10 +123,8 @@ export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
         template.features.some((feature) => feature.toLowerCase().includes(needle))
       );
     });
-    const priceOf = (template: BusinessTemplate): number => {
-      const view = describeTemplatePrice(plans, template.id);
-      return view.active ? view.priceInr ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
-    };
+    const priceOf = (template: BusinessTemplate): number =>
+      getProposedTemplatePrice(template.id)?.priceInr ?? Number.MAX_SAFE_INTEGER;
     return [...rows].sort((a, b) => {
       if (sort === 'name') return a.name.localeCompare(b.name);
       if (sort === 'price_low') return priceOf(a) - priceOf(b);
@@ -91,7 +137,23 @@ export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
     ? TEMPLATES_DATA.find((template) => template.id === detailTemplateId) || null
     : null;
   const detailPrice = detailTemplate ? describeTemplatePrice(plans, detailTemplate.id) : null;
-  const detailPlan = detailTemplate ? findTemplatePlan(plans, detailTemplate.id) : null;
+  const detailDisplay = detailTemplate && detailPrice
+    ? customerPriceDisplay(detailTemplate.id, detailPrice)
+    : null;
+  const purchaseTemplate = purchaseTemplateId
+    ? TEMPLATES_DATA.find((template) => template.id === purchaseTemplateId) || null
+    : null;
+  const purchaseServerPrice = purchaseTemplate
+    ? describeTemplatePrice(plans, purchaseTemplate.id)
+    : null;
+  const purchaseDisplay = purchaseTemplate && purchaseServerPrice
+    ? customerPriceDisplay(purchaseTemplate.id, purchaseServerPrice)
+    : null;
+
+  const openPurchase = (templateId: string) => {
+    setPurchaseTemplateId(templateId);
+    setPreferredTemplateId(templateId);
+  };
 
   const handleUseTemplate = (template: BusinessTemplate) => {
     if (detailPrice && !detailPrice.active && detailPrice.configured) {
@@ -108,23 +170,30 @@ export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div className="max-w-3xl">
               <p className="text-xs font-medium tracking-wider text-[#D4AF37] mb-2">
-                Template Marketplace · {TEMPLATES_DATA.length} verified industry templates
+                A · Website Templates · Template Marketplace · {TEMPLATES_DATA.length} verified industry templates
               </p>
               <h1 className="font-luxury text-3xl md:text-4xl font-bold text-white">
-                Start from a real design. Make it your own.
+                {t.customerTemplateChoiceTitle}
               </h1>
               <p className="mt-3 text-sm leading-relaxed text-[#A9A9BC]">
-                Open a safe demo where available, use the template in the builder, customise the same design,
-                preview it on every screen, and see one clear one-time price before checkout.
+                {t.customerTemplateChoiceSubtitle} A Website Template is a ready-made design you can
+                edit with your own brand. It is not a complete package, hosting plan or payment
+                gateway by itself.
+              </p>
+              <p className="mt-2 text-[11px] leading-relaxed text-[#8E8EA2]">
+                Prices shown are the exact proposed one-time prices from the approved schedule.
+                Where a SKU is not yet Owner-activated, the price is clearly marked as proposed and
+                cannot be purchased.
               </p>
             </div>
             <div className="rounded-xl border border-[#D4AF37]/30 bg-[#101017] px-5 py-4 text-xs text-[#B8B8C8]">
               <div className="flex items-center gap-2 text-[#ECC86A] font-semibold">
                 <Sparkles className="w-4 h-4" />
-                Preview-safe marketplace
+                Preview-safe purchase guidance
               </div>
               <p className="mt-2 max-w-xs leading-relaxed">
-                No checkout, account creation or database write is performed from this page in Preview.
+                No template price is written, activated or charged from this page. Cashfree is the
+                only intended platform gateway; success is shown only after server verification.
               </p>
             </div>
           </div>
@@ -218,6 +287,7 @@ export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
             {filteredTemplates.map((template) => {
               const demoSlug = DEMO_BY_TEMPLATE.get(template.id);
               const price = describeTemplatePrice(plans, template.id);
+              const display = customerPriceDisplay(template.id, price);
               return (
                 <article
                   key={template.id}
@@ -260,17 +330,21 @@ export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
                     <div className="mt-auto space-y-3 border-t border-[#20202E] pt-3">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="text-[11px] text-[#8E8EA2]">One-time template price</span>
-                        <span className={`text-sm font-bold ${price.active ? 'text-[#ECC86A]' : 'text-[#A3A3B5]'}`}>
-                          {price.label}
+                        <span className={`text-right text-sm font-bold ${display.purchasable ? 'text-[#ECC86A]' : 'text-[#C7C7D8]'}`}>
+                          {display.label}
                         </span>
                       </div>
+                      <p className="text-[10px] leading-relaxed text-[#858599]">SKU {getProposedTemplatePrice(template.id)?.sku}</p>
+                      <p className={`text-[10px] leading-relaxed ${display.conflict ? 'text-amber-300' : 'text-[#8E8EA2]'}`}>
+                        {display.note}
+                      </p>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
                           disabled={!demoSlug}
                           onClick={() => {
                             if (!demoSlug) {
-                              onNotify('This template demo is coming soon. Use This Template still works from the catalogue.');
+                              onNotify('No live demo is available for this template yet. You can still customize the design.');
                               return;
                             }
                             onOpenStorefront(demoSlug);
@@ -278,14 +352,14 @@ export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
                           className="inline-flex items-center justify-center gap-1.5 rounded-md border border-[#2B2B3C] bg-[#101018] px-2 py-2 text-[11px] font-semibold text-[#C5C5D6] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          {demoSlug ? 'View Demo' : 'Coming Soon'}
+                          {demoSlug ? 'View Demo' : 'No live demo yet'}
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleUseTemplate(template)}
+                          onClick={() => openPurchase(template.id)}
                           className="inline-flex items-center justify-center gap-1.5 rounded-md bg-gold-gradient px-2 py-2 text-[11px] font-bold text-[#08080A]"
                         >
-                          Use This Template
+                          Buy / Customize
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -304,6 +378,14 @@ export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
           </div>
         )}
       </section>
+
+      <PackagePurchaseGuide
+        plans={plans}
+        lang={lang}
+        preferredTemplateId={preferredTemplateId}
+        onUseTemplate={(templateId) => handleUseTemplate(TEMPLATES_DATA.find((item) => item.id === templateId) || TEMPLATES_DATA[0])}
+        onNotify={onNotify}
+      />
 
       {detailTemplate && detailPrice && (
         <div
@@ -331,15 +413,20 @@ export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
 
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <DetailCard title="One-time price">
-                <p className="text-lg font-bold text-[#ECC86A]">{detailPrice.label}</p>
-                <p className="mt-1 text-[10px] text-[#8E8EA2]">SKU: {detailPrice.code}</p>
+                <p className="text-lg font-bold text-[#ECC86A]">{detailDisplay?.label}</p>
+                <p className="mt-1 text-[10px] text-[#8E8EA2]">
+                  SKU: {getProposedTemplatePrice(detailTemplate.id)?.sku || detailPrice.code}
+                </p>
+                {detailDisplay?.conflict && (
+                  <p className="mt-1 text-[10px] text-amber-300">{detailDisplay.note}</p>
+                )}
               </DetailCard>
               <DetailCard title="Status">
                 <p className="text-sm font-semibold text-white">
-                  {detailPrice.active ? 'Available for purchase' : 'Owner setup pending'}
+                  {detailDisplay?.purchasable ? 'Available for purchase' : 'Owner setup pending'}
                 </p>
                 <p className="mt-1 text-[10px] text-[#8E8EA2]">
-                  {detailPlan ? `GST ${detailPlan.category === 'template' ? 'at checkout' : 'per package'}` : 'No stored plan yet'}
+                  {detailDisplay?.note || 'No stored plan yet'}
                 </p>
               </DetailCard>
               <DetailCard title="Template features">
@@ -375,24 +462,168 @@ export const TemplateMarketplace: React.FC<TemplateMarketplaceProps> = ({
                 onClick={() => {
                   const demoSlug = DEMO_BY_TEMPLATE.get(detailTemplate.id);
                   if (demoSlug) onOpenStorefront(demoSlug);
-                  else onNotify('Demo for this template is coming soon.');
+                  else onNotify('No live demo is available for this template yet.');
                 }}
                 disabled={!DEMO_BY_TEMPLATE.has(detailTemplate.id)}
                 className="inline-flex items-center justify-center gap-2 rounded-md border border-[#2B2B3C] px-4 py-2.5 text-xs text-[#C5C5D6] disabled:opacity-50"
               >
                 <Eye className="w-3.5 h-3.5" />
-                {DEMO_BY_TEMPLATE.has(detailTemplate.id) ? 'Open Safe Demo' : 'Demo Coming Soon'}
+                {DEMO_BY_TEMPLATE.has(detailTemplate.id) ? 'Open Safe Demo' : 'No live demo yet'}
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  handleUseTemplate(detailTemplate);
+                  openPurchase(detailTemplate.id);
                   setDetailTemplateId(null);
                 }}
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-gold-gradient px-4 py-2.5 text-xs font-bold text-[#08080A]"
               >
                 <CreditCard className="w-3.5 h-3.5" />
-                Use This Template
+                Buy Template / Customize This Design
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {purchaseTemplate && purchaseServerPrice && purchaseDisplay && (
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-black/75 px-4 py-8"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${purchaseTemplate.name} purchase summary`}
+        >
+          <div className="max-h-full w-full max-w-3xl overflow-auto rounded-2xl border border-[#2A2A38] bg-[#0D0D14] p-5 sm:p-7">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-[#D4AF37]">Template-only purchase summary</p>
+                <h2 className="mt-1 font-luxury text-2xl font-bold text-white">{purchaseTemplate.name}</h2>
+                <p className="mt-1 text-[11px] text-[#8E8EA2]">SKU {getProposedTemplatePrice(purchaseTemplate.id)?.sku}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPurchaseTemplateId(null)}
+                aria-label="Close purchase summary"
+                className="rounded-md border border-[#2A2A38] p-2 text-[#B8B8C8] hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-lg border border-[#D4AF37]/40 bg-[#15120A] p-4">
+              <p className="text-xs text-[#A3A3B5]">Proposed one-time template price</p>
+              <p className="mt-1 text-2xl font-bold text-[#ECC86A]">{purchaseDisplay.label}</p>
+              <p className="mt-2 text-[11px] leading-relaxed text-[#C5C5D6]">{purchaseDisplay.note}</p>
+            </div>
+
+            <div className="mt-5 rounded-lg border border-[#242433] bg-[#101018] p-4">
+              <h3 className="text-xs font-semibold text-white">Checkout summary (template-only path)</h3>
+              <dl className="mt-3 space-y-1.5 text-[11px]">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#8E8EA2]">Selected item</dt>
+                  <dd className="text-right text-white">One website template — not a complete package</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#8E8EA2]">Selected template</dt>
+                  <dd className="max-w-[65%] truncate text-right text-white">{purchaseTemplate.name}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#8E8EA2]">Base price</dt>
+                  <dd className="font-mono-tabular text-white">{purchaseDisplay.label}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#8E8EA2]">Optional extras selected</dt>
+                  <dd className="font-mono-tabular text-white">{formatInr(0)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#8E8EA2]">Applicable configured tax</dt>
+                  <dd className="text-right text-white">
+                    {purchaseDisplay.purchasable ? 'Shown by the server Cashfree order' : 'Not available until activation'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#8E8EA2]">Final payable amount</dt>
+                  <dd className="text-right font-semibold text-[#ECC86A]">
+                    {purchaseDisplay.purchasable ? 'Shown before Cashfree payment' : 'No payment available yet'}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#8E8EA2]">Separate recurring costs</dt>
+                  <dd className="text-right text-white">None stated for template-only</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#8E8EA2]">Refund/cancellation policy</dt>
+                  <dd className="text-right text-white">Not published — no refund promised</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-[#8E8EA2]">Support contact</dt>
+                  <dd className="text-right text-white">{CONTACT_INFO.email} · {CONTACT_INFO.whatsappDisplay}</dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-[10px] leading-relaxed text-[#858599]">
+                Cashfree is the only intended platform gateway. Success is shown only after genuine
+                server-side verification. Razorpay is not used.
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <DetailList
+                title="Included with template-only purchase"
+                items={TEMPLATE_PURCHASE_INCLUSIONS}
+                icon={<Check className="h-3.5 w-3.5 text-emerald-300" />}
+              />
+              <DetailList
+                title="Not included unless separately purchased"
+                items={TEMPLATE_PURCHASE_EXCLUSIONS}
+                icon={<AlertCircle className="h-3.5 w-3.5 text-amber-300" />}
+              />
+            </div>
+            <div className="mt-4">
+              <DetailList
+                title="Updates, support and delivery terms"
+                items={[...TEMPLATE_UPDATE_TERMS, ...TEMPLATE_PURCHASE_DETAILS.map((row) => `${row.label}: ${row.value}`)]}
+                icon={<Sparkles className="h-3.5 w-3.5 text-[#ECC86A]" />}
+              />
+            </div>
+
+            <div className="mt-6 rounded-lg border border-amber-500/30 bg-amber-950/15 p-4 text-[11px] leading-relaxed text-[#D8C7A5]">
+              This is not a hosted, published, fully developed website by itself. Domain, hosting,
+              gateway, custom development and ongoing maintenance are separate unless explicitly
+              included in an approved package or proposal. Cashfree is the only intended platform
+              gateway and success is shown only after server verification.
+            </div>
+
+            <div className="mt-6 flex flex-col gap-2 border-t border-[#20202E] pt-4 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => {
+                  setPurchaseTemplateId(null);
+                  handleUseTemplate(purchaseTemplate);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-gold-gradient px-4 py-2.5 text-xs font-bold text-[#08080A]"
+              >
+                Customize This Design
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPreferredTemplateId(purchaseTemplate.id);
+                  setPurchaseTemplateId(null);
+                  document.getElementById('complete-packages')?.scrollIntoView({ behavior: 'smooth' });
+                  onNotify('Template selected. Review the ₹7,999 package or submit a quote-required requirement.');
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-[#2B2B3C] px-4 py-2.5 text-xs text-[#C5C5D6]"
+              >
+                Request Package / Owner Review
+              </button>
+              <button
+                type="button"
+                disabled
+                className="inline-flex items-center justify-center rounded-md border border-[#2B2B3C] px-4 py-2.5 text-xs text-[#8E8EA2] disabled:opacity-60"
+                title="Template purchasing is disabled until the Owner activates the SKU."
+              >
+                Buy Template — activation pending
               </button>
             </div>
           </div>

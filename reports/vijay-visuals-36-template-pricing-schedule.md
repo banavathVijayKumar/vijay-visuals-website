@@ -2,7 +2,7 @@
 
 Date: 2026-11-28
 Branch: `preview/vijay-visuals-p0-safe-2026-11-26`
-Status: **Preview source/report only. Not written to D1, not activated, not deployed, not committed.**
+Status: **Approved Preview source/report release. Not written to D1, not activated.** Prices remain display-only. The schedule report is committed in `f58728b`; the customer-experience display source is part of this Preview-only release.
 
 ---
 

@@ -11,6 +11,7 @@ import {
   errorJson,
   parseJsonBody,
 } from '../_shared';
+import { isTemplatePlanCode } from '../_planTiers';
 
 export interface PlanPricingItem {
   code: string;
@@ -100,6 +101,14 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
   const uniqueCodes = Array.from(new Set(rawCodes)).slice(0, 20);
   if (uniqueCodes.length === 0) {
     return errorJson('Please select at least one valid package code.', 400);
+  }
+  // One-time template SKUs are a separate purchase option. They must never be
+  // added to the package quotation alongside a complete website package.
+  if (uniqueCodes.some(isTemplatePlanCode)) {
+    return errorJson(
+      'Template SKUs are priced separately and cannot be added to the package quotation. Choose either a template or a complete website package.',
+      400
+    );
   }
 
   const billingPeriod = body.billingPeriod === 'yearly' ? 'yearly' : 'monthly';

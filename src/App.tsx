@@ -506,6 +506,7 @@ function PlatformShell() {
           <ErrorBoundary sectionName="Template Marketplace">
             <TemplateMarketplace
               plans={plans}
+              lang={lang}
               onUseTemplate={(templateId) => startTemplateHandoff({ source: 'marketplace', templateId })}
               onOpenStorefront={(slug) => navigateTo('storefront', slug)}
               onNotify={showToast}

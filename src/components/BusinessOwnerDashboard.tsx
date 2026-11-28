@@ -497,19 +497,32 @@ export const BusinessOwnerDashboard: React.FC<BusinessOwnerDashboardProps> = ({
           ) : null}
 
           {module === 'settings' ? (
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Panel title="Packages & subscriptions" subtitle="Active catalog and lifetime entitlements">
-                <div className="grid grid-cols-2 gap-3">
-                  <StatCard label="Plans" value={data.settings.plans.total} icon={ClipboardList} accent />
-                  <StatCard label="Active plans" value={data.settings.plans.active} icon={BadgeCheck} />
-                  <StatCard label="Offers" value={data.settings.offers} icon={Coins} />
-                  <StatCard label="Lifetime" value={data.overview.lifetimeEntitlements} icon={BadgeCheck} />
+            <div className="space-y-6">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <Panel title="Existing Packages &amp; Subscriptions" subtitle="Active server-configured catalog and lifetime entitlements">
+                  <div className="grid grid-cols-2 gap-3">
+                    <StatCard label="Plans" value={data.settings.plans.total} icon={ClipboardList} accent />
+                    <StatCard label="Active plans" value={data.settings.plans.active} icon={BadgeCheck} />
+                    <StatCard label="Lifetime" value={data.overview.lifetimeEntitlements} icon={BadgeCheck} />
+                  </div>
+                </Panel>
+                <Panel title="Special Offers" subtitle="Separate proposal and offer workflow; no package price is changed here">
+                  <div className="grid grid-cols-2 gap-3">
+                    <StatCard label="Offers" value={data.settings.offers} icon={Coins} accent />
+                  </div>
+                  <div className="mt-4">
+                    <p className="text-[10px] uppercase tracking-wider text-[#8E8EA0]">Requests by status</p>
+                    <CountGrid values={data.settings.requestsByStatus} />
+                  </div>
+                </Panel>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-[#D4AF37]">Independent one-time design SKUs</p>
+                  <h3 className="font-luxury text-lg font-semibold text-[#F5E2AC]">36 Website Template Prices</h3>
                 </div>
-              </Panel>
-              <Panel title="Requests by status" subtitle="Proposal and offer workflow">
-                <CountGrid values={data.settings.requestsByStatus} />
-              </Panel>
-              <OwnerTemplatePricing onNotify={onNotify} />
+                <OwnerTemplatePricing onNotify={onNotify} />
+              </div>
             </div>
           ) : null}
 

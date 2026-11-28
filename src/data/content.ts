@@ -390,6 +390,12 @@ const EN_STRINGS: Record<string, string> = {
   openStore: 'Open Live Store',
   websiteOnly: 'Website Only',
   websitePlusPwa: 'Website + PWA',
+  customerTemplateChoiceTitle: 'Choose Your Website Design',
+  customerTemplateChoiceSubtitle:
+    'Select a ready-made design for your business and customize it with your own brand.',
+  customerPackageChoiceTitle: 'Get Your Complete Business Website',
+  customerPackageChoiceSubtitle:
+    'We customize and prepare your business website based on your requirements.',
 };
 
 export const I18N: Record<Lang, Record<string, string>> = {
@@ -418,6 +424,12 @@ export const I18N: Record<Lang, Record<string, string>> = {
     openStore: 'స్టోర్ తెరవండి',
     websiteOnly: 'వెబ్‌సైట్ మాత్రమే',
     websitePlusPwa: 'వెబ్‌సైట్ + PWA',
+    customerTemplateChoiceTitle: 'మీ వెబ్\u200cసైట్ డిజైన్\u200cను ఎంచుకోండి',
+    customerTemplateChoiceSubtitle:
+      'మీ వ్యాపారం కోసం సిద్ధంగా ఉన్న డిజైన్\u200cను ఎంచుకుని మీ బ్రాండ్\u200cతో అనుకూలీకరించండి.',
+    customerPackageChoiceTitle: 'మీ పూర్తి వ్యాపార వెబ్\u200cసైట్\u200cను పొందండి',
+    customerPackageChoiceSubtitle:
+      'మీ అవసరాల ఆధారంగా మేము మీ వ్యాపార వెబ్\u200cసైట్\u200cను అనుకూలీకరించి సిద్ధం చేస్తాము.',
   },
   hi: {
     ...EN_STRINGS,

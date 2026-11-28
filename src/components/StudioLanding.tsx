@@ -797,7 +797,7 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
             {plans
-              .filter((p) => p.active && p.category !== 'addon' && p.category !== 'saas')
+              .filter((p) => p.active && p.category === 'website')
               .map((plan) => {
                 let features: string[] = [];
                 try {

@@ -1300,6 +1300,16 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     }
   };
 
+  const openSupportTickets = customerTickets.filter((ticket) => ticket.status !== 'closed');
+  const changeRequestTickets = customerTickets.filter((ticket) =>
+    /change|feature|quote/i.test(`${ticket.category} ${ticket.subject}`)
+  );
+  const pendingProjectInfo: string[] = [];
+  if (!packageStatus) pendingProjectInfo.push('package selection and verified payment');
+  if (packageStatus && packageStatus.emailVerified === false) pendingProjectInfo.push('email verification');
+  if (ownedTenants.length === 0) pendingProjectInfo.push('website draft creation');
+  if (openSupportTickets.length > 0) pendingProjectInfo.push('open support response');
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -3323,7 +3333,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                 {ownedTenants.length === 0 ? (
                   <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-6 text-center space-y-3">
                     <p className="text-xs text-[#9E9EB2]">
-                      You have not created a business website yet. Purchase the ₹7,999 Business Website Package to get full management access to your custom website.
+                      You have not created a business website yet. Purchase an eligible Business Website Package to get full management access to your custom website.
                     </p>
                     <button
                       type="button"
@@ -3542,6 +3552,79 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                     <p>• Custom domain fees, gateway MDR, and third-party API charges are billed separately.</p>
                   </div>
                 </div>
+              </div>
+
+              {/* 2b. Transparent post-purchase project, requirement and handover status */}
+              <div className="rounded-xl border border-[#222230] bg-[#0D0D13] p-5 space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs text-[#D4AF37]">Verified Purchase · Project &amp; Requirement Status</p>
+                    <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-[#D4AF37]" />
+                      My Website Project, Requirements &amp; Handover
+                    </h2>
+                    <p className="mt-0.5 text-[11px] text-[#8E8EA2]">
+                      Only records connected to {profile.email || 'your account'} are shown here. No other customer&apos;s website, receipt, request or project data is visible.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onGoBuilder()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#D4AF37]/50 text-[#ECC86A] text-xs font-semibold hover:bg-[#D4AF37] hover:text-[#08080A]"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    <span>Open My Preview</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 text-[11px]">
+                  <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-4 space-y-1.5">
+                    <p className="text-[10px] uppercase tracking-wider text-[#8E8EA0]">Project status</p>
+                    <p className="font-semibold text-white">
+                      {(packageStatus?.packageStatus || 'none').toUpperCase()}
+                    </p>
+                    <p className="text-[#9E9EB2]">
+                      {packageStatus
+                        ? formatVerifiedPaymentLabel({
+                            amountInr: packageStatus.amountInr,
+                            paymentStatus: packageStatus.paymentStatus,
+                            signatureVerified: packageStatus.signatureVerified,
+                          })
+                        : 'No verified purchase recorded yet.'}
+                    </p>
+                    <p className="text-[10px] text-[#7E7E92]">
+                      Receipt: {packageStatus?.cashfreeOrderId ? maskPaymentReference(packageStatus.cashfreeOrderId) : 'Not available'}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-4 space-y-1.5">
+                    <p className="text-[10px] uppercase tracking-wider text-[#8E8EA0]">Requirement status</p>
+                    <p className="font-semibold text-white">No authenticated requirement record linked yet</p>
+                    <p className="text-[#9E9EB2]">
+                      Submit requirements from the Complete Website Package guide. Custom or out-of-package work is marked &quot;Custom Requirement — Quote Required&quot; and cannot be charged before an Owner-approved proposal.
+                    </p>
+                    <p className="text-[10px] text-[#7E7E92]">
+                      Pending info: {pendingProjectInfo.length > 0 ? pendingProjectInfo.join(', ') : 'none recorded'}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-[#1E1E2C] bg-[#08080C] p-4 space-y-1.5">
+                    <p className="text-[10px] uppercase tracking-wider text-[#8E8EA0]">Preview, changes &amp; handover</p>
+                    <p className="font-semibold text-white">
+                      {ownedTenants.length > 0 ? `Preview available for ${ownedTenants.length} own website(s)` : 'Preview appears after a draft is created'}
+                    </p>
+                    <p className="text-[#9E9EB2]">
+                      Change requests: {changeRequestTickets.length} recorded under your account.
+                    </p>
+                    <p className="text-[10px] text-[#7E7E92]">
+                      Support tickets: {customerTickets.length}. Handover/training is shown only when the Owner records completion; no automatic claim is made.
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-[10px] leading-relaxed text-[#8E8EA2]">
+                  Support contact: {CONTACT_INFO.email} · {CONTACT_INFO.whatsappDisplay}. Payment success is never inferred from a browser return; it requires genuine server-side Cashfree verification.
+                </p>
               </div>
 
               {/* 3. Vijay Visuals Platform Payment Receipts & Invoices */}

@@ -186,8 +186,9 @@ export const OwnerTemplatePricing: React.FC<Props> = ({ onNotify }) => {
             {TEMPLATES_DATA.length} Website Templates — Pricing Manager
           </h3>
           <p className="mt-1 text-xs sm:text-sm text-[#8E8EA2]">
-            One-time template prices are separate from the recurring subscription/package plans above.
-            Every SKU below is an independent <code>tpl-*</code> row managed by the Owner only.
+            One-time template prices are separate from the one-time website package plans and any
+            recurring SaaS plans above. Every SKU below is an independent <code>tpl-*</code> row
+            managed by the Owner only.
           </p>
         </div>
         <button
