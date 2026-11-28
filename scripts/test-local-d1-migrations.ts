@@ -64,7 +64,9 @@ try {
     'platform_owner',
     'platform_feedback',
     'business_locations',
-    'platform_announcements'
+    'platform_announcements',
+    'tenant_services',
+    'order_return_requests'
   ];
 
   for (const req of requiredTables) {

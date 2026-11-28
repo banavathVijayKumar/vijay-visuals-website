@@ -24,4 +24,14 @@
 /admin/*                      /index.html  200
 /proposal/*                   /index.html  200
 /proposals/*                  /index.html  200
+/privacy                      /index.html  200
+/privacy/                     /index.html  200
+/terms                        /index.html  200
+/terms/                       /index.html  200
+/refund                       /index.html  200
+/refund/                      /index.html  200
+/shipping                     /index.html  200
+/shipping/                    /index.html  200
+/cancellation                 /index.html  200
+/cancellation/                /index.html  200
 /payments/cashfree/return     /index.html  200

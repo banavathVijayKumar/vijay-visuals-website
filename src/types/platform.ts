@@ -56,6 +56,24 @@ export interface TenantLogoConfig {
   letterSpacing: 'tight' | 'normal' | 'wide' | 'luxury';
 }
 
+export type CustomPageBlockType = 'heading' | 'text' | 'list' | 'image' | 'link' | 'callout';
+
+export interface CustomPageBlock {
+  type: CustomPageBlockType;
+  text: string;
+  items: string[];
+  url: string;
+  alt: string;
+}
+
+export interface CustomPage {
+  slug: string;
+  title: string;
+  content: string;
+  inNav: boolean;
+  blocks: CustomPageBlock[];
+}
+
 export interface TenantRecord {
   id: number;
   websiteId?: string;
@@ -100,7 +118,7 @@ export interface TenantRecord {
     website?: string;
   };
   sectionOrder?: string[];
-  customPages?: Array<{ slug: string; title: string; content: string }>;
+  customPages?: CustomPage[];
   demoBuilderDraft?: DemoBusinessDraft;
   published: boolean;
   status?: string;
@@ -148,6 +166,20 @@ export interface ProductRecord {
   bestseller?: boolean;
   rating: string;
   reviewCount: number;
+  active: boolean;
+}
+
+export interface ServiceRecord {
+  id: number;
+  tenantId: number;
+  name: string;
+  description: string;
+  category: string;
+  price: number;
+  compareAtPrice: number;
+  durationMinutes: number;
+  sortOrder: number;
+  imageUrl: string;
   active: boolean;
 }
 
@@ -626,4 +658,4 @@ export interface CartItem {
   variant: string;
 }
 
-export type AppView = 'studio' | 'builder' | 'demo-builder' | 'marketplace' | 'storefront' | 'dashboards' | 'owner-dashboard' | 'ai' | 'demo' | 'proposal' | 'not-found';
+export type AppView = 'studio' | 'builder' | 'demo-builder' | 'marketplace' | 'storefront' | 'dashboards' | 'owner-dashboard' | 'ai' | 'demo' | 'proposal' | 'policy' | 'not-found';

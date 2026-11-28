@@ -1155,13 +1155,38 @@ app.patch('/api/customer/orders/:id', requireAuth, async (req: AuthRequest, res)
     if (order.customerUserId !== dbUser.id && order.customerEmail !== dbUser.email && dbUser.role !== 'super_admin') {
       return res.status(403).json({ error: 'You can only update your own orders.' });
     }
-    const nextStatus = action === 'cancel' ? 'cancelled' : 'return_requested';
+    if (action === 'cancel') {
+      if (['paid', 'refunded'].includes(String(order.paymentStatus))) {
+        return res.status(409).json({ error: 'Paid or refunded orders require a verified refund flow.' });
+      }
+      if (!['confirmed'].includes(String(order.status))) {
+        return res.status(400).json({ error: 'Only newly confirmed orders can be cancelled here.' });
+      }
+      const [updated] = await db
+        .update(orders)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(and(eq(orders.id, id), eq(orders.status, 'confirmed')))
+        .returning();
+      if (!updated) {
+        return res.status(409).json({ error: 'Order status changed. Reload and try again.' });
+      }
+      return res.json({ order: updated });
+    }
+
+    if (String(order.status) !== 'delivered') {
+      return res.status(400).json({ error: 'Return requests are only available for delivered orders.' });
+    }
+    const reason = String(req.body?.reason || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 300);
+    const nextNotes = reason ? `${String(order.notes || '')} Return reason: ${reason}`.slice(0, 1000) : order.notes;
     const [updated] = await db
       .update(orders)
-      .set({ status: nextStatus, updatedAt: new Date() })
-      .where(eq(orders.id, id))
+      .set({ status: 'return_requested', notes: nextNotes, updatedAt: new Date() })
+      .where(and(eq(orders.id, id), eq(orders.status, 'delivered')))
       .returning();
-    res.json({ order: updated });
+    if (!updated) {
+      return res.status(409).json({ error: 'Order status changed. Reload and try again.' });
+    }
+    res.json({ order: updated, refund: 'not_processed' });
   } catch (error) {
     console.error('PATCH customer order failed:', error);
     res.status(500).json({ error: 'Failed to update order.' });

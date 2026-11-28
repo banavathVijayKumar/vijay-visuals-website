@@ -145,6 +145,8 @@ export const CONTACT_INFO = {
   email: 'vk66278@gmail.com',
   instagram: 'vijay_visuals_1',
   instagramUrl: 'https://instagram.com/vijay_visuals_1',
+  // Safe click-to-DM handoff; no Instagram API, token or automated messaging is implied.
+  instagramDmUrl: 'https://ig.me/m/vijay_visuals_1',
   whatsappUrl: 'https://wa.me/919381362201',
   location: 'Hyderabad, India · Serving Businesses Worldwide',
 };

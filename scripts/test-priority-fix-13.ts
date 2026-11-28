@@ -281,6 +281,20 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
       headers: { 'Content-Type': 'application/json' },
     });
   }
+  if (url.includes('/orders/') && url.endsWith('/payments')) {
+    return new Response(
+      JSON.stringify([
+        {
+          cf_payment_id: 90001,
+          payment_status: 'SUCCESS',
+          payment_amount: 199,
+          payment_currency: 'INR',
+          payment_time: '2026-11-25T10:00:00Z',
+        },
+      ]),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
   return new Response(JSON.stringify({ error: `Unexpected mocked URL: ${url}` }), {
     status: 500,
     headers: { 'Content-Type': 'application/json' },
@@ -1298,6 +1312,8 @@ async function runWhiteLabelTests(): Promise<void> {
     const secret = 'local-webhook-secret';
     const env = coreEnv(d1, {
       CASHFREE_WEBHOOK_SECRET: secret,
+      CASHFREE_CLIENT_ID: 'local-cashfree-client-id',
+      CASHFREE_CLIENT_SECRET: 'local-cashfree-client-secret',
       RESEND_API_KEY: 'local-resend-key',
       RESEND_VERIFIED_SENDER_DOMAINS: 'shop.tenant-a.test',
       WHATSAPP_CLOUD_API_TOKEN: 'local-wa-token',

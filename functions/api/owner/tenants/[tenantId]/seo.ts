@@ -13,6 +13,7 @@ import {
   sanitizeText,
 } from '../../../_shared';
 import { requireTenantOwnerAccess, validateSafeHttpUrl } from '../../../_tenantAccess';
+import { sanitizeCustomPages } from '../../../_customPages';
 
 export async function onRequestOptions(): Promise<Response> {
   return handleOptions();
@@ -81,15 +82,7 @@ export async function onRequestPut(
     try {
       const arr = JSON.parse(body.customPagesJson);
       if (Array.isArray(arr)) {
-        nextParsed.customPages = arr
-          .filter((pg) => pg && typeof pg === 'object' && pg.slug && pg.title)
-          .map((pg) => ({
-            slug: sanitizeText(pg.slug, 40).toLowerCase().replace(/[^a-z0-9-]/g, ''),
-            title: sanitizeText(pg.title, 80),
-            content: sanitizeText(pg.content, 2000),
-          }))
-          .filter((pg) => pg.slug && pg.title)
-          .slice(0, 10);
+        nextParsed.customPages = sanitizeCustomPages(arr);
       }
     } catch {
       return jsonResponse({ error: 'Invalid customPagesJson format.' }, 400);

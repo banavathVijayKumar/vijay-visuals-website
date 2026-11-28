@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { PagesContext, handleOptions, jsonResponse } from '../../../_shared';
+import { sanitizeCustomPages } from '../../../_customPages';
 import {
   OFFICIAL_SITE_URL,
   getTenantRobotsDirective,
@@ -100,9 +101,7 @@ export async function onRequestGet(
           (String(parsed.category || '').toLowerCase().includes('restaurant')
             ? 'Restaurant'
             : 'LocalBusiness'),
-        customPagesJson: Array.isArray(parsed.customPages)
-          ? JSON.stringify(parsed.customPages)
-          : '[]',
+        customPagesJson: JSON.stringify(sanitizeCustomPages(parsed.customPages)),
       },
     });
   } catch {

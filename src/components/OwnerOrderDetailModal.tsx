@@ -40,8 +40,7 @@ export const OwnerOrderDetailModal: React.FC<OwnerOrderDetailModalProps> = ({
 }) => {
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  const [refunding, setRefunding] = useState(false);
-  const [refundNotes, setRefundNotes] = useState('');
+  const [returnNote, setReturnNote] = useState('');
   const [busy, setBusy] = useState(false);
 
   if (!isOpen) return null;
@@ -106,18 +105,25 @@ export const OwnerOrderDetailModal: React.FC<OwnerOrderDetailModalProps> = ({
     }
   };
 
-  const handleConfirmRefund = async () => {
+  const handleReturnDecision = async (decision: 'approve' | 'reject') => {
     setBusy(true);
     try {
-      await apiFetch(`/api/owner/orders/${order.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ action: 'refund', refundNotes: refundNotes.trim() || 'Refund issued by store owner' }),
-      });
-      onNotify(`Payment marked refunded for order ${order.orderNumber}.`);
-      setRefunding(false);
+      const data = await apiFetch<{ refund?: { message?: string } }>(
+        `/api/owner/orders/${order.id}/return`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ action: decision, note: returnNote.trim() }),
+        }
+      );
+      onNotify(
+        decision === 'approve'
+          ? `Return approved; ${data?.refund?.message || 'gateway refund was not processed.'}`
+          : 'Return rejected; the order is active again.'
+      );
+      setReturnNote('');
       onOrderUpdated();
     } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Failed to process refund.');
+      onNotify(err instanceof Error ? err.message : 'Unable to decide this return.');
     } finally {
       setBusy(false);
     }
@@ -252,13 +258,9 @@ export const OwnerOrderDetailModal: React.FC<OwnerOrderDetailModalProps> = ({
                 </button>
               )}
               {order.paymentStatus === 'paid' && (
-                <button
-                  type="button"
-                  onClick={() => setRefunding(true)}
-                  className="px-2.5 py-1 rounded border border-rose-500/40 text-rose-300 text-[10px] hover:bg-rose-950/40"
-                >
-                  Process Refund
-                </button>
+                <span className="text-[10px] text-[#8E8EA2]">
+                  Refunds require a verified Cashfree refund flow.
+                </span>
               )}
             </div>
           </div>
@@ -328,35 +330,37 @@ export const OwnerOrderDetailModal: React.FC<OwnerOrderDetailModalProps> = ({
           </div>
         )}
 
-        {/* Refund Sub-Modal */}
-        {refunding && (
-          <div className="rounded-xl border border-rose-500/40 bg-rose-950/20 p-4 space-y-2.5">
-            <p className="font-semibold text-rose-300">Issue Refund for Order {order.orderNumber}</p>
+        {/* Return Decision Sub-Modal */}
+        {order.status === 'return_requested' && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-950/15 p-4 space-y-2.5">
+            <p className="font-semibold text-amber-200">Pending Return Request</p>
             <p className="text-[11px] text-[#C8C8D8]">
-              This will update the payment status to <strong>REFUNDED</strong> and record the event in the business audit trail.
+              Approving restores stock and closes the order. It does not move money; any refund must be completed through a verified Cashfree refund flow.
             </p>
             <input
               type="text"
-              value={refundNotes}
-              onChange={(e) => setRefundNotes(e.target.value)}
-              placeholder="Reason / Refund reference (optional)"
+              value={returnNote}
+              maxLength={300}
+              onChange={(e) => setReturnNote(e.target.value)}
+              placeholder="Decision note (optional)"
               className="w-full rounded border border-[#2A2A38] bg-[#0A0A0E] px-3 py-1.5 text-xs text-white"
             />
-            <div className="flex justify-end gap-2 pt-1">
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => setRefunding(false)}
-                className="px-2.5 py-1 rounded border border-[#2A2A38] text-[10px] text-[#A5A5B8]"
+                disabled={busy}
+                onClick={() => void handleReturnDecision('reject')}
+                className="px-3 py-1 rounded border border-rose-500/40 text-[10px] text-rose-300"
               >
-                Cancel
+                {busy ? 'Processing...' : 'Reject Return'}
               </button>
               <button
                 type="button"
                 disabled={busy}
-                onClick={handleConfirmRefund}
-                className="px-3 py-1 rounded bg-rose-600 text-white text-[10px] font-semibold"
+                onClick={() => void handleReturnDecision('approve')}
+                className="px-3 py-1 rounded bg-amber-600 text-white text-[10px] font-semibold"
               >
-                {busy ? 'Refunding...' : 'Confirm Refund'}
+                {busy ? 'Processing...' : 'Approve Return'}
               </button>
             </div>
           </div>

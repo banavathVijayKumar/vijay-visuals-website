@@ -8,6 +8,7 @@
 import { getPackageMonthlyAiCredits } from './_aiCredits';
 import { PLAN_TIER_SET, type PlanTier } from './_planTiers';
 import { sanitizeDemoDraftForStorage, type SanitizedDemoDraft } from './_demoDraft';
+import { sanitizeCustomPages, type CustomPage } from './_customPages';
 
 export interface PublicationRow {
   rowid?: number | null;
@@ -136,7 +137,7 @@ export interface MappedTenantRecord {
     website?: string;
   };
   sectionOrder: string[];
-  customPages: Array<{ slug: string; title: string; content: string }>;
+  customPages: CustomPage[];
   demoBuilderDraft?: SanitizedDemoDraft;
   published: boolean;
   planTier: PlanTier;
@@ -479,16 +480,7 @@ export function mapPublicationToTenant(
         .slice(0, 12)
     : ['hero', 'catalog', 'gallery', 'booking', 'contact'];
 
-  const customPages = Array.isArray(parsed.customPages)
-    ? parsed.customPages
-        .filter((p: any) => p && typeof p === 'object' && p.slug && p.title)
-        .map((p: any) => ({
-          slug: cleanString(p.slug, 40),
-          title: cleanString(p.title, 80),
-          content: cleanString(p.content, 2000),
-        }))
-        .slice(0, 10)
-    : [];
+  const customPages = sanitizeCustomPages(parsed.customPages);
 
   const demoBuilderDraft = sanitizeDemoDraftForStorage(parsed.demoBuilderDraft);
   const resolvedLogoText = cleanString(parsed.logoText, 8) || computeInitials(name);

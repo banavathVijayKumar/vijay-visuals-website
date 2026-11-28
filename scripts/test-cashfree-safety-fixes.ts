@@ -49,6 +49,28 @@ check('refund endpoint rejects partial and repeat refunds that would revoke full
   assert.ok(refund.includes('Only one full refund of the captured amount is supported here.'));
 });
 
+check('success webhook requires authoritative provider SUCCESS evidence', () => {
+  assert.ok(webhook.includes('fetchEdgeCashfreeOrderPayments(env, orderId)'));
+  assert.ok(webhook.includes('providerVerifiedPayment'));
+  assert.ok(webhook.includes('Webhook payment ID does not match the authoritative Cashfree payment ID'));
+  assert.ok(webhook.includes('provider-confirmed payment values over signed payload values'));
+});
+
+check('cancelled and expired webhooks are non-paid terminal states', () => {
+  assert.ok(webhook.includes('terminalWebhookState(eventType, body)'));
+  assert.ok(webhook.includes('EXPIRED_EVENT_TYPES'));
+  assert.ok(webhook.includes("SET status = 'CANCELLED'"));
+  assert.ok(webhook.includes('paymentMarkedPaid: false'));
+  assert.ok(verify.includes("providerStatus === 'EXPIRED'"));
+});
+
+check('refund endpoint rejects uncaptured local rows and provider-unconfirmed captures', () => {
+  assert.ok(refund.includes("import { createEdgeCashfreeRefund, fetchEdgeCashfreeOrderPayments }"));
+  assert.ok(refund.includes('localCaptureConfirmed'));
+  assert.ok(refund.includes('providerCaptureConfirmed'));
+  assert.ok(refund.includes('platform_refund_rejected_uncaptured'));
+});
+
 check('refund webhook fails closed on unknown refund id, unlinked payment, or amount mismatch', () => {
   assert.ok(webhook.includes('refund_id, amount_inr'));
   assert.ok(webhook.includes('!merchantRefundId || !refundRow'));

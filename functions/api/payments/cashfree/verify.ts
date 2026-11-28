@@ -116,21 +116,31 @@ function mapUnpaidStatus(orderStatus: unknown, payments: unknown) {
     };
   }
 
+  const expired =
+    providerStatus === 'EXPIRED' || paymentStatuses.some((s) => s === 'EXPIRED');
   if (
+    expired ||
     providerStatus === 'FAILED' ||
     providerStatus === 'CANCELLED' ||
     paymentStatuses.some((s) => s === 'FAILED' || s === 'CANCELLED' || s === 'USER_DROPPED')
   ) {
+    // The Cashfree ledger CHECK does not allow EXPIRED. Store the explicit
+    // provider state in the message/raw response while using the non-paid
+    // CANCELLED terminal state in the ledger.
     const cashfreeStatus =
+      expired ||
       providerStatus === 'CANCELLED' ||
       paymentStatuses.some((s) => s === 'CANCELLED' || s === 'USER_DROPPED')
         ? ('CANCELLED' as const)
         : ('FAILED' as const);
+    const message = expired
+      ? `Payment status is ${providerStatus}. It expired and was never completed.`
+      : `Payment status is ${providerStatus}. It was not completed successfully.`;
     return {
       providerStatus,
       cashfreeStatus,
       platformStatus: 'failed' as const,
-      message: `Payment status is ${providerStatus}. It was not completed successfully.`,
+      message,
     };
   }
 

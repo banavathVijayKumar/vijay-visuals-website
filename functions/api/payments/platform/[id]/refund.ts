@@ -11,8 +11,15 @@
 import { requireAdmin } from '../../../_auth';
 import { PagesContext, errorJson, json, parseJsonBody, sanitizeText, writeAuditLog } from '../../../_shared';
 import { finalizeCashfreePlatformRefund } from '../../../_tenantAccess';
-import { createEdgeCashfreeRefund } from '../../_cashfree';
-import { buildCashfreeRefundIdentity } from '../../_cashfreeIdentity';
+import { createEdgeCashfreeRefund, fetchEdgeCashfreeOrderPayments } from '../../_cashfree';
+import { buildCashfreeRefundIdentity, normalizeCashfreePaymentId } from '../../_cashfreeIdentity';
+
+function toIntegerPaise(amount: unknown): number {
+  if (typeof amount === 'string' && amount.trim() === '') return -1;
+  const num = Number(amount);
+  if (!Number.isFinite(num) || Number.isNaN(num) || num <= 0) return -1;
+  return Math.round(num * 100);
+}
 
 export async function onRequestPost(context: PagesContext<{ id: string }>): Promise<Response> {
   const { request, env, params } = context;
@@ -113,6 +120,60 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       },
       payment: updated,
     });
+  }
+
+  // Reject before any refund ledger reservation or provider refund call when
+  // the local ledger does not show a verified capture. A paid row without a
+  // normalised Cashfree payment ID is not capture evidence.
+  const capturedPaymentId = normalizeCashfreePaymentId(row.razorpay_payment_id);
+  const localCaptureConfirmed =
+    String(row.status || '').toLowerCase() === 'paid' &&
+    Number(row.signature_verified) === 1 &&
+    Boolean(capturedPaymentId);
+  if (!localCaptureConfirmed) {
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: 'super_admin',
+      action: 'platform_refund_rejected_uncaptured',
+      targetType: 'platform_payments',
+      targetId: String(row.id),
+      details: { orderId, reason: 'local ledger is not a verified captured payment' },
+    });
+    return errorJson('Refund rejected: payment is not confirmed as captured.', 409);
+  }
+
+  // Even a locally paid row must still be confirmed by Cashfree before money
+  // moves. Match payment ID and captured amount; never trust the client.
+  let providerCaptureConfirmed = false;
+  try {
+    const capturedPaise = toIntegerPaise(row.amount_inr);
+    const providerPayments = await fetchEdgeCashfreeOrderPayments(env, orderId);
+    providerCaptureConfirmed = providerPayments.some((payment) => {
+      if (String(payment.payment_status || '').toUpperCase() !== 'SUCCESS') return false;
+      if (normalizeCashfreePaymentId(payment.cf_payment_id) !== capturedPaymentId) return false;
+      const providerPaise = toIntegerPaise(payment.payment_amount);
+      return capturedPaise > 0 && providerPaise === capturedPaise;
+    });
+  } catch (providerErr) {
+    console.error(
+      'Cashfree capture confirmation failed before refund:',
+      providerErr instanceof Error ? providerErr.message : String(providerErr)
+    );
+    return errorJson('Unable to confirm payment capture with Cashfree before refund.', 502);
+  }
+  if (!providerCaptureConfirmed) {
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: 'super_admin',
+      action: 'platform_refund_rejected_uncaptured',
+      targetType: 'platform_payments',
+      targetId: String(row.id),
+      details: { orderId, reason: 'Cashfree did not confirm a matching captured payment' },
+    });
+    return errorJson(
+      'Refund rejected: Cashfree did not confirm a captured payment for this order.',
+      409
+    );
   }
 
   try {

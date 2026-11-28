@@ -37,7 +37,7 @@ export async function onRequestPatch(
   }
   if (!env.DB) return jsonResponse({ error: 'Database storage is not configured.' }, 503);
 
-  const body = await parseJsonBody<{ action?: string; reason?: string }>(request);
+  const body = await parseJsonBody<{ action?: string; reason?: string; idempotencyKey?: string }>(request);
   const action = String(body?.action || '').toLowerCase();
   if (action !== 'cancel' && action !== 'return') {
     return jsonResponse({ error: 'Action must be "cancel" or "return".' }, 400);
@@ -125,14 +125,109 @@ export async function onRequestPatch(
     if (String(order.order_status) !== 'delivered') {
       return jsonResponse({ error: 'Return requests are only available for delivered orders.' }, 400);
     }
+
     const reason = sanitizeText(body?.reason, 300) || 'Customer requested return';
-    await env.DB.prepare(
-      `UPDATE store_orders SET order_status = 'return_requested', return_reason = ?, updated_at = datetime('now') WHERE id = ?`
+    const idempotencyKey =
+      sanitizeText(body?.idempotencyKey, 120) || `order:${orderId}:${auth.user.id}`;
+
+    // Optional dedicated request ledger (migration 0028). Databases without it
+    // still get the hardened conditional order transition below.
+    let existingRequest: Record<string, any> | null = null;
+    let ledgerAvailable = true;
+    try {
+      existingRequest = await env.DB.prepare(
+        'SELECT id, status, idempotency_key FROM order_return_requests WHERE order_id = ? LIMIT 1'
+      )
+        .bind(orderId)
+        .first<Record<string, any>>();
+      if (existingRequest && String(existingRequest.status) !== 'rejected') {
+        return jsonResponse(
+          {
+            error: 'A return request already exists for this order.',
+            code:
+              String(existingRequest.status) === 'requested'
+                ? 'RETURN_ALREADY_REQUESTED'
+                : 'RETURN_ALREADY_DECIDED',
+            status: String(existingRequest.status),
+          },
+          409
+        );
+      }
+    } catch (err) {
+      if (!isMissingTableError(err)) throw err;
+      ledgerAvailable = false;
+    }
+
+    const returnRes = await env.DB.prepare(
+      `UPDATE store_orders
+       SET order_status = 'return_requested', return_reason = ?, updated_at = datetime('now')
+       WHERE id = ? AND order_status = 'delivered'`
     )
       .bind(reason, orderId)
       .run();
+    if (Number(returnRes?.meta?.changes || 0) < 1) {
+      return jsonResponse(
+        { error: 'Order status changed. Reload and try again.', code: 'ORDER_STATE_CHANGED' },
+        409
+      );
+    }
 
-    return jsonResponse({ ok: true, status: 'return_requested' });
+    let tracked = false;
+    if (ledgerAvailable) {
+      try {
+        if (existingRequest) {
+          await env.DB.prepare(
+            `UPDATE order_return_requests
+             SET status = 'requested', reason = ?, idempotency_key = ?, requested_at = datetime('now'),
+                 decided_at = NULL, decided_by = '', decision_note = '', refund_reference = '',
+                 restocked = 0, updated_at = datetime('now')
+             WHERE id = ? AND status = 'rejected'`
+          )
+            .bind(reason, idempotencyKey, Number(existingRequest.id))
+            .run();
+        } else {
+          await env.DB.prepare(
+            `INSERT INTO order_return_requests
+             (website_id, order_id, customer_user_id, idempotency_key, reason, status, requested_at)
+             VALUES (?, ?, ?, ?, ?, 'requested', datetime('now'))`
+          )
+            .bind(
+              String(order.website_id || ''),
+              orderId,
+              String(auth.user.id || auth.user.authSubject || ''),
+              idempotencyKey,
+              reason
+            )
+            .run();
+        }
+        tracked = true;
+      } catch {
+        // The conditional order transition remains authoritative even if the
+        // optional ledger write fails.
+        tracked = false;
+      }
+    }
+
+    await writeAuditLog(env, {
+      actorId: auth.user.id,
+      actorRole: 'end_customer',
+      action: 'CUSTOMER_RETURN_REQUESTED',
+      targetType: 'order',
+      targetId: String(orderId),
+      details: {
+        orderNumber: String(order.order_number || orderId),
+        reasonLength: reason.length,
+        trackedInLedger: tracked,
+        refundStatus: 'not_processed',
+      },
+    });
+
+    return jsonResponse({
+      ok: true,
+      status: 'return_requested',
+      trackedInLedger: tracked,
+      refund: 'not_processed',
+    });
   } catch (err) {
     if (isMissingTableError(err)) {
       return jsonResponse(

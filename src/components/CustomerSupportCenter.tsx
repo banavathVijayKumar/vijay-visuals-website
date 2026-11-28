@@ -7,8 +7,12 @@ import {
   FileText,
   Filter,
   HelpCircle,
+  Instagram,
+  Mail,
+  MessageCircle,
   MessageSquare,
   Paperclip,
+  Phone,
   Plus,
   RefreshCw,
   Send,
@@ -19,6 +23,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
+import { CONTACT_INFO } from '../data/content';
 
 function safeAttachmentUrl(raw: unknown): string | null {
   try {
@@ -392,6 +397,23 @@ export const CustomerSupportCenter: React.FC<CustomerSupportCenterProps> = ({
               Developer Task Queue ({developerTasks.length})
             </button>
           )}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-[#242434] bg-[#0D0D13] px-3 py-2 text-[11px] text-[#9A9AAE]">
+          <span className="font-medium text-[#D4AF37]">Direct channels:</span>
+          <a className="inline-flex items-center gap-1.5 hover:text-white" href={`tel:${CONTACT_INFO.phone.replace(/\s/g, '')}`}>
+            <Phone className="w-3 h-3" /> Call
+          </a>
+          <a className="inline-flex items-center gap-1.5 hover:text-white" href={CONTACT_INFO.whatsappUrl} target="_blank" rel="noopener noreferrer">
+            <MessageCircle className="w-3 h-3" /> WhatsApp
+          </a>
+          <a className="inline-flex items-center gap-1.5 hover:text-white" href={CONTACT_INFO.instagramDmUrl} target="_blank" rel="noopener noreferrer">
+            <Instagram className="w-3 h-3" /> Instagram DM
+          </a>
+          <a className="inline-flex items-center gap-1.5 hover:text-white" href={`mailto:${CONTACT_INFO.email}`}>
+            <Mail className="w-3 h-3" /> Email
+          </a>
+          <span>Never share OTPs, passwords, keys or bank details.</span>
         </div>
       </div>
 

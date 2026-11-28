@@ -69,6 +69,7 @@ import { GrowthTab, GrowthWorkspace } from './GrowthWorkspace';
 import { AdminEcosystemPanel } from './AdminEcosystemPanel';
 import { BusinessCommandCenter } from './BusinessCommandCenter';
 import { InventoryAndHrOps } from './InventoryAndHrOps';
+import { ServiceCatalogManager } from './ServiceCatalogManager';
 import { HelpAndSuccessCenter } from './HelpAndSuccessCenter';
 import { CustomerSupportCenter } from './CustomerSupportCenter';
 import { CustomerLogoCustomizer } from './CustomerLogoCustomizer';
@@ -255,6 +256,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
     | 'onboarding'
     | 'overview'
     | 'products'
+    | 'services'
     | 'gallery'
     | 'customers'
     | 'reviews'
@@ -386,6 +388,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
 
   // --- CUSTOMER DASHBOARD STATE ---
   const [customerOrders, setCustomerOrders] = useState<OrderRecord[]>([]);
+  const [customerReturnReason, setCustomerReturnReason] = useState('');
   const [deliveryOtps, setDeliveryOtps] = useState<Record<number, string>>({});
   const [customerTickets, setCustomerTickets] = useState<SupportTicketRecord[]>([]);
   const [customerAppointments, setCustomerAppointments] = useState<AppointmentRecord[]>([]);
@@ -1498,6 +1501,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       { id: 'onboarding', label: '12-Step Setup' },
                       { id: 'overview', label: 'Orders & Dispatch' },
                       { id: 'products', label: 'Products & Catalog' },
+                      { id: 'services', label: 'Services & Pricing' },
                       { id: 'reviews', label: 'Reviews & Ratings' },
                       { id: 'gallery', label: 'Business Gallery' },
                       { id: 'customers', label: 'Customers' },
@@ -1827,6 +1831,14 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                         )}
                       </div>
                     </div>
+                  )}
+
+                  {/* TENANT SERVICE CATALOG */}
+                  {ownerSection === 'services' && ownerData?.tenant?.slug && (
+                    <ServiceCatalogManager
+                      tenantSlug={ownerData.tenant.slug}
+                      onNotify={onNotify}
+                    />
                   )}
 
                   {/* PRODUCTS & INVENTORY */}
@@ -3886,20 +3898,38 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                             </button>
                           )}
                           {ord.status === 'delivered' && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await apiFetch(`/api/customer/orders/${ord.id}`, {
-                                  method: 'PATCH',
-                                  body: JSON.stringify({ action: 'return' }),
-                                });
-                                await loadCustomerDashboard();
-                                onNotify('Return & refund request submitted.');
-                              }}
-                              className="px-3 py-1.5 rounded border border-amber-500/40 text-amber-300"
-                            >
-                              Request Return
-                            </button>
+                            <div className="flex w-full flex-wrap items-center gap-2">
+                              <input
+                                type="text"
+                                value={customerReturnReason}
+                                maxLength={300}
+                                onChange={(e) => setCustomerReturnReason(e.target.value)}
+                                placeholder="Reason for return (optional)"
+                                className="min-w-[180px] flex-1 rounded border border-[#2A2A38] bg-[#0A0A0E] px-2 py-1.5 text-[11px] text-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    await apiFetch(`/api/customer/orders/${ord.id}`, {
+                                      method: 'PATCH',
+                                      body: JSON.stringify({
+                                        action: 'return',
+                                        reason: customerReturnReason.trim(),
+                                      }),
+                                    });
+                                    setCustomerReturnReason('');
+                                    await loadCustomerDashboard();
+                                    onNotify('Return request submitted for owner review. No refund has been processed yet.');
+                                  } catch (err) {
+                                    onNotify(err instanceof Error ? err.message : 'Unable to submit return request.');
+                                  }
+                                }}
+                                className="px-3 py-1.5 rounded border border-amber-500/40 text-amber-300"
+                              >
+                                Request Return
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>

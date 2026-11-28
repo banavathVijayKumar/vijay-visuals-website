@@ -29,8 +29,24 @@ if (!globalThis.crypto) (globalThis as any).crypto = webcrypto;
 // Synthetic test-only material. Never used against a real provider.
 const WEBHOOK_SECRET = 'local-only-webhook-secret';
 const originalFetch = globalThis.fetch;
-globalThis.fetch = (async () => {
-  throw new Error('Unexpected network call in local webhook freshness test');
+let providerPaymentsForWebhook: Array<Record<string, unknown>> = [
+  {
+    cf_payment_id: 91001,
+    payment_status: 'SUCCESS',
+    payment_amount: 199,
+    payment_currency: 'INR',
+    payment_time: new Date().toISOString(),
+  },
+];
+globalThis.fetch = (async (input: RequestInfo | URL) => {
+  const url = String(input);
+  if (url.includes('/orders/') && url.endsWith('/payments')) {
+    return new Response(JSON.stringify(providerPaymentsForWebhook), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  throw new Error(`Unexpected network call in local webhook freshness test: ${url}`);
 }) as typeof fetch;
 
 let passed = 0;
@@ -92,6 +108,8 @@ function makeEnv(d1: D1Database): CloudflareEnv {
   return {
     DB: d1,
     CASHFREE_WEBHOOK_SECRET: WEBHOOK_SECRET,
+    CASHFREE_CLIENT_ID: 'local-cashfree-client-id',
+    CASHFREE_CLIENT_SECRET: 'local-cashfree-client-secret',
     CASHFREE_ENV: 'sandbox',
   } as CloudflareEnv;
 }
@@ -272,7 +290,7 @@ await it('a fresh signature with an unverified failed payment never records a su
     payload,
     headersFor(raw, String(Date.now()))
   );
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 409);
   assert.equal(eventCount(db, orderId), 0);
 });
 

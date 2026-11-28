@@ -1252,6 +1252,21 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-5">
+              <a href="/privacy" className="inline-flex min-h-11 items-center hover:text-[#ECC86A]">
+                Privacy Policy
+              </a>
+              <a href="/terms" className="inline-flex min-h-11 items-center hover:text-[#ECC86A]">
+                Terms
+              </a>
+              <a href="/refund" className="inline-flex min-h-11 items-center hover:text-[#ECC86A]">
+                Refund
+              </a>
+              <a href="/shipping" className="inline-flex min-h-11 items-center hover:text-[#ECC86A]">
+                Shipping
+              </a>
+              <a href="/cancellation" className="inline-flex min-h-11 items-center hover:text-[#ECC86A]">
+                Cancellation
+              </a>
               <a href="/sitemap.xml" target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center hover:text-[#ECC86A]">
                 Sitemap
               </a>
@@ -1266,6 +1281,10 @@ export const StudioLanding: React.FC<StudioLandingProps> = ({
               <a href={CONTACT_INFO.instagramUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-1.5 hover:text-[#ECC86A]">
                 <Instagram className="w-3.5 h-3.5" />
                 <span>@{CONTACT_INFO.instagram}</span>
+              </a>
+              <a href={CONTACT_INFO.instagramDmUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-1.5 hover:text-[#ECC86A]">
+                <Instagram className="w-3.5 h-3.5" />
+                <span>Instagram DM</span>
               </a>
               <a href={`mailto:${CONTACT_INFO.email}`} className="inline-flex min-h-11 items-center gap-1.5 hover:text-[#ECC86A]">
                 <Mail className="w-3.5 h-3.5 text-[#D4AF37]" />

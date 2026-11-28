@@ -18,6 +18,7 @@ import {
   checkTenantSubscriptionEntitlement,
   customerApprovalBlockedResponse,
   mapProductRowToUi,
+  mapServiceRowToUi,
   requireTenantOwnerAccess,
   validateEnabledModules,
   validateGalleryImages,
@@ -37,6 +38,7 @@ import {
 } from '../_tenantMapper';
 import { getEdgeCashfreeStatus } from '../payments/_cashfree';
 import { sanitizeDemoDraftForStorage } from '../_demoDraft';
+import { sanitizeCustomPages } from '../_customPages';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SAFE_COLOR = /^#[0-9a-fA-F]{3,8}$/;
@@ -389,6 +391,27 @@ export async function onRequestGet(
     // Optional table
   }
 
+  // Optional dedicated service catalog (migration 0027). Older databases that
+  // have not applied it simply return an empty list instead of failing.
+  const services: Record<string, unknown>[] = [];
+  try {
+    const servicesRes = await env.DB.prepare(
+      `SELECT id, name, description, category, price_inr, compare_at_price_inr,
+              duration_minutes, sort_order, image_url, is_active
+       FROM tenant_services
+       WHERE website_id = ? AND is_active = 1
+       ORDER BY sort_order ASC, id ASC
+       LIMIT 100`
+    )
+      .bind(row.website_id)
+      .all<Record<string, any>>();
+    for (const service of servicesRes.results || []) {
+      services.push(mapServiceRowToUi(service, Number(row.rowid || 0)));
+    }
+  } catch {
+    // Optional table — no failure for publications on older schema versions.
+  }
+
   const verifiedPurchaseCount = reviews.filter((r) => r.verifiedPurchase).length;
   const averageRating = reviews.length > 0
     ? Number((reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(2))
@@ -401,6 +424,7 @@ export async function onRequestGet(
     {
       tenant,
       products,
+      services,
       coupons,
       reviews,
       reviewSummary: {
@@ -562,15 +586,7 @@ export async function onRequestPatch(
   }
 
   if (Array.isArray(body.customPages)) {
-    current.customPages = body.customPages
-      .filter((p: any) => p && typeof p === 'object' && p.slug && p.title)
-      .map((p: any) => ({
-        slug: sanitizeText(p.slug, 40).toLowerCase().replace(/[^a-z0-9-]/g, ''),
-        title: sanitizeText(p.title, 80),
-        content: sanitizeText(p.content, 2000),
-      }))
-      .filter((p: any) => p.slug && p.title)
-      .slice(0, 10);
+    current.customPages = sanitizeCustomPages(body.customPages);
   }
 
   if (body.demoBuilderDraft !== undefined) {

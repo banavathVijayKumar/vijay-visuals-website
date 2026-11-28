@@ -526,6 +526,30 @@ export function mapProductRowToUi(
   };
 }
 
+export function mapServiceRowToUi(
+  s: Record<string, any>,
+  tenantRowId: number
+): Record<string, unknown> {
+  let imageUrl = '';
+  if (typeof s.image_url === 'string') {
+    const valid = validateSafeImageSource(s.image_url);
+    imageUrl = valid || '';
+  }
+  return {
+    id: Number(s.id),
+    tenantId: tenantRowId,
+    name: cleanString(s.name, 160),
+    description: cleanString(s.description, 1000),
+    category: cleanString(s.category, 80) || 'General',
+    price: Math.max(0, Math.round(Number(s.price_inr) || 0)),
+    compareAtPrice: Math.max(0, Math.round(Number(s.compare_at_price_inr) || 0)),
+    durationMinutes: Math.max(0, Math.round(Number(s.duration_minutes) || 0)),
+    sortOrder: Math.round(Number(s.sort_order) || 0),
+    imageUrl,
+    active: Boolean(s.is_active),
+  };
+}
+
 export function mapOrderRowToUi(
   o: Record<string, any>,
   tenantRowId = 0

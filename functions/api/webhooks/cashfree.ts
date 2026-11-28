@@ -6,7 +6,9 @@
 // - Supports OPTIONS preflight and GET health checks for dashboard verification
 // - Enforces strict idempotency via payment_webhook_events(event_id PK)
 // - Handles Cashfree PG events: PAYMENT_SUCCESS_WEBHOOK, ORDER_PAID_WEBHOOK,
-//   PAYMENT_FAILED_WEBHOOK, PAYMENT_USER_DROPPED_WEBHOOK
+//   PAYMENT_FAILED_WEBHOOK, PAYMENT_USER_DROPPED_WEBHOOK and explicit
+//   CANCELLED / EXPIRED terminal states
+// - Success events are honoured only after authoritative provider verification
 // - Dual-ledger atomic reconciliation across cashfree_payments and store_orders
 // ============================================================================
 
@@ -54,6 +56,59 @@ import {
   parseCashfreeJsonPreservingLargeIds,
 } from '../payments/_cashfreeIdentity';
 import { autoAssignPaidOrder } from '../delivery/_autoAssignment';
+import type { EdgeCashfreePaymentEntity } from '../payments/_cashfree';
+
+const NON_SUCCESS_PAYMENT_STATUSES = new Set([
+  'FAILED',
+  'CANCELLED',
+  'EXPIRED',
+  'USER_DROPPED',
+  'REFUNDED',
+  'ABANDONED',
+]);
+
+const CANCELLED_EVENT_TYPES = new Set([
+  'CANCELLED',
+  'CANCELLED_WEBHOOK',
+  'ORDER_CANCELLED',
+  'ORDER_CANCELLED_WEBHOOK',
+  'PAYMENT_CANCELLED',
+  'PAYMENT_CANCELLED_WEBHOOK',
+]);
+
+const EXPIRED_EVENT_TYPES = new Set([
+  'EXPIRED',
+  'EXPIRED_WEBHOOK',
+  'ORDER_EXPIRED',
+  'ORDER_EXPIRED_WEBHOOK',
+  'PAYMENT_EXPIRED',
+  'PAYMENT_EXPIRED_WEBHOOK',
+]);
+
+function normalizeWebhookState(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+}
+
+/** Explicit terminal states are recognised before any success handling. */
+function terminalWebhookState(
+  eventType: string,
+  body: CashfreeWebhookPayload
+): 'CANCELLED' | 'EXPIRED' | null {
+  const event = normalizeWebhookState(eventType);
+  if (EXPIRED_EVENT_TYPES.has(event)) return 'EXPIRED';
+  if (CANCELLED_EVENT_TYPES.has(event)) return 'CANCELLED';
+
+  const reportedStates = [
+    normalizeWebhookState(body.data?.order?.order_status),
+    normalizeWebhookState(body.data?.payment?.payment_status),
+  ];
+  if (reportedStates.includes('EXPIRED')) return 'EXPIRED';
+  if (reportedStates.includes('CANCELLED')) return 'CANCELLED';
+  return null;
+}
 
 function toIntegerPaise(amount: unknown): number {
   if (typeof amount === 'string' && amount.trim() === '') return -1;
@@ -91,6 +146,7 @@ interface CashfreeWebhookPayload {
   data?: {
     order?: {
       order_id?: string;
+      order_status?: string;
       order_amount?: number;
       order_currency?: string;
       order_tags?: Record<string, string>;
@@ -262,6 +318,90 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     return json({ ok: true, idempotentDuplicate: true, eventId, eventType });
   }
 
+  // Explicit CANCELLED / EXPIRED states are terminal and non-entitling. They are
+  // handled before success logic so a mislabelled or conflicting success event
+  // can never mark a payment PAID or provision an entitlement.
+  if (!isRefundEvent) {
+    const terminalState = terminalWebhookState(eventType, body);
+    if (terminalState) {
+      if (!orderId) {
+        return errorJson('Cancellation or expiry webhook did not include an order_id; no ledger was changed.', 400);
+      }
+
+      const terminalPayment = await env.DB.prepare(
+        'SELECT id, entity_type, notes_json FROM cashfree_payments WHERE order_id = ? LIMIT 1'
+      )
+        .bind(orderId)
+        .first<{ id: number; entity_type: string; notes_json: string }>();
+
+      if (terminalPayment?.entity_type === 'platform_package') {
+        webhookFlowType = 'platform_subscription';
+      }
+
+      let terminalNotes: Record<string, any> = {};
+      try {
+        terminalNotes = JSON.parse(terminalPayment?.notes_json || '{}');
+      } catch {}
+      terminalNotes.terminalWebhookStatus = terminalState;
+      terminalNotes.terminalWebhookEvent = eventType;
+      terminalNotes.paidViaWebhook = false;
+      terminalNotes.orderState = terminalState;
+      terminalNotes.deliveryStatus = 'NOT_DELIVERED';
+
+      // EXPIRED is stored explicitly in notes; the ledger CHECK column only
+      // accepts CANCELLED as the non-paid terminal state.
+      await env.DB.prepare(
+        `UPDATE cashfree_payments
+         SET status = 'CANCELLED',
+             notes_json = ?,
+             raw_webhook_json = ?,
+             updated_at = datetime('now')
+         WHERE order_id = ? AND status NOT IN ('PAID', 'REFUNDED')`
+      )
+        .bind(JSON.stringify(terminalNotes), rawBody, orderId)
+        .run();
+
+      await env.DB.prepare(
+        `UPDATE platform_payments
+         SET status = 'failed',
+             notes_json = ?,
+             updated_at = datetime('now')
+         WHERE razorpay_order_id = ? AND status NOT IN ('paid', 'refunded')`
+      )
+        .bind(JSON.stringify(terminalNotes), `cf_${orderId}`)
+        .run();
+
+      const terminalStoreOrder = await env.DB.prepare(
+        'SELECT id, payment_status FROM store_orders WHERE gateway_order_id = ? LIMIT 1'
+      )
+        .bind(orderId)
+        .first<{ id: number; payment_status: string }>();
+
+      if (terminalStoreOrder && terminalStoreOrder.payment_status !== 'paid') {
+        await env.DB.prepare(
+          `UPDATE store_orders
+           SET payment_status = 'failed',
+               order_status = 'cancelled',
+               updated_at = datetime('now')
+           WHERE id = ?`
+        )
+          .bind(terminalStoreOrder.id)
+          .run();
+      }
+
+      return json({
+        ok: true,
+        eventId,
+        eventType,
+        orderId,
+        cfPaymentId,
+        terminalStatus: terminalState,
+        ledgerStatus: 'CANCELLED',
+        paymentMarkedPaid: false,
+      });
+    }
+  }
+
   // Process refund events separately. A refund webhook must never be treated
   // as a successful payment, and must never re-provision an entitlement.
   if (isRefundEvent && refundData) {
@@ -423,36 +563,63 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       return errorJson('Missing order_id in Cashfree payment webhook payload.', 400);
     }
 
-    // A success event name is not payment proof. Require an explicit SUCCESS
-    // payment status, or confirm one from the authoritative provider ledger.
-    let hasSuccessfulPayment =
-      String(paymentData?.payment_status || '').toUpperCase() === 'SUCCESS' && Boolean(cfPaymentId);
-    if (!hasSuccessfulPayment) {
-      try {
-        const providerPayments = await fetchEdgeCashfreeOrderPayments(env, orderId);
-        const providerPayment = providerPayments.find(
-          (p) => p.payment_status === 'SUCCESS' && p.cf_payment_id
-        );
-        if (providerPayment) {
-          hasSuccessfulPayment = true;
-          if (!cfPaymentId) cfPaymentId = normalizeCashfreePaymentId(providerPayment.cf_payment_id);
-          if (!cfPaymentId) {
-            return errorJson(
-              'Authoritative provider payment ID is unsafe or truncated; no ledger was marked paid.',
-              400
-            );
-          }
-        }
-      } catch {
-        // Treated as missing evidence below; never mark an unverified payment paid.
-      }
-    }
-    if (!hasSuccessfulPayment) {
+    // A signed success event name and payload are not payment proof. Every
+    // success branch must confirm a real SUCCESS payment from Cashfree's
+    // authoritative order-payments API before writing a PAID ledger state.
+    const reportedPaymentStatus = normalizeWebhookState(paymentData?.payment_status);
+    const reportedOrderStatus = normalizeWebhookState(orderData?.order_status);
+    if (
+      NON_SUCCESS_PAYMENT_STATUSES.has(reportedPaymentStatus) ||
+      NON_SUCCESS_PAYMENT_STATUSES.has(reportedOrderStatus)
+    ) {
       return errorJson(
-        'Success webhook did not include verified successful payment evidence; no ledger was marked paid.',
+        'Success webhook conflicts with a non-success payment status; no ledger was marked paid.',
+        409
+      );
+    }
+
+    let providerVerifiedPayment: EdgeCashfreePaymentEntity | null = null;
+    try {
+      const providerPayments = await fetchEdgeCashfreeOrderPayments(env, orderId);
+      providerVerifiedPayment =
+        providerPayments.find(
+          (p) =>
+            normalizeWebhookState(p.payment_status) === 'SUCCESS' &&
+            p.cf_payment_id != null &&
+            String(p.cf_payment_id).trim() !== ''
+        ) || null;
+    } catch (providerErr) {
+      console.error(
+        'Cashfree provider confirmation failed for success webhook:',
+        providerErr instanceof Error ? providerErr.message : String(providerErr)
+      );
+      return errorJson(
+        'Unable to confirm success with Cashfree provider payments; no ledger was marked paid.',
+        502
+      );
+    }
+
+    if (!providerVerifiedPayment) {
+      return errorJson(
+        'Cashfree provider payments did not confirm a successful payment; no ledger was marked paid.',
+        409
+      );
+    }
+
+    const providerPaymentId = normalizeCashfreePaymentId(providerVerifiedPayment.cf_payment_id);
+    if (!providerPaymentId) {
+      return errorJson(
+        'Authoritative provider payment ID is unsafe or truncated; no ledger was marked paid.',
         400
       );
     }
+    if (cfPaymentId && cfPaymentId !== providerPaymentId) {
+      return errorJson(
+        'Webhook payment ID does not match the authoritative Cashfree payment ID; no ledger was marked paid.',
+        409
+      );
+    }
+    cfPaymentId = providerPaymentId;
 
     // 1. Retrieve authoritative records from Preview D1
     const existingPayment = await env.DB.prepare(
@@ -561,10 +728,19 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       return errorJson('Invalid authoritative expected order amount in database.', 500);
     }
 
-    // Determine received amount & currency from webhook payload
-    let receivedOrderAmount = orderData?.order_amount;
-    let receivedPaymentAmount = paymentData?.payment_amount;
-    let receivedCurrency = String(paymentData?.payment_currency || orderData?.order_currency || '').trim().toUpperCase();
+    // Prefer the provider-confirmed payment values over signed payload values.
+    let receivedOrderAmount =
+      providerVerifiedPayment?.payment_amount ?? orderData?.order_amount;
+    let receivedPaymentAmount =
+      providerVerifiedPayment?.payment_amount ?? paymentData?.payment_amount;
+    let receivedCurrency = String(
+      providerVerifiedPayment?.payment_currency ||
+        paymentData?.payment_currency ||
+        orderData?.order_currency ||
+        ''
+    )
+      .trim()
+      .toUpperCase();
 
     // Requirement 12: If webhook data lacks sufficient payment details, fetch authoritative status from Cashfree API
     if (receivedOrderAmount == null || receivedPaymentAmount == null || !receivedCurrency) {

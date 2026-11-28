@@ -36,7 +36,15 @@ import { generateSlugFromName, validateSlug } from '../lib/slug';
 import { optimizeImageFileToDataUrl } from '../lib/imageUpload';
 import { useAuth } from '../hooks/useAuth';
 import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
-import { AiSetupDraft, GalleryItem, TenantLogoConfig, TenantModules, TenantRecord } from '../types/platform';
+import {
+  AiSetupDraft,
+  CustomPage,
+  CustomPageBlock,
+  GalleryItem,
+  TenantLogoConfig,
+  TenantModules,
+  TenantRecord,
+} from '../types/platform';
 
 import fashionBanner from '../assets/images/store_fashion_royal_1795055802960.jpg';
 import electronicsBanner from '../assets/images/store_electronics_audio_1795055804216.jpg';
@@ -52,6 +60,26 @@ interface WebsiteBuilderProps {
 }
 
 export type BuilderPlanTier = PlanTier;
+
+const normalizeBuilderPage = (value: unknown): CustomPage | null => {
+  if (!value || typeof value !== 'object') return null;
+  const page = value as Partial<CustomPage>;
+  const slug = String(page.slug || '')
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  const title = String(page.title || '').trim().slice(0, 80);
+  if (!slug || !title) return null;
+  return {
+    slug,
+    title,
+    content: String(page.content || '').slice(0, 2000),
+    inNav: page.inNav !== false,
+    blocks: Array.isArray(page.blocks) ? (page.blocks as CustomPageBlock[]).slice(0, 12) : [],
+  };
+};
 
 export const PLAN_TIER_CONFIG: Record<
   BuilderPlanTier,
@@ -323,9 +351,15 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
 
   // Section Order, Custom Pages, Draft Snapshots & Publish Control
   const [sectionOrder, setSectionOrder] = useState<string[]>(['hero', 'catalog', 'gallery', 'booking', 'contact']);
-  const [customPages, setCustomPages] = useState<Array<{ slug: string; title: string; content: string; inNav?: boolean }>>([
-    { slug: 'about', title: 'About Us', content: 'Welcome to our official business website.', inNav: true },
-    { slug: 'shipping-returns', title: 'Shipping & Returns', content: 'Transparent delivery timelines and customer-friendly return guidelines.', inNav: true },
+  const [customPages, setCustomPages] = useState<CustomPage[]>([
+    { slug: 'about', title: 'About Us', content: 'Welcome to our official business website.', inNav: true, blocks: [] },
+    {
+      slug: 'shipping-returns',
+      title: 'Shipping & Returns',
+      content: 'Transparent delivery timelines and customer-friendly return guidelines.',
+      inNav: true,
+      blocks: [],
+    },
   ]);
   const [newPageTitle, setNewPageTitle] = useState('');
   const [newPageContent, setNewPageContent] = useState('');
@@ -365,7 +399,10 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
       if (seoRes.seo?.customPagesJson) {
         try {
           const parsedPages = JSON.parse(seoRes.seo.customPagesJson);
-          if (Array.isArray(parsedPages)) setCustomPages(parsedPages);
+          if (Array.isArray(parsedPages)) {
+            const normalized = parsedPages.map(normalizeBuilderPage).filter((page): page is CustomPage => Boolean(page));
+            if (normalized.length > 0 || parsedPages.length === 0) setCustomPages(normalized);
+          }
         } catch {}
       }
     } catch {
@@ -401,6 +438,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
           customPagesJson: JSON.stringify(customPages),
         }),
       });
+      await loadTenantEditorMeta(editingTenantId);
       onNotify('Saved section order & custom navigation pages to Cloudflare D1.');
     } catch (err) {
       onNotify(err instanceof Error ? err.message : 'Unable to save layout settings.');
@@ -2057,16 +2095,56 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
               <div className="pt-2 border-t border-[#1D1D28] space-y-2">
                 <p className="text-[11px] font-semibold text-[#ECC86A]">Custom Navigation Pages ({customPages.length})</p>
                 {customPages.map((pg, idx) => (
-                  <div key={pg.slug} className="flex items-center justify-between rounded border border-[#1E1E2B] bg-[#09090D] px-2.5 py-1.5">
-                    <span className="text-white truncate">{pg.title} <span className="text-[#7E7E92]">/{pg.slug}</span></span>
-                    <button
-                      type="button"
-                      onClick={() => setCustomPages((prev) => prev.filter((_, i) => i !== idx))}
-                      className="text-rose-400 hover:text-rose-300"
-                      aria-label="Remove page"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                  <div key={pg.slug} className="space-y-2 rounded border border-[#1E1E2B] bg-[#09090D] px-2.5 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <input
+                        type="text"
+                        value={pg.title}
+                        maxLength={80}
+                        onChange={(e) =>
+                          setCustomPages((prev) =>
+                            prev.map((page, i) => (i === idx ? { ...page, title: e.target.value } : page))
+                          )
+                        }
+                        aria-label={`Title for page ${pg.slug}`}
+                        className="min-w-0 flex-1 rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1 text-xs text-white"
+                      />
+                      <span className="shrink-0 text-[10px] text-[#7E7E92]">/{pg.slug}</span>
+                      <label className="flex shrink-0 items-center gap-1 text-[10px] text-[#9A9AAE]">
+                        <input
+                          type="checkbox"
+                          checked={pg.inNav !== false}
+                          onChange={(e) =>
+                            setCustomPages((prev) =>
+                              prev.map((page, i) => (i === idx ? { ...page, inNav: e.target.checked } : page))
+                            )
+                          }
+                          className="accent-[#D4AF37]"
+                        />
+                        Nav
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setCustomPages((prev) => prev.filter((_, i) => i !== idx))}
+                        className="text-rose-400 hover:text-rose-300"
+                        aria-label="Remove page"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <textarea
+                      value={pg.content}
+                      maxLength={2000}
+                      rows={2}
+                      onChange={(e) =>
+                        setCustomPages((prev) =>
+                          prev.map((page, i) => (i === idx ? { ...page, content: e.target.value } : page))
+                        )
+                      }
+                      aria-label={`Content for page ${pg.slug}`}
+                      placeholder="Page body text"
+                      className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1 text-xs text-white"
+                    />
                   </div>
                 ))}
                 <div className="flex gap-1.5">
@@ -2081,10 +2159,18 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
                     type="button"
                     onClick={() => {
                       if (!newPageTitle.trim()) return;
-                      const pgSlug = newPageTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'page';
+                      const baseSlug = newPageTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'page';
+                      const reserved = new Set(['home', 'catalog', 'gallery', 'booking', 'reviews', 'contact']);
+                      const pgSlug = reserved.has(baseSlug) ? `page-${baseSlug}` : baseSlug;
                       setCustomPages((prev) => [
                         ...prev,
-                        { slug: pgSlug, title: newPageTitle.trim(), content: newPageContent.trim() || `Official ${newPageTitle.trim()} information for ${name}.`, inNav: true },
+                        {
+                          slug: pgSlug,
+                          title: newPageTitle.trim(),
+                          content: newPageContent.trim() || `Official ${newPageTitle.trim()} information for ${name}.`,
+                          inNav: true,
+                          blocks: [],
+                        },
                       ]);
                       setNewPageTitle('');
                       setNewPageContent('');

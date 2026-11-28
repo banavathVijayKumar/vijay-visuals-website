@@ -25,10 +25,18 @@ import { DemoBusinessBuilder } from './components/DemoBusinessBuilder';
 import { CustomerProposalView } from './components/CustomerProposalView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { NotFoundView } from './components/NotFoundView';
+import { PolicyView, type PolicyPageKey } from './components/PolicyView';
 import { parseTenantDeliveryHostname } from '../shared/tenantHost';
 
 const VALID_LANGS = new Set<string>(SUPPORTED_LANGUAGES.map((l) => l.code));
 const VALID_CURRENCIES = new Set<string>(GLOBAL_CURRENCIES.map((c) => c.code));
+const POLICY_ROUTES: Record<string, PolicyPageKey> = {
+  '/privacy': 'privacy',
+  '/terms': 'terms',
+  '/refund': 'refund',
+  '/shipping': 'shipping',
+  '/cancellation': 'cancellation',
+};
 
 function resolveInitialLang(): Lang {
   try {
@@ -68,6 +76,9 @@ function parseRouteFromPath(): { view: AppView; slug: string | null } {
     const token = decodeURIComponent(pathname.slice('/proposals/'.length).split('/')[0] || '').trim();
     if (token) return { view: 'proposal', slug: token };
   }
+  const normalizedPath = pathname.replace(/\/+$/, '') || '/';
+  const policyKey = POLICY_ROUTES[normalizedPath];
+  if (policyKey) return { view: 'policy', slug: policyKey };
   const storefrontSlug = getStorefrontSlug(pathname);
   if (storefrontSlug) return { view: 'storefront', slug: storefrontSlug };
   if (pathname.startsWith('/site/') || pathname.startsWith('/sites/')) {
@@ -579,6 +590,12 @@ function PlatformShell() {
               onBackToHome={() => navigateTo('studio')}
               onNotify={showToast}
             />
+          </ErrorBoundary>
+        )}
+
+        {activeView === 'policy' && activeSlug && (
+          <ErrorBoundary sectionName="Policy Page">
+            <PolicyView page={activeSlug as PolicyPageKey} />
           </ErrorBoundary>
         )}
       </div>

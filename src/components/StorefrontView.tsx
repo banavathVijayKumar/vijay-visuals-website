@@ -48,10 +48,13 @@ import { validateIndiaWhatsAppNumber } from '../../shared/indiaWhatsapp';
 import {
   CartItem,
   CouponRecord,
+  CustomPage,
+  CustomPageBlock,
   GalleryItem,
   OrderRecord,
   ProductRecord,
   ReviewRecord,
+  ServiceRecord,
   TenantLogoConfig,
   TenantModules,
   TenantRecord,
@@ -101,6 +104,72 @@ function buildWhatsAppUrl(
     customMessage || `Hi ${tenantName}, I found your website and would like to enquire.`
   );
   return `https://wa.me/${digits}?text=${msg}`;
+}
+
+function safeCustomPageHref(value: string): string | null {
+  const href = String(value || '').trim();
+  if (/^#page-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(href)) return href;
+  if (/^https:\/\/[^\s<>"']{1,390}$/i.test(href)) return href;
+  return null;
+}
+
+function safeCustomPageImage(value: string): string | null {
+  const src = String(value || '').trim();
+  if (/^https:\/\/[^\s<>"']{1,390}$/i.test(src)) return src;
+  if (/^data:image\/(?:png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=]+$/i.test(src)) return src;
+  return null;
+}
+
+function CustomPageBlockView({ block }: { block: CustomPageBlock }) {
+  if (block.type === 'heading') {
+    return <h2 className="font-luxury text-xl font-semibold text-white">{block.text}</h2>;
+  }
+  if (block.type === 'list') {
+    return (
+      <ul className="list-disc space-y-1 pl-5">
+        {block.items.map((item, index) => (
+          <li key={`${item}-${index}`}>{item}</li>
+        ))}
+      </ul>
+    );
+  }
+  if (block.type === 'image') {
+    const src = safeCustomPageImage(block.url);
+    if (!src) return null;
+    return (
+      <img
+        src={src}
+        alt={block.alt || ''}
+        width={1200}
+        height={630}
+        loading="lazy"
+        decoding="async"
+        className="w-full rounded-lg border border-[#262636] object-cover"
+      />
+    );
+  }
+  if (block.type === 'link') {
+    const href = safeCustomPageHref(block.url);
+    if (!href) return null;
+    const external = href.startsWith('https://');
+    return (
+      <a
+        href={href}
+        {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+        className="inline-flex min-h-10 items-center gap-1 text-[#ECC86A] hover:text-white"
+      >
+        {block.text || href} <ExternalLink className="h-3.5 w-3.5" />
+      </a>
+    );
+  }
+  if (block.type === 'callout') {
+    return (
+      <div className="rounded-lg border border-[#3A2F1A] bg-[#12100A] p-3 text-[#C2B58F]">
+        {block.text}
+      </div>
+    );
+  }
+  return <p>{block.text}</p>;
 }
 
 function resolveTenantModules(tenant: TenantRecord | null): TenantModules {
@@ -250,6 +319,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
   const { profile } = useAuth();
   const [tenant, setTenant] = useState<TenantRecord | null>(null);
   const [products, setProducts] = useState<ProductRecord[]>([]);
+  const [services, setServices] = useState<ServiceRecord[]>([]);
   const [coupons, setCoupons] = useState<CouponRecord[]>([]);
   const [reviews, setReviews] = useState<ReviewRecord[]>([]);
   const [pwaLicenseValid, setPwaLicenseValid] = useState(false);
@@ -336,7 +406,6 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     localBusinessType: string;
     customPagesJson: string;
   } | null>(null);
-  const [activeCustomPage, setActiveCustomPage] = useState<{ slug: string; title: string; content: string } | null>(null);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [quoteName, setQuoteName] = useState('');
   const [quotePhone, setQuotePhone] = useState('');
@@ -373,6 +442,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     const tenantRequest = apiFetch<{
       tenant: TenantRecord;
       products: ProductRecord[];
+      services?: ServiceRecord[];
       coupons: CouponRecord[];
       reviews: ReviewRecord[];
     }>(`/api/tenants/${encodeURIComponent(slug)}`).catch((err) => {
@@ -401,6 +471,9 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
         setTenant(storeData.tenant);
         const liveProducts = Array.isArray(storeData.products) ? storeData.products : [];
         setProducts(liveProducts);
+        setServices(
+          'services' in storeData && Array.isArray(storeData.services) ? storeData.services : []
+        );
         setCoupons(Array.isArray(storeData.coupons) ? storeData.coupons : []);
         setReviews(Array.isArray(storeData.reviews) ? storeData.reviews : []);
 
@@ -545,6 +618,30 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
     }
     return ordered;
   }, [tenant?.sectionOrder]);
+
+  const navCustomPages = useMemo<CustomPage[]>(() => {
+    const fromTenant = Array.isArray(tenant?.customPages) ? tenant!.customPages! : [];
+    if (fromTenant.length > 0) return fromTenant;
+    try {
+      const parsed = JSON.parse(seoConfig?.customPagesJson || '[]');
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((page): page is Record<string, unknown> => Boolean(page) && typeof page === 'object')
+        .map((page) => ({
+          slug: String(page.slug || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9-]/g, ''),
+          title: String(page.title || '').slice(0, 80),
+          content: String(page.content || '').slice(0, 2000),
+          inNav: page.inNav !== false,
+          blocks: Array.isArray(page.blocks) ? (page.blocks as CustomPageBlock[]).slice(0, 12) : [],
+        }))
+        .filter((page) => page.slug && page.title)
+        .slice(0, 12);
+    } catch {
+      return [];
+    }
+  }, [tenant?.customPages, seoConfig?.customPagesJson]);
 
   const sectionStyle = (section: string, offset = 0): React.CSSProperties => {
     const index = resolvedSectionOrder.indexOf(section);
@@ -1045,10 +1142,20 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
                     : 'Catalog'}
                 </a>
               )}
+              {services.length > 0 && (
+                <a href="#store-services" className="hover:text-[#ECC86A]">Services</a>
+              )}
               {modules.gallery && galleryItems.length > 0 && (
                 <a href="#store-gallery" className="hover:text-[#ECC86A]">Gallery</a>
               )}
               <a href="#store-contact" className="hover:text-[#ECC86A]">Contact & Policies</a>
+              {navCustomPages
+                .filter((page) => page.inNav !== false)
+                .map((page) => (
+                  <a key={page.slug} href={`#page-${page.slug}`} className="hover:text-[#ECC86A]">
+                    {page.title}
+                  </a>
+                ))}
             </nav>
           </div>
 
@@ -1101,6 +1208,9 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
             {(modules.ecommerce || products.length > 0) && (
               <a href="#store-catalog" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#2A2A38] px-3 text-xs text-[#D4D4E2]">Menu / Catalog</a>
             )}
+            {services.length > 0 && (
+              <a href="#store-services" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#2A2A38] px-3 text-xs text-[#D4D4E2]">Services</a>
+            )}
             {modules.gallery && galleryItems.length > 0 && (
               <a href="#store-gallery" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#2A2A38] px-3 text-xs text-[#D4D4E2]">Gallery</a>
             )}
@@ -1108,6 +1218,17 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
               <a href="#store-reviews" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#2A2A38] px-3 text-xs text-[#D4D4E2]">Reviews</a>
             )}
             <a href="#store-contact" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#2A2A38] px-3 text-xs text-[#D4D4E2]">Contact</a>
+            {navCustomPages
+              .filter((page) => page.inNav !== false)
+              .map((page) => (
+                <a
+                  key={page.slug}
+                  href={`#page-${page.slug}`}
+                  className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-[#2A2A38] px-3 text-xs text-[#D4D4E2]"
+                >
+                  {page.title}
+                </a>
+              ))}
           </div>
         </nav>
       </div>
@@ -1495,6 +1616,62 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
             </div>
           )}
 
+          {/* Dedicated Tenant Service Catalog (migration 0027) */}
+          {services.length > 0 && (
+            <div id="store-services" className="mt-10 scroll-mt-36 border-t border-[#1D1D28] pt-8 md:scroll-mt-24">
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="mb-1 text-xs font-medium text-[#ECC86A]">Services & Pricing</p>
+                  <h2 className="font-luxury text-xl font-semibold text-white">Book a Service</h2>
+                </div>
+                <a
+                  href="#store-booking"
+                  className="inline-flex min-h-10 items-center rounded-md border border-[#D4AF37]/45 px-3 text-xs text-[#ECC86A] hover:bg-[#19170E]"
+                >
+                  Request a Slot
+                </a>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {services.map((service) => {
+                  const image = safeCustomPageImage(service.imageUrl);
+                  return (
+                    <article
+                      key={service.id}
+                      className="rounded-lg border border-[#20202E] bg-[#0D0D14] p-4"
+                    >
+                      {image && (
+                        <img
+                          src={image}
+                          alt={service.name}
+                          width={1200}
+                          height={630}
+                          loading="lazy"
+                          decoding="async"
+                          className="mb-3 h-32 w-full rounded object-cover"
+                        />
+                      )}
+                      <p className="text-[10px] uppercase tracking-wider text-[#8A8AA0]">{service.category}</p>
+                      <h3 className="mt-0.5 text-sm font-semibold text-white">{service.name}</h3>
+                      {service.description && (
+                        <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-[#A5A5B8]">
+                          {service.description}
+                        </p>
+                      )}
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <span className="font-mono-tabular text-sm font-semibold text-[#ECC86A]">
+                          ₹{service.price.toLocaleString('en-IN')}
+                        </span>
+                        {service.durationMinutes > 0 && (
+                          <span className="text-[10px] text-[#8A8AA0]">{service.durationMinutes} min</span>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Recently Viewed Products */}
           {recentProducts.length > 0 && (
             <div className="mt-10 pt-8 border-t border-[#1D1D28]">
@@ -1722,40 +1899,22 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
             )}
 
             {/* Custom Navigation Pages */}
-            {(() => {
-              let pages: Array<{ slug: string; title: string; content: string }> = [];
-              try {
-                const parsed = JSON.parse(seoConfig?.customPagesJson || '[]');
-                if (Array.isArray(parsed)) pages = parsed;
-              } catch {}
-              if (pages.length === 0) return null;
-              return (
-                <div className="pt-3 border-t border-[#1D1D28] space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {pages.map((pg) => (
-                      <button
-                        key={pg.slug}
-                        type="button"
-                        onClick={() => setActiveCustomPage(activeCustomPage?.slug === pg.slug ? null : pg)}
-                        className={`px-2.5 py-1 rounded text-[11px] border ${
-                          activeCustomPage?.slug === pg.slug
-                            ? 'border-[#D4AF37] bg-[#1C180E] text-[#ECC86A]'
-                            : 'border-[#262634] text-[#A5A5B8] hover:text-white'
-                        }`}
-                      >
-                        {pg.title}
-                      </button>
-                    ))}
-                  </div>
-                  {activeCustomPage && (
-                    <div className="rounded border border-[#1E1E2B] bg-[#09090D] p-3 text-xs">
-                      <p className="font-semibold text-white mb-1">{activeCustomPage.title}</p>
-                      <p className="text-[#A5A5B8] leading-relaxed">{activeCustomPage.content}</p>
-                    </div>
-                  )}
+            {navCustomPages.length > 0 && (
+              <div className="pt-3 border-t border-[#1D1D28] space-y-2">
+                <p className="text-[11px] uppercase tracking-wider text-[#8A8AA0]">Custom pages</p>
+                <div className="flex flex-wrap gap-2">
+                  {navCustomPages.map((page) => (
+                    <a
+                      key={page.slug}
+                      href={`#page-${page.slug}`}
+                      className="px-2.5 py-1 rounded text-[11px] border border-[#262634] text-[#A5A5B8] hover:text-white"
+                    >
+                      {page.title}
+                    </a>
+                  ))}
                 </div>
-              );
-            })()}
+              </div>
+            )}
           </div>
 
           {/* Consent-Based Newsletter Subscription */}
@@ -1830,6 +1989,30 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           </form>
         </div>
       </section>
+
+      {navCustomPages.map((page, index) => (
+        <section
+          key={page.slug}
+          id={`page-${page.slug}`}
+          className="scroll-mt-36 border-b border-[#1D1D28] md:scroll-mt-24"
+          style={{ order: 100 + index }}
+        >
+          <div className="mx-auto max-w-4xl space-y-4 px-4 py-10 sm:px-6">
+            <h1 className="font-luxury text-2xl font-semibold text-white">{page.title}</h1>
+            {page.blocks.length > 0 ? (
+              <div className="space-y-4 text-sm leading-relaxed text-[#B6B6C8]">
+                {page.blocks.map((block, blockIndex) => (
+                  <CustomPageBlockView key={`${page.slug}-${blockIndex}`} block={block} />
+                ))}
+              </div>
+            ) : page.content ? (
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#B6B6C8]">{page.content}</p>
+            ) : (
+              <p className="text-sm text-[#8A8AA0]">Content for this page is being prepared by {tenant.name}.</p>
+            )}
+          </div>
+        </section>
+      ))}
       </div>
 
       {/* Quote Request Modal */}

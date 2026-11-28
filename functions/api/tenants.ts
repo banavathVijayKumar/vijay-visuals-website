@@ -28,6 +28,7 @@ import {
   validateSlugFormat,
 } from './_tenantAccess';
 import { PublicationRow, mapPublicationToTenant, sanitizeLogoConfig } from './_tenantMapper';
+import { sanitizeCustomPages } from './_customPages';
 import { sanitizeDemoDraftForStorage } from './_demoDraft';
 import { FREE_START_PLAN_CODE } from './_planTiers';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from './plans';
@@ -174,17 +175,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
         .slice(0, 12)
     : ['hero', 'catalog', 'gallery', 'booking', 'contact'];
 
-  const customPages = Array.isArray(body.customPages)
-    ? body.customPages
-        .filter((p: any) => p && typeof p === 'object' && p.slug && p.title)
-        .map((p: any) => ({
-          slug: sanitizeText(p.slug, 40).toLowerCase().replace(/[^a-z0-9-]/g, ''),
-          title: sanitizeText(p.title, 80),
-          content: sanitizeText(p.content, 2000),
-        }))
-        .filter((p: any) => p.slug && p.title)
-        .slice(0, 10)
-    : [];
+  const customPages = sanitizeCustomPages(body.customPages);
 
   const rawSocials = body.socialLinks && typeof body.socialLinks === 'object' ? body.socialLinks : {};
   const socialLinks = {
