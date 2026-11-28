@@ -226,6 +226,9 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     ownedTenants,
     deliveryProfiles,
     deliveryEligible,
+    // Top-level server-derived flag consumed by useAuth() to hydrate the
+    // Business Owner route. Keep in sync with user.isPlatformOwner.
+    isPlatformOwner: auth.user.isOwner,
   });
 }
 

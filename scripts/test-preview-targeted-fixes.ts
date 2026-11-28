@@ -373,7 +373,8 @@ await test('platform error fallback retains official support contact', () => {
 
 await test('storefront error boundary is explicitly marked as public-host where applicable', () => {
   const app = read('src/App.tsx');
-  assert.match(app, /<ErrorBoundary[\s\S]*sectionName=\{isPublicTenantHost \? 'Website' : 'Storefront View'\}[\s\S]*publicHost=\{isPublicTenantHost\}/);
+  assert.match(app, /const publicStorefront = isPublicTenantHost \|\| activeView === 'storefront'/);
+  assert.match(app, /<ErrorBoundary[\s\S]*sectionName=\{publicStorefront \? 'Website' : 'Storefront View'\}[\s\S]*publicHost=\{publicStorefront\}/);
 });
 
 console.log(`\nPASS — ${passed}/15 targeted preview regression groups.`);

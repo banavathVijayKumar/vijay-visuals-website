@@ -31,7 +31,6 @@ import {
 } from '../db/schema.ts';
 import { AuthRequest, optionalAuth, requireAuth } from '../middleware/auth.ts';
 import { generateAiText } from '../lib/gemini.ts';
-import { getRazorpayStatus } from '../lib/razorpay.ts';
 import { resolveGoogleMapsApiKey } from './locations.ts';
 
 async function writeOsAudit(
@@ -1425,7 +1424,8 @@ STRICT RULES:
       dbHealthy = false;
     }
     const dbLatencyMs = Date.now() - startedAt;
-    const rzp = getRazorpayStatus();
+    const cashfreeConfigured = Boolean(process.env.CASHFREE_CLIENT_ID && process.env.CASHFREE_CLIENT_SECRET);
+    const cashfreeMode = (process.env.CASHFREE_ENV || 'sandbox').trim().toLowerCase() === 'production' ? 'production' : 'sandbox';
 
     res.json({
       serviceStatus: {
@@ -1438,7 +1438,7 @@ STRICT RULES:
           { name: 'Firebase Google Authentication', status: 'configured', requiredFor: 'Owner, Staff, Delivery & Customer sign-in' },
           { name: 'Gemini AI Business Assistant', status: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY') ? 'configured' : 'not_configured', requiredFor: 'AI Business Assistant, AI Website Setup, SEO & Content Studio' },
           { name: 'Google Maps Platform (Maps JS & Geocoding)', status: Boolean(resolveGoogleMapsApiKey()) ? 'configured' : 'not_configured', requiredFor: 'Interactive branch map picker, storefront map preview, geocoding & live delivery map' },
-          { name: 'Razorpay Payments & Route', status: rzp.configured ? 'configured' : 'not_configured', requiredFor: 'Online checkout, package payments & split seller payouts' },
+          { name: `Cashfree Payment Gateway (${cashfreeMode})`, status: cashfreeConfigured ? 'configured' : 'not_configured', requiredFor: 'Online checkout and package payments; seller settlements remain pending activation until separately verified' },
           { name: 'Domain Registrar Purchase API', status: Boolean(process.env.DOMAIN_REGISTRAR_API_KEY) ? 'configured' : 'not_configured', requiredFor: 'Direct in-app domain registration (external customer-owned DNS wizard is live)' },
           { name: 'WhatsApp Business Cloud API', status: Boolean(process.env.WHATSAPP_API_TOKEN) ? 'configured' : 'not_configured', requiredFor: 'Automated WhatsApp notifications (manual click-to-chat wa.me is live)' },
           { name: 'Transactional Email (SMTP/Resend)', status: Boolean(process.env.SMTP_HOST || process.env.RESEND_API_KEY) ? 'configured' : 'not_configured', requiredFor: 'Automated email campaigns & order emails' },
@@ -1512,8 +1512,8 @@ STRICT RULES:
           a: 'Because accurate legal accounting profit depends on complete purchase costs, depreciation, tax filings, and bank reconciliation reviewed by a Chartered Accountant. We clearly label operational estimates so you are never misled.',
         },
         {
-          q: 'Can I accept Cash on Delivery and UPI before Razorpay KYC is approved?',
-          a: 'Yes. Cash on Delivery and Direct Seller UPI Reference work immediately. Razorpay Route split settlements activate once your Seller KYC is verified.',
+          q: 'Can I accept Cash on Delivery and Direct Seller UPI while Cashfree is being configured?',
+          a: 'Yes. Cash on Delivery and Direct Seller UPI Reference work immediately. Cashfree online checkout requires server-side Cashfree credentials; seller settlements remain pending activation until separately verified.',
         },
         {
           q: 'Can I export my data if I want a backup or want to migrate?',

@@ -98,6 +98,9 @@ function PlatformShell() {
   const [activeView, setActiveView] = useState<AppView>(initial.view);
   const [activeSlug, setActiveSlug] = useState<string | null>(initial.slug);
   const [isPublicTenantHost, setIsPublicTenantHost] = useState<boolean>(() => Boolean(getEdgeTenantSlug()));
+  // /site/:slug is tenant-facing even on the platform host. Never show owner,
+  // marketplace, or platform-support guidance inside a published storefront.
+  const publicStorefront = isPublicTenantHost || activeView === 'storefront';
   const [lang, setLang] = useState<Lang>(resolveInitialLang);
   const [currency, setCurrency] = useState<CurrencyCode>(resolveInitialCurrency);
   const [fxRates, setFxRates] = useState<Record<string, number> | null>(null);
@@ -505,13 +508,13 @@ function PlatformShell() {
 
         {activeView === 'storefront' && activeSlug && (
           <ErrorBoundary
-            sectionName={isPublicTenantHost ? 'Website' : 'Storefront View'}
-            publicHost={isPublicTenantHost}
+            sectionName={publicStorefront ? 'Website' : 'Storefront View'}
+            publicHost={publicStorefront}
           >
             <StorefrontView
               slug={activeSlug}
               lang={lang}
-              publicHost={isPublicTenantHost}
+              publicHost={publicStorefront}
               wishlistIds={wishlistIds}
               onToggleWishlist={toggleWishlist}
               onBack={() => navigateTo('marketplace')}
@@ -524,7 +527,7 @@ function PlatformShell() {
 
         {(activeView === 'storefront' && !activeSlug) || activeView === 'not-found' ? (
           <NotFoundView
-            publicHost={isPublicTenantHost}
+            publicHost={publicStorefront}
             onGoHome={() => navigateTo('studio')}
             onGoMarketplace={() => navigateTo('marketplace')}
           />

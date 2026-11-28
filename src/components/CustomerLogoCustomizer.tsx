@@ -22,25 +22,11 @@ import {
   Download,
   Trash2,
 } from 'lucide-react';
+import type { TenantLogoConfig } from '../types/platform';
 
-export interface LogoConfig {
-  type: 'image' | 'text';
-  imageUrl?: string;
-  imageFileName?: string;
-  businessName: string;
-  initials: string;
-  tagline?: string;
-  fontFamily: string;
-  layout: 'badge_left' | 'stacked' | 'badge_only' | 'text_only';
-  badgeShape: 'circle' | 'rounded_square' | 'shield' | 'hexagon' | 'minimal_frame';
-  badgeBgColor: string;
-  badgeBorderColor: string;
-  badgeTextColor: string;
-  nameTextColor: string;
-  taglineTextColor: string;
-  size: 'sm' | 'md' | 'lg';
-  letterSpacing: 'tight' | 'normal' | 'wide' | 'luxury';
-}
+// The persisted tenant shape is authoritative; the customizer never invents
+// styling fields that the server cannot store or the storefront cannot render.
+export type LogoConfig = TenantLogoConfig;
 
 interface CustomerLogoCustomizerProps {
   tenantId: string | number;

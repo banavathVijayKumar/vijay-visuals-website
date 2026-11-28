@@ -295,17 +295,17 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       }
     } catch {}
 
-    // 5. Webhook Events from platform_audit_logs
+    // 5. Webhook events from the real durable audit ledger (vv_audit_log).
     try {
       const whRes = await env.DB.prepare(
-        `SELECT id, action, created_at FROM platform_audit_logs
-         WHERE action LIKE 'cashfree_webhook%' OR target_type = 'cashfree_payments'
+        `SELECT id, action, entity_type, created_at FROM vv_audit_log
+         WHERE action LIKE 'cashfree_webhook%' OR entity_type = 'cashfree_payments'
          ORDER BY created_at DESC LIMIT 50`
-      ).all<{ id: number; action: string; created_at: string }>();
+      ).all<{ id: string; action: string; entity_type: string; created_at: string }>();
 
-      for (const w of whRes.results || []) {
+      for (const [index, w] of (whRes.results || []).entries()) {
         webhookEvents.push({
-          id: Number(w.id || 0),
+          id: index + 1,
           event: String(w.action || 'cashfree_webhook'),
           createdAt: String(w.created_at || ''),
         });
@@ -365,21 +365,21 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
       }
     } catch {}
 
-    // 8. Delivery/recovery history from the durable audit ledger
+    // 8. Delivery/recovery history from the real durable audit ledger.
     try {
       const deliveryRes = await env.DB.prepare(
-        `SELECT id, action, target_type, target_id, metadata_json, created_at
-         FROM platform_audit_logs
-         WHERE target_type IN ('platform_payments', 'customer_website_publications')
+        `SELECT id, action, entity_type, entity_id, metadata_json, created_at
+         FROM vv_audit_log
+         WHERE entity_type IN ('platform_payments', 'customer_website_publications')
             OR action LIKE '%delivery%'
          ORDER BY created_at DESC LIMIT 100`
       ).all<Record<string, any>>();
       for (const d of deliveryRes.results || []) {
         deliveryHistory.push({
-          id: Number(d.id || 0),
+          id: String(d.id || ''),
           action: String(d.action || ''),
-          targetType: String(d.target_type || ''),
-          targetId: String(d.target_id || ''),
+          targetType: String(d.entity_type || ''),
+          targetId: String(d.entity_id || ''),
           details: sanitizeText(String(d.metadata_json || ''), 300),
           createdAt: String(d.created_at || ''),
         });

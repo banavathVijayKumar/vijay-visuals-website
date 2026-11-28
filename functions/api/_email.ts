@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { CloudflareEnv, escapeHtml, sanitizeText } from './_shared';
+import { PLATFORM_CONTACT } from './_platformContact';
 import { isGmailOAuthConfigured, sendGmailOAuthMessage } from './_gmailOAuth';
 
 export interface EmailSendOptions {
@@ -477,8 +478,8 @@ const DEFAULT_EMAIL_FOOTER_HTML = `
                 Vijay Visuals — Hyderabad, Telangana, India
               </p>
               <p style="margin: 0 0 8px 0;">
-                Official Support: <a href="tel:+919361024823" style="color: #DFBA5A; text-decoration: none;">+91 93610 24823</a> ·
-                <a href="mailto:vk66278@gmail.com" style="color: #DFBA5A; text-decoration: none;">vk66278@gmail.com</a>
+                Official Support: <a href="tel:+${PLATFORM_CONTACT.whatsappNumber}" style="color: #DFBA5A; text-decoration: none;">${PLATFORM_CONTACT.phone}</a> ·
+                <a href="mailto:${PLATFORM_CONTACT.email}" style="color: #DFBA5A; text-decoration: none;">${PLATFORM_CONTACT.email}</a>
               </p>
               <p style="margin: 0; font-size: 10px; color: #505062;">
                 This is an automated system transmission. Please do not reply directly with passwords or private tokens.
@@ -880,7 +881,7 @@ export function buildWebsiteDeliveryEmailHtml(params: {
 
     <div style="background-color: #14141E; border-left: 3px solid #22C55E; border-radius: 4px; padding: 14px 18px; margin: 24px 0 0 0;">
       <p style="margin: 0; font-size: 12px; color: #9A9AB0; line-height: 1.5;">
-        <strong style="color: #FFFFFF;">Continuous Support:</strong> If you need any assistance, our dedicated engineering team is reachable on WhatsApp at <strong>+91 93610 24823</strong>.
+        <strong style="color: #FFFFFF;">Continuous Support:</strong> If you need any assistance, our dedicated engineering team is reachable on WhatsApp at <strong>${PLATFORM_CONTACT.phone}</strong>.
       </p>
     </div>
   `;

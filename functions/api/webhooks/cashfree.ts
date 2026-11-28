@@ -19,6 +19,7 @@ import {
   sanitizeText,
   writeAuditLog,
 } from '../_shared';
+import { PLATFORM_CONTACT } from '../_platformContact';
 import {
   customerApprovalBlockedResponse,
   finalizeCashfreePlatformRefund,
@@ -952,7 +953,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
               `🔍 *Track Order:* https://vijay-visuals-site.pages.dev/dashboard`,
               ``,
               `Thank you for choosing Vijay Visuals!`,
-              `Official Mobile: +91 93610 24823`,
+              `Official Mobile: ${PLATFORM_CONTACT.phone}`,
             ].join('\n');
 
         const paymentTemplate = approvedPaymentTemplate(env);

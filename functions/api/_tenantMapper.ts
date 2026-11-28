@@ -73,6 +73,25 @@ export interface MappedTenantModules {
   wholesale: boolean;
 }
 
+export interface MappedTenantLogoConfig {
+  type: 'image' | 'text';
+  imageUrl?: string;
+  imageFileName?: string;
+  businessName: string;
+  initials: string;
+  tagline?: string;
+  fontFamily: string;
+  layout: 'badge_left' | 'stacked' | 'badge_only' | 'text_only';
+  badgeShape: 'circle' | 'rounded_square' | 'shield' | 'hexagon' | 'minimal_frame';
+  badgeBgColor: string;
+  badgeBorderColor: string;
+  badgeTextColor: string;
+  nameTextColor: string;
+  taglineTextColor: string;
+  size: 'sm' | 'md' | 'lg';
+  letterSpacing: 'tight' | 'normal' | 'wide' | 'luxury';
+}
+
 export interface MappedTenantRecord {
   id: number;
   websiteId: string;
@@ -90,6 +109,7 @@ export interface MappedTenantRecord {
   description: string;
   logoText: string;
   logoImage: string;
+  logoConfig?: MappedTenantLogoConfig;
   bannerImage: string;
   galleryImages: string[];
   galleryItems: MappedGalleryItem[];
@@ -171,6 +191,40 @@ function cleanMediaSrc(value: unknown): string {
     return '';
   }
   return '';
+}
+
+export function sanitizeLogoConfig(
+  raw: unknown,
+  fallbackName = '',
+  fallbackInitials = 'VV'
+): MappedTenantLogoConfig | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const cfg = raw as Record<string, unknown>;
+  const pick = (value: unknown, allowed: string[], fallback: string) =>
+    allowed.includes(String(value || '')) ? String(value) : fallback;
+  const imageUrl = cleanMediaSrc(cfg.imageUrl);
+  return {
+    type: cfg.type === 'image' && imageUrl ? 'image' : 'text',
+    imageUrl,
+    imageFileName: cleanString(cfg.imageFileName, 120),
+    businessName: cleanString(cfg.businessName, 120) || fallbackName,
+    initials: cleanString(cfg.initials, 8).toUpperCase() || fallbackInitials,
+    tagline: cleanString(cfg.tagline, 120),
+    fontFamily: cleanString(cfg.fontFamily, 60) || 'Cinzel',
+    layout: pick(cfg.layout, ['badge_left', 'stacked', 'badge_only', 'text_only'], 'badge_left') as MappedTenantLogoConfig['layout'],
+    badgeShape: pick(
+      cfg.badgeShape,
+      ['circle', 'rounded_square', 'shield', 'hexagon', 'minimal_frame'],
+      'circle'
+    ) as MappedTenantLogoConfig['badgeShape'],
+    badgeBgColor: cleanColor(cfg.badgeBgColor, '#181822'),
+    badgeBorderColor: cleanColor(cfg.badgeBorderColor, '#D4AF37'),
+    badgeTextColor: cleanColor(cfg.badgeTextColor, '#D4AF37'),
+    nameTextColor: cleanColor(cfg.nameTextColor, '#FFFFFF'),
+    taglineTextColor: cleanColor(cfg.taglineTextColor, '#ECC86A'),
+    size: pick(cfg.size, ['sm', 'md', 'lg'], 'md') as MappedTenantLogoConfig['size'],
+    letterSpacing: pick(cfg.letterSpacing, ['tight', 'normal', 'wide', 'luxury'], 'wide') as MappedTenantLogoConfig['letterSpacing'],
+  };
 }
 
 function cleanExternalUrl(value: unknown): string {
@@ -437,6 +491,9 @@ export function mapPublicationToTenant(
     : [];
 
   const demoBuilderDraft = sanitizeDemoDraftForStorage(parsed.demoBuilderDraft);
+  const resolvedLogoText = cleanString(parsed.logoText, 8) || computeInitials(name);
+  const resolvedLogoImage = cleanMediaSrc(parsed.logoImage);
+  const resolvedLogoConfig = sanitizeLogoConfig(parsed.logoConfig, name, resolvedLogoText);
 
   return {
     id: rowId,
@@ -460,8 +517,9 @@ export function mapPublicationToTenant(
       cleanString(parsed.description, 1200) ||
       cleanString(parsed.about, 1200) ||
       cleanString(profile?.description, 1200),
-    logoText: cleanString(parsed.logoText, 8) || computeInitials(name),
-    logoImage: cleanMediaSrc(parsed.logoImage),
+    logoText: resolvedLogoText,
+    logoImage: resolvedLogoImage,
+    ...(resolvedLogoConfig ? { logoConfig: resolvedLogoConfig } : {}),
     // Only validated media sources are emitted to customer storefronts.
     bannerImage: cleanMediaSrc(parsed.bannerImage) || cleanMediaSrc(parsed.heroImage),
     galleryImages,

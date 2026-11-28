@@ -27,7 +27,7 @@ import {
   validateSafeImageSource,
   validateSlugFormat,
 } from './_tenantAccess';
-import { PublicationRow, mapPublicationToTenant } from './_tenantMapper';
+import { PublicationRow, mapPublicationToTenant, sanitizeLogoConfig } from './_tenantMapper';
 import { sanitizeDemoDraftForStorage } from './_demoDraft';
 import { FREE_START_PLAN_CODE } from './_planTiers';
 import { ALLOWED_WEBSITE_PACKAGE_CODES } from './plans';
@@ -207,6 +207,8 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       : validateGalleryImages(body.galleryImages);
   const enabledModules = validateEnabledModules(body.enabledModules);
   const demoBuilderDraft = sanitizeDemoDraftForStorage(body.demoBuilderDraft);
+  const logoText = sanitizeText(body.logoText, 8).toUpperCase() || 'VV';
+  const logoConfig = sanitizeLogoConfig(body.logoConfig, name, logoText);
 
   const websitePayload: Record<string, unknown> = {
     businessName: name,
@@ -223,8 +225,9 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     heroSubheadline: sanitizeText(body.heroSubheadline, 600),
     ctaText: sanitizeText(body.ctaText, 80),
     description: sanitizeText(body.description, 1200),
-    logoText: sanitizeText(body.logoText, 8).toUpperCase(),
+    logoText,
     logoImage: validateSafeImageSource(body.logoImage),
+    ...(logoConfig ? { logoConfig } : {}),
     bannerImage: validateSafeImageSource(body.bannerImage),
     galleryImages,
     galleryItems,

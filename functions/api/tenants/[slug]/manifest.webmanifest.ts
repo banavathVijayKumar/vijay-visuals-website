@@ -54,8 +54,8 @@ export async function onRequestGet(
     parsed = row.website_json ? JSON.parse(row.website_json) : {};
   } catch {}
 
-  // Branded install manifests are a licensed PWA feature. Keep unlicensed
-  // storefronts on the platform identity instead of exposing a tenant manifest.
+  // Branded install manifests are a licensed PWA feature. Unlicensed storefronts
+  // get no branded manifest instead of inheriting the platform PWA identity.
   const pwaEnabled = parsed.pwaEnabled === true;
   const hasLicenseKey =
     typeof parsed.pwaLicenseKey === 'string' && parsed.pwaLicenseKey.trim().length >= 8;
@@ -72,6 +72,12 @@ export async function onRequestGet(
   const tenant = mapPublicationToTenant(row, parsed);
   const shortName = cleanString(tenant.pwaShortName || tenant.name, 12) || 'Store';
   const startUrl = `/site/${tenant.slug}`;
+  const configuredIcon = [parsed.pwaIconUrl, tenant.logoImage].find(
+    (value): value is string =>
+      typeof value === 'string' &&
+      (/^https?:\/\//i.test(value.trim()) || (value.trim().startsWith('/') && !value.trim().startsWith('//')))
+  );
+  const tenantIcon = configuredIcon ? configuredIcon.trim() : '';
 
   const manifest = {
     id: startUrl,
@@ -83,26 +89,31 @@ export async function onRequestGet(
     display: 'standalone',
     background_color: tenant.accentColor || '#08080A',
     theme_color: tenant.pwaThemeColor || tenant.primaryColor || '#08080A',
-    icons: [
-      {
-        src: '/pwa-192x192.png',
-        sizes: '192x192',
-        type: 'image/png',
-        purpose: 'any',
-      },
-      {
-        src: '/pwa-512x512.png',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'any',
-      },
-      {
-        src: '/pwa-maskable-512x512.png',
-        sizes: '512x512',
-        type: 'image/png',
-        purpose: 'maskable',
-      },
-    ],
+    icons: tenantIcon
+      ? [
+          { src: tenantIcon, sizes: 'any', purpose: 'any' },
+          { src: tenantIcon, sizes: 'any', purpose: 'maskable' },
+        ]
+      : [
+          {
+            src: '/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-maskable-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
   };
 
   return new Response(JSON.stringify(manifest, null, 2), {

@@ -33,6 +33,7 @@ import {
   TenantGlobalEnrichment,
   cleanString,
   mapPublicationToTenant,
+  sanitizeLogoConfig,
 } from '../_tenantMapper';
 import { getEdgeCashfreeStatus } from '../payments/_cashfree';
 import { sanitizeDemoDraftForStorage } from '../_demoDraft';
@@ -488,6 +489,10 @@ export async function onRequestPatch(
   if (typeof body.description === 'string') current.description = sanitizeText(body.description, 1200);
   if (typeof body.logoText === 'string') current.logoText = sanitizeText(body.logoText, 8).toUpperCase();
   if (body.logoImage !== undefined) current.logoImage = validateSafeImageSource(body.logoImage);
+  if (body.logoConfig !== undefined) {
+    const logoConfig = sanitizeLogoConfig(body.logoConfig);
+    if (logoConfig) current.logoConfig = logoConfig;
+  }
   if (body.bannerImage !== undefined) current.bannerImage = validateSafeImageSource(body.bannerImage);
 
   if (Array.isArray(body.galleryItems)) {

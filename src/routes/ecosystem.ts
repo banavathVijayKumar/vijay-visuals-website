@@ -216,7 +216,7 @@ export function createEcosystemRouter(): Router {
   const router = express.Router();
 
   // =========================================================================
-  // PUBLIC ANNOUNCEMENTS & RAZORPAY STATUS
+  // PUBLIC ANNOUNCEMENTS & CASHFREE STATUS
   // =========================================================================
   router.get('/api/announcements', async (_req, res) => {
     try {
@@ -234,11 +234,18 @@ export function createEcosystemRouter(): Router {
   });
 
   router.get('/api/payments/config', (_req, res) => {
-    res.json({ razorpay: getRazorpayStatus() });
+    res.json({
+      gateway: 'cashfree',
+      cashfree: {
+        configured: Boolean(process.env.CASHFREE_CLIENT_ID && process.env.CASHFREE_CLIENT_SECRET),
+        mode: (process.env.CASHFREE_ENV || 'sandbox').trim().toLowerCase() === 'production' ? 'production' : 'sandbox',
+        webhookConfigured: Boolean(process.env.CASHFREE_WEBHOOK_SECRET),
+      },
+    });
   });
 
   // =========================================================================
-  // MODULE 3A: VIJAY VISUALS PLATFORM PAYMENTS (OWN RAZORPAY MERCHANT ACCOUNT)
+  // MODULE 3A: VIJAY VISUALS PLATFORM PAYMENTS (CASHFREE ONLY; LEGACY HANDLERS RETIRED)
   // =========================================================================
   const platformOrderSchema = z.object({
     planCode: z.string().min(2).max(60),
@@ -512,7 +519,11 @@ export function createEcosystemRouter(): Router {
         account: account || null,
         transfers,
         codSummary: { codCollectedInr, codPendingInr },
-        razorpay: getRazorpayStatus(),
+        cashfree: {
+          configured: Boolean(process.env.CASHFREE_CLIENT_ID && process.env.CASHFREE_CLIENT_SECRET),
+          mode: (process.env.CASHFREE_ENV || 'sandbox').trim().toLowerCase() === 'production' ? 'production' : 'sandbox',
+          sellerSettlementStatus: 'pending_activation',
+        },
       });
     } catch (error) {
       console.error('GET seller payout account failed:', error);
@@ -1353,7 +1364,12 @@ export function createEcosystemRouter(): Router {
       ]);
 
       res.json({
-        razorpay: getRazorpayStatus(),
+        cashfree: {
+          gateway: 'cashfree',
+          configured: Boolean(process.env.CASHFREE_CLIENT_ID && process.env.CASHFREE_CLIENT_SECRET),
+          mode: (process.env.CASHFREE_ENV || 'sandbox').trim().toLowerCase() === 'production' ? 'production' : 'sandbox',
+          sellerSettlementStatus: 'pending_activation',
+        },
         platformPayments: payments,
         sellerAccounts,
         sellerTransfers: transfers,

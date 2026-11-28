@@ -37,6 +37,25 @@ export interface TenantModules {
   wholesale: boolean;
 }
 
+export interface TenantLogoConfig {
+  type: 'image' | 'text';
+  imageUrl?: string;
+  imageFileName?: string;
+  businessName: string;
+  initials: string;
+  tagline?: string;
+  fontFamily: string;
+  layout: 'badge_left' | 'stacked' | 'badge_only' | 'text_only';
+  badgeShape: 'circle' | 'rounded_square' | 'shield' | 'hexagon' | 'minimal_frame';
+  badgeBgColor: string;
+  badgeBorderColor: string;
+  badgeTextColor: string;
+  nameTextColor: string;
+  taglineTextColor: string;
+  size: 'sm' | 'md' | 'lg';
+  letterSpacing: 'tight' | 'normal' | 'wide' | 'luxury';
+}
+
 export interface TenantRecord {
   id: number;
   websiteId?: string;
@@ -54,6 +73,7 @@ export interface TenantRecord {
   description: string;
   logoText: string;
   logoImage?: string;
+  logoConfig?: TenantLogoConfig;
   bannerImage: string;
   galleryImages?: string[];
   galleryItems?: GalleryItem[];

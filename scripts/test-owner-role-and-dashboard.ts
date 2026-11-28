@@ -286,6 +286,7 @@ await test('verified Owner is recognized by /api/me while Supabase profile remai
   const body = await me('ownerCandidate');
   assert.equal(body.user.role, 'platform_owner');
   assert.equal(body.user.isPlatformOwner, true);
+  assert.equal(body.isPlatformOwner, true);
   assert.equal(body.user.supabaseRole, 'customer');
 });
 
@@ -357,6 +358,7 @@ await test('Owner is denied Super Admin and platform staff guards; Kalyani stays
   const adminMe = await me('admin');
   assert.equal(adminMe.user.role, 'super_admin');
   assert.equal(adminMe.user.isPlatformOwner, false);
+  assert.equal(adminMe.isPlatformOwner, false);
   assert.equal(adminMe.user.email, 'kalyanibanavath6@gmail.com');
 });
 
@@ -368,6 +370,8 @@ await test('Customer stays end_customer with no platform Owner or Super Admin gr
     assert.equal(customerAuth.user.isOwner, false);
     assert.equal(customerAuth.user.isSuperAdmin, false);
   }
+  const customerMe = await me('customer');
+  assert.equal(customerMe.isPlatformOwner, false);
   const customerDashboard = await dashboardGet(ctx(req('https://preview.local/api/platform-owner/dashboard', tokens.customer)));
   assert.equal(customerDashboard.status, 403);
 });

@@ -91,7 +91,12 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
           email: String(u.email || ''),
           name: String(u.full_name || u.email || 'User'),
           phone: '',
-          role: u.role === 'admin' ? 'super_admin' : 'business_owner',
+          role:
+            u.role === 'admin' || u.role === 'super_admin'
+              ? 'super_admin'
+              : ['business_owner', 'staff', 'delivery_partner', 'customer'].includes(String(u.role))
+                ? String(u.role)
+                : 'business_owner',
           preferredLang: 'en',
           savedAddressesJson: '[]',
           accountStatus: String(u.status || 'active'),

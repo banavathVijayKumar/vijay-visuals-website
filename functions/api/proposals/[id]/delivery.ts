@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { AuthenticatedUser, requireUser } from '../../_auth';
+import { PLATFORM_CONTACT } from '../../_platformContact';
 import { getSafeRequestOrigin } from '../../payments/_cashfree';
 import {
   PagesContext,
@@ -158,8 +159,8 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
       ``,
       `Warm regards,`,
       `Vijay Visuals — Digital Agency`,
-      `Official Mobile: +91 93610 24823`,
-      `Official Email: vk66278@gmail.com`,
+      `Official Mobile: ${PLATFORM_CONTACT.phone}`,
+      `Official Email: ${PLATFORM_CONTACT.email}`,
       `Hyderabad, Telangana`,
     ].join('\n');
 
@@ -247,7 +248,7 @@ export async function onRequestPost(context: PagesContext<{ id: string }>): Prom
 
         <div style="border-top: 1px solid #222230; padding-top: 20px; font-size: 11px; color: #717182; text-align: center;">
           <p style="margin: 0; color: #D4AF37; font-weight: bold;">VIJAY VISUALS · Digital Architecture</p>
-          <p style="margin: 4px 0;">Official Mobile: <a href="tel:+919361024823" style="color: #ECC86A; text-decoration: none;">+91 93610 24823</a> · Official Email: <a href="mailto:vk66278@gmail.com" style="color: #ECC86A; text-decoration: none;">vk66278@gmail.com</a></p>
+          <p style="margin: 4px 0;">Official Mobile: <a href="tel:+${PLATFORM_CONTACT.whatsappNumber}" style="color: #ECC86A; text-decoration: none;">${PLATFORM_CONTACT.phone}</a> · Official Email: <a href="mailto:${PLATFORM_CONTACT.email}" style="color: #ECC86A; text-decoration: none;">${PLATFORM_CONTACT.email}</a></p>
           <p style="margin: 4px 0;">Customer Ownership of Domain & Payment Gateway Guaranteed · Hyderabad, Telangana</p>
         </div>
       </div>

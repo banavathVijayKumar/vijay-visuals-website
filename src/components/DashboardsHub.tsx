@@ -82,7 +82,7 @@ import { AdminDomainManagement } from './AdminDomainManagement';
 import { OwnerReviewsManager } from './OwnerReviewsManager';
 import { AdminReviewsModeration } from './AdminReviewsModeration';
 import { AdminDeliveriesPanel } from './AdminDeliveriesPanel';
-import { Lang } from '../data/content';
+import { CONTACT_INFO, Lang } from '../data/content';
 import { VijayVisualsLogo } from './VijayVisualsLogo';
 
 interface DashboardsHubProps {
@@ -467,12 +467,12 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
   useEffect(() => {
     if (profile) {
       setProfileName(profile.name);
-      setProfilePhone(profile.phone || '+91 9381362201');
-      setProfileEmail(profile.email || 'vk66278@gmail.com');
+      setProfilePhone(profile.phone || CONTACT_INFO.phone);
+      setProfileEmail(profile.email || CONTACT_INFO.email);
       setOwnerEditName(profile.name || 'VIJAY VISUALS');
-      setOwnerEditPhone(profile.phone || '+91 9381362201');
-      setOwnerEditEmail(profile.email || 'vk66278@gmail.com');
-      setJoinPhone((prev) => prev || profile.phone || '+91 9381362201');
+      setOwnerEditPhone(profile.phone || CONTACT_INFO.phone);
+      setOwnerEditEmail(profile.email || CONTACT_INFO.email);
+      setJoinPhone((prev) => prev || profile.phone || CONTACT_INFO.phone);
       try {
         const arr = JSON.parse(profile.savedAddressesJson || '[]');
         setSavedAddresses(Array.isArray(arr) ? arr : []);
@@ -1581,22 +1581,23 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                       tenantId={ownerData.tenant.id}
                       tenantName={ownerData.tenant.name}
                       currentLogo={{
+                        ...(ownerData.tenant.logoConfig || {}),
                         initials: ownerData.tenant.logoText,
                         businessName: ownerData.tenant.name,
+                        imageUrl: ownerData.tenant.logoImage || '',
                       }}
                       onSaveLogo={async (cfg) => {
-                        // Persist customized logo to tenant website settings
-                        try {
-                          await apiFetch(`/api/owner/tenants/${ownerData.tenant.id}/overview`, {
-                            method: 'PATCH',
-                            body: JSON.stringify({
-                              logoText: cfg.initials || 'VV',
-                              logoImage: cfg.type === 'image' ? cfg.imageUrl : null,
-                            }),
-                          });
-                        } catch {
-                          // Fallback local update
-                        }
+                        // Persist to the tenant PATCH endpoint that actually
+                        // accepts logoText/logoImage. Errors must reach the
+                        // customizer so it never claims a false success.
+                        await apiFetch(`/api/tenants/${ownerData.tenant.slug}`, {
+                          method: 'PATCH',
+                          body: JSON.stringify({
+                            logoText: cfg.initials || 'VV',
+                            logoImage: cfg.type === 'image' ? cfg.imageUrl || null : null,
+                            logoConfig: cfg,
+                          }),
+                        });
                         if (selectedTenantId) loadOwnerOverview(selectedTenantId);
                         onRefreshTenants();
                       }}
@@ -2758,7 +2759,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                               required
                               value={ownerEditPhone}
                               onChange={(e) => setOwnerEditPhone(e.target.value)}
-                              placeholder="+91 9381362201"
+                              placeholder={CONTACT_INFO.phone}
                               className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white font-mono-tabular"
                             />
                           </div>
@@ -2770,7 +2771,7 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                               required
                               value={ownerEditEmail}
                               onChange={(e) => setOwnerEditEmail(e.target.value)}
-                              placeholder="vk66278@gmail.com"
+                              placeholder={CONTACT_INFO.email}
                               className="w-full rounded border border-[#2A2A38] bg-[#08080C] px-3 py-2 text-white"
                             />
                           </div>
@@ -2792,14 +2793,14 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                         <p className="text-[11px] font-bold text-white uppercase tracking-wider">Clickable Verification Links:</p>
                         <div className="flex flex-wrap items-center gap-4 text-xs">
                           <a
-                            href={`tel:${ownerEditPhone.replace(/\s+/g, '') || '+919381362201'}`}
+                            href={`tel:${ownerEditPhone.replace(/\s+/g, '') || CONTACT_INFO.phone.replace(/\s+/g, '')}`}
                             className="inline-flex items-center gap-1.5 text-emerald-400 hover:underline"
                           >
                             <Phone className="w-3.5 h-3.5" />
-                            <span>Call: {ownerEditPhone || '+91 9381362201'}</span>
+                            <span>Call: {ownerEditPhone || CONTACT_INFO.phone}</span>
                           </a>
                           <a
-                            href={`https://wa.me/${(ownerEditPhone || '919381362201').replace(/[^0-9]/g, '')}`}
+                            href={`https://wa.me/${(ownerEditPhone || CONTACT_INFO.whatsappNumber).replace(/[^0-9]/g, '')}`}
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-1.5 text-emerald-400 hover:underline"
@@ -2808,11 +2809,11 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                             <span>WhatsApp Message</span>
                           </a>
                           <a
-                            href={`mailto:${ownerEditEmail || 'vk66278@gmail.com'}`}
+                            href={`mailto:${ownerEditEmail || CONTACT_INFO.email}`}
                             className="inline-flex items-center gap-1.5 text-[#ECC86A] hover:underline"
                           >
                             <Mail className="w-3.5 h-3.5" />
-                            <span>Email: {ownerEditEmail || 'vk66278@gmail.com'}</span>
+                            <span>Email: {ownerEditEmail || CONTACT_INFO.email}</span>
                           </a>
                         </div>
                       </div>
@@ -4296,12 +4297,22 @@ export const DashboardsHub: React.FC<DashboardsHubProps> = ({
                             <select
                               value={u.role}
                               onChange={async (e) => {
-                                await apiFetch(`/api/admin/users/${u.id}/role`, {
-                                  method: 'PATCH',
-                                  body: JSON.stringify({ role: e.target.value }),
-                                });
-                                await loadSuperAdmin();
-                                onNotify(`Updated role for ${u.email}.`);
+                                const nextRole = e.target.value;
+                                try {
+                                  await apiFetch(`/api/admin/users/${u.id}/role`, {
+                                    method: 'PATCH',
+                                    body: JSON.stringify({ role: nextRole }),
+                                  });
+                                  await loadSuperAdmin();
+                                  onNotify(`Updated role for ${u.email}.`);
+                                } catch (err) {
+                                  await loadSuperAdmin();
+                                  onNotify(
+                                    `Could not update role for ${u.email}: ${
+                                      err instanceof Error ? err.message : 'request failed'
+                                    }`
+                                  );
+                                }
                               }}
                               className="rounded border border-[#2A2A38] bg-[#08080C] px-2 py-1 text-xs text-white"
                             >

@@ -35,7 +35,6 @@ import { ensurePlatformSeeded } from './src/db/seed.ts';
 import { AuthRequest, optionalAuth, requireAuth } from './src/middleware/auth.ts';
 import { buildPublicTrackingResponse } from './src/lib/publicTracking.ts';
 import { generateAiText } from './src/lib/gemini.ts';
-import { getRazorpayStatus } from './src/lib/razorpay.ts';
 import { generateSlugFromName, SLUG_REGEX, validateSlug } from './src/lib/slug.ts';
 import {
   STOREFRONT_ROUTE_PREFIX,
@@ -208,14 +207,14 @@ async function assertTenantOwnerOrAdmin(req: AuthRequest, tenantId: number) {
 
 // ---------- HEALTH & EXTERNAL INTEGRATIONS STATUS ----------
 app.get('/api/health', (_req, res) => {
-  const rzp = getRazorpayStatus();
+  const cashfreeMode = (process.env.CASHFREE_ENV || 'sandbox').trim().toLowerCase() === 'production' ? 'production' : 'sandbox';
   res.json({
     ok: true,
     integrations: {
       postgresql: Boolean(process.env.SQL_HOST && process.env.SQL_DB_NAME),
       geminiAi: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'),
-      razorpayGateway: rzp.configured,
-      razorpayMode: rzp.mode,
+      cashfreeGateway: Boolean(process.env.CASHFREE_CLIENT_ID && process.env.CASHFREE_CLIENT_SECRET),
+      cashfreeMode,
       whatsappCloudApi: Boolean(process.env.WHATSAPP_CLOUD_API_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID),
       smtpEmail: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER),
       smsProvider: Boolean(process.env.SMS_PROVIDER_API_KEY),

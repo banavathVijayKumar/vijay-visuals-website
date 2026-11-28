@@ -262,3 +262,77 @@ export async function probeSupabaseAdminClient(
     return { ok: false, keyFormat: config.keyFormat, code: 'ADMIN_CLIENT_REJECTED' };
   }
 }
+
+/**
+ * UI role labels are translated to the exact Supabase `profiles.role` values
+ * understood by requireUser(). A raw client string is never written directly.
+ */
+export const UI_ROLE_TO_SUPABASE_PROFILE_ROLE = {
+  super_admin: 'super_admin',
+  business_owner: 'shop_owner',
+  staff: 'business_staff',
+  delivery_partner: 'delivery_partner',
+  customer: 'customer',
+} as const;
+
+export type SupabaseProfileRoleUpdateResult =
+  | { ok: true }
+  | { ok: false; code: string; status: number };
+
+/**
+ * Updates the authoritative Supabase profile role via the service-role key.
+ * D1 is only a mirror; callers must not report success unless this succeeds.
+ * No key, profile payload, or provider error text is returned to the client.
+ */
+export async function updateSupabaseProfileRole(
+  env: CloudflareEnv,
+  authSubject: string,
+  supabaseRole: string
+): Promise<SupabaseProfileRoleUpdateResult> {
+  const config = getSupabaseAdminConfig(env);
+  if (!config) return { ok: false, code: 'ADMIN_CREDENTIAL_MISSING', status: 503 };
+
+  const subject = String(authSubject || '').trim();
+  if (!/^[A-Za-z0-9_-]{3,80}$/.test(subject)) {
+    return { ok: false, code: 'INVALID_USER_SUBJECT', status: 400 };
+  }
+  const allowedRoles = new Set<string>(Object.values(UI_ROLE_TO_SUPABASE_PROFILE_ROLE));
+  if (!allowedRoles.has(supabaseRole)) {
+    return { ok: false, code: 'INVALID_ROLE', status: 400 };
+  }
+
+  try {
+    const response = await fetch(
+      `${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(subject)}&select=id,role`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${config.key}`,
+          apikey: config.key,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({ role: supabaseRole }),
+      }
+    );
+
+    if (!response.ok) {
+      const status = response.status;
+      const code =
+        status === 401 || status === 403
+          ? 'PROFILE_UPDATE_FORBIDDEN'
+          : status === 404
+            ? 'PROFILE_NOT_FOUND'
+            : 'PROFILE_UPDATE_FAILED';
+      return { ok: false, code, status };
+    }
+
+    const rows = await response.json().catch(() => []);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { ok: false, code: 'PROFILE_NOT_FOUND', status: 404 };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, code: 'PROFILE_UPDATE_FAILED', status: 502 };
+  }
+}

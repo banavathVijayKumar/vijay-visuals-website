@@ -352,28 +352,44 @@ async function runSuite() {
     'functions/api/payments/platform/verify.ts',
     'functions/api/payments/webhook.ts',
     'functions/api/payments/seller/transfers.ts',
+    'server.ts',
+    'src/routes/businessOs.ts',
+    'src/routes/ecosystem.ts',
+    'functions/api/platform/commerce.ts',
+    'functions/api/payments/config.ts',
   ];
 
   let zeroActiveRazorpay = true;
   const activeRazorpayOccurrences: string[] = [];
+  const activeGatewayPatterns = [
+    /window\.Razorpay/,
+    /checkout\.razorpay\.com/,
+    /builderGateway\s*===\s*['"]razorpay['"]/,
+    /Pay via Razorpay/,
+    /loadRazorpayCheckoutScript\(\)/,
+    /razorpayGateway\s*:/,
+    /razorpayMode\s*:/,
+    /razorpay:\s*getRazorpayStatus\(\)/,
+    /rzp\.configured/,
+    /paymentMethod\s*:\s*['"]razorpay_online['"]/,
+  ];
 
   for (const f of srcFiles) {
     const fullPath = path.resolve(rootDir, f);
     if (fs.existsSync(fullPath)) {
       const content = fs.readFileSync(fullPath, 'utf8');
-      // Look for active checkout or gateway references
+      // Look for active checkout or live-gateway status references. Historical
+      // ledger field names and retired, guard-clamped webhook handlers are out
+      // of scope; new purchases must not report or initiate Razorpay.
       const lines = content.split('\n');
       lines.forEach((l, idx) => {
+        const trimmed = l.trim();
         if (
-          (l.includes('window.Razorpay') ||
-            l.includes('checkout.razorpay.com') ||
-            l.includes("builderGateway === 'razorpay'") ||
-            l.includes('Pay via Razorpay') ||
-            l.includes('loadRazorpayCheckoutScript()')) &&
-          !l.trim().startsWith('//') &&
-          !l.trim().startsWith('*')
+          activeGatewayPatterns.some((pattern) => pattern.test(l)) &&
+          !trimmed.startsWith('//') &&
+          !trimmed.startsWith('*')
         ) {
-          activeRazorpayOccurrences.push(`${f}:${idx + 1}: ${l.trim()}`);
+          activeRazorpayOccurrences.push(`${f}:${idx + 1}: ${trimmed}`);
           zeroActiveRazorpay = false;
         }
       });
@@ -428,6 +444,47 @@ async function runSuite() {
     status: strictIsolation ? 'PASS' : 'FAIL',
     evidence: `SVS orders: ${websiteSvsOrders.c}, Kalyani Silks orders: ${websiteOtherOrders.c}. Zero cross-tenant leakage.`,
     details: { websiteSvsOrders: websiteSvsOrders.c, websiteOtherOrders: websiteOtherOrders.c },
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST 8: Legacy management endpoint fails closed for online checkout
+  // --------------------------------------------------------------------------
+  const commerceSource = fs.readFileSync(path.resolve(rootDir, 'functions/api/platform/commerce.ts'), 'utf8');
+  const ordersSource = fs.readFileSync(path.resolve(rootDir, 'functions/api/orders.ts'), 'utf8');
+  const legacyEndpointRejectsOnline =
+    commerceSource.includes('Online checkout must use the Cashfree storefront checkout at POST /api/orders.') &&
+    commerceSource.includes("['cashfree_online', 'online', 'cashfree', 'razorpay_online']") &&
+    !commerceSource.includes("body.paymentMethod === 'razorpay_online'");
+  const activeCheckoutUsesCashfree =
+    ordersSource.includes('createEdgeCashfreeOrder') &&
+    ordersSource.includes("? 'cashfree_online'");
+
+  recordResult({
+    id: 8,
+    name: 'Cashfree-Only Active Checkout And Legacy Endpoint Fail-Closed',
+    status: legacyEndpointRejectsOnline && activeCheckoutUsesCashfree ? 'PASS' : 'FAIL',
+    evidence: `Legacy /api/platform/commerce rejects online methods: ${legacyEndpointRejectsOnline}. Active /api/orders brokers Cashfree server-side: ${activeCheckoutUsesCashfree}. Historical ledger names are untouched.`,
+    details: { legacyEndpointRejectsOnline, activeCheckoutUsesCashfree },
+  });
+
+  // --------------------------------------------------------------------------
+  // TEST 9: Historical Razorpay ledger columns are preserved for old records
+  // --------------------------------------------------------------------------
+  const historicalMigrations = [
+    '0004_razorpay_platform_payments.sql',
+    '0005_ecommerce_reviews_shipping_proposals.sql',
+  ].map((file) => fs.readFileSync(path.resolve(migrationsDir, file), 'utf8'));
+  const historicalLedgerPreserved =
+    historicalMigrations[0].includes('razorpay_order_id') &&
+    historicalMigrations[0].includes('razorpay_payment_id') &&
+    historicalMigrations[1].includes('razorpay_refund_id');
+
+  recordResult({
+    id: 9,
+    name: 'Historical Razorpay Ledger Fields Preserved Without Active Gateway',
+    status: historicalLedgerPreserved ? 'PASS' : 'FAIL',
+    evidence: 'Legacy payment/refund identifier columns remain in migrations for historical records; no new Razorpay checkout is exposed.',
+    details: { historicalLedgerPreserved },
   });
 
   // --------------------------------------------------------------------------

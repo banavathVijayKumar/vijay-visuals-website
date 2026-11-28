@@ -161,7 +161,7 @@ await it('unknown client routes render neutral 404 UI on tenant hosts', () => {
   const notFound = read('src/components/NotFoundView.tsx');
   assert.match(types, /'not-found'/);
   assert.match(app, /return \{ view: 'not-found', slug: null \};/);
-  assert.match(app, /<NotFoundView\s+publicHost=\{isPublicTenantHost\}/);
+  assert.match(app, /<NotFoundView\s+publicHost=\{publicStorefront\}/);
   assert.match(notFound, /publicHost \? 'Page Not Found'/);
   assert.match(notFound, /\{!publicHost &&/);
 });

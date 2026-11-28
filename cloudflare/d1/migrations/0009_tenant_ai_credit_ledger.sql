@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS tenant_ai_usage (
   status TEXT NOT NULL CHECK (status IN ('success', 'failed', 'blocked', 'reserved')),
   prompt_snippet TEXT,
   error_message TEXT,
+  idempotency_scope TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -31,6 +32,9 @@ CREATE INDEX IF NOT EXISTS idx_tenant_ai_usage_website_period
 
 CREATE INDEX IF NOT EXISTS idx_tenant_ai_usage_request_id 
   ON tenant_ai_usage(request_id);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_ai_usage_request_scope
+  ON tenant_ai_usage(request_id, idempotency_scope);
 
 CREATE INDEX IF NOT EXISTS idx_tenant_ai_usage_tenant_period 
   ON tenant_ai_usage(tenant_rowid, billing_period, status);

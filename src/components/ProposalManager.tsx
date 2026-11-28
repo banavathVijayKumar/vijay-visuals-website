@@ -313,7 +313,7 @@ export const ProposalManager: React.FC<ProposalManagerProps> = ({ onNotify, onOp
   };
 
   const copyProposalLink = (p: ProposalRecord) => {
-    const link = `https://master.vijay-visuals-site.pages.dev/proposal/${p.secure_token}`;
+    const link = `${window.location.origin}/proposal/${p.secure_token}`;
     navigator.clipboard.writeText(link);
     onNotify('Customer proposal link copied to clipboard!');
   };

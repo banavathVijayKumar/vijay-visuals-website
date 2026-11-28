@@ -118,11 +118,11 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
   const [customBannerUrl, setCustomBannerUrl] = useState('');
 
   // Hero Copy State
-  const [heroHeadline, setHeroHeadline] = useState(tenant.name || '');
+  const [heroHeadline, setHeroHeadline] = useState(tenant.heroHeadline || tenant.name || '');
   const [heroSubheadline, setHeroSubheadline] = useState(
-    tenant.tagline || 'Experience handcrafted excellence & authentic service.'
+    tenant.heroSubheadline || tenant.tagline || 'Experience handcrafted excellence & authentic service.'
   );
-  const [ctaText, setCtaText] = useState('Explore Catalog');
+  const [ctaText, setCtaText] = useState(tenant.ctaText || 'Explore Catalog');
 
   // Modules State
   const [modules, setModules] = useState<TenantModules>(
@@ -160,6 +160,11 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
     setAccentColor(tenant.accentColor || '#0D0D12');
     setFontFamily(tenant.fontFamily || 'Cinzel');
     setBannerImage(tenant.bannerImage || diningBanner);
+    setHeroHeadline(tenant.heroHeadline || tenant.name || '');
+    setHeroSubheadline(
+      tenant.heroSubheadline || tenant.tagline || 'Experience handcrafted excellence & authentic service.'
+    );
+    setCtaText(tenant.ctaText || 'Explore Catalog');
     if (tenant.enabledModules) setModules(tenant.enabledModules);
   }, [tenant]);
 
@@ -180,10 +185,35 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
     loadVersions();
   }, [tenant.id]);
 
-  // 1. Save Changes as a Safe Draft Version Snapshot
+  const buildEditorPayload = (published?: boolean) => ({
+    name: name.trim() || tenant.name,
+    tagline: tagline.trim(),
+    heroHeadline: heroHeadline.trim(),
+    heroSubheadline: heroSubheadline.trim(),
+    ctaText: ctaText.trim(),
+    category,
+    description: description.trim(),
+    phone: phone.trim(),
+    whatsapp: whatsapp.trim(),
+    address: address.trim(),
+    businessHours: businessHours.trim(),
+    primaryColor,
+    accentColor,
+    fontFamily,
+    bannerImage: customBannerUrl.trim() || bannerImage,
+    enabledModules: modules,
+    ...(published === undefined ? {} : { published }),
+  });
+
+  // 1. Persist current form values as an unpublished draft, then snapshot it
+  //    so rollback protects exactly what the owner just saved.
   const handleSaveDraft = async () => {
     setSavingDraft(true);
     try {
+      await apiFetch(`/api/tenants/${tenant.slug}`, {
+        method: 'PATCH',
+        body: JSON.stringify(buildEditorPayload()),
+      });
       await apiFetch(`/api/owner/tenants/${tenant.id}/versions`, {
         method: 'POST',
         body: JSON.stringify({
@@ -191,9 +221,9 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
         }),
       });
       await loadVersions();
-      onNotify('Draft snapshot created with rollback protection.');
+      onNotify('Draft saved with rollback snapshot. Live status was not changed.');
     } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Unable to save draft snapshot.');
+      onNotify(err instanceof Error ? err.message : 'Unable to save draft.');
     } finally {
       setSavingDraft(false);
     }
@@ -203,29 +233,9 @@ export const CustomerWebsiteEditor: React.FC<CustomerWebsiteEditorProps> = ({
   const handlePublishLive = async () => {
     setPublishing(true);
     try {
-      const payload = {
-        name: name.trim() || tenant.name,
-        tagline: tagline.trim(),
-        heroHeadline: heroHeadline.trim(),
-        heroSubheadline: heroSubheadline.trim(),
-        ctaText: ctaText.trim(),
-        category,
-        description: description.trim(),
-        phone: phone.trim(),
-        whatsapp: whatsapp.trim(),
-        address: address.trim(),
-        businessHours: businessHours.trim(),
-        primaryColor,
-        accentColor,
-        fontFamily,
-        bannerImage: customBannerUrl.trim() || bannerImage,
-        enabledModules: modules,
-        published: true,
-      };
-
       await apiFetch(`/api/tenants/${tenant.slug}`, {
         method: 'PATCH',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(buildEditorPayload(true)),
       });
 
       // Also create an automatic post-publish snapshot

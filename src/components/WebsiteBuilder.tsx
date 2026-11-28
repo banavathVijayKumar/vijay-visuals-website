@@ -36,7 +36,7 @@ import { generateSlugFromName, validateSlug } from '../lib/slug';
 import { optimizeImageFileToDataUrl } from '../lib/imageUpload';
 import { useAuth } from '../hooks/useAuth';
 import { initiateCashfreePlatformCheckout } from '../lib/cashfreeClient';
-import { AiSetupDraft, GalleryItem, TenantModules, TenantRecord } from '../types/platform';
+import { AiSetupDraft, GalleryItem, TenantLogoConfig, TenantModules, TenantRecord } from '../types/platform';
 
 import fashionBanner from '../assets/images/store_fashion_royal_1795055802960.jpg';
 import electronicsBanner from '../assets/images/store_electronics_audio_1795055804216.jpg';
@@ -263,6 +263,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
   );
   const [logoText, setLogoText] = useState('SLS');
   const [logoImage, setLogoImage] = useState('');
+  const [logoConfig, setLogoConfig] = useState<TenantLogoConfig | undefined>();
   const [logoStudioOpen, setLogoStudioOpen] = useState(false);
   const [bannerImage, setBannerImage] = useState(fashionBanner);
   const [primaryColor, setPrimaryColor] = useState('#D4AF37');
@@ -622,6 +623,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
     setDescription(t.description || '');
     setLogoText(t.logoText || 'VV');
     setLogoImage(t.logoImage || '');
+    setLogoConfig(t.logoConfig);
     setBannerImage(t.bannerImage || defaultBannerForCategory(t.category));
     setPrimaryColor(t.primaryColor || '#D4AF37');
     setAccentColor(t.accentColor || '#0D0D12');
@@ -857,6 +859,7 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
         description: description.trim(),
         logoText: logoText.trim().slice(0, 6) || 'VV',
         logoImage,
+        ...(logoConfig ? { logoConfig } : {}),
         bannerImage,
         galleryItems: orderedGallery,
         galleryImages: orderedGallery.map((g) => g.url),
@@ -2333,12 +2336,14 @@ export const WebsiteBuilder: React.FC<WebsiteBuilderProps> = ({
               tenantId={slug}
               tenantName={name}
               currentLogo={{
+                ...(logoConfig || {}),
                 type: logoImage ? 'image' : 'text',
                 imageUrl: logoImage,
                 initials: logoText,
                 businessName: name,
               }}
               onSaveLogo={(cfg) => {
+                setLogoConfig(cfg);
                 if (cfg.type === 'image' && cfg.imageUrl) {
                   setLogoImage(cfg.imageUrl);
                 } else {

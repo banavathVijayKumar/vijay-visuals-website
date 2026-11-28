@@ -91,7 +91,7 @@ export async function onRequestGet(
   } catch {}
 
   try {
-    const vers = await env.DB.prepare('SELECT id, version_number, label, created_at FROM website_version_snapshots WHERE website_id = ? ORDER BY version_number ASC')
+    const vers = await env.DB.prepare('SELECT id, version_number, summary AS label, created_at FROM website_revisions WHERE website_id = ? ORDER BY version_number ASC')
       .bind(websiteId)
       .all<Record<string, any>>();
     for (const v of vers.results || []) {

@@ -308,6 +308,18 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
       defaultEmail = auth.user.email;
     }
 
+    const requestedPaymentMethod = sanitizeText(body.paymentMethod, 30).toLowerCase();
+    if (!isGuestCheckout && ['cashfree_online', 'online', 'cashfree', 'razorpay_online'].includes(requestedPaymentMethod)) {
+      // This legacy management endpoint has no Cashfree session broker. The
+      // active storefront checkout is /api/orders, which creates and verifies
+      // Cashfree orders server-side. Fail closed before touching inventory
+      // instead of labelling a pending order with a retired/online gateway.
+      return errorJson(
+        'Online checkout must use the Cashfree storefront checkout at POST /api/orders. This endpoint supports only cod and upi_manual.',
+        400
+      );
+    }
+
     const customerName = sanitizeText(body.customerName || defaultName, 120);
     const customerPhone = sanitizeText(body.customerPhone || '', 30);
     const customerEmail = sanitizeText(body.customerEmail || defaultEmail, 120);
@@ -411,11 +423,7 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     const shippingInr = Math.max(0, Math.round(Number(body.shippingInr || 0)));
     const totalInr = Math.max(0, subtotal - discountInr + gstTotal + shippingInr);
     const orderNumber = `VV-${Date.now().toString(36).toUpperCase()}-${randomHex(2).toUpperCase()}`;
-    const paymentMethod =
-      !isGuestCheckout &&
-      (body.paymentMethod === 'razorpay_online' || body.paymentMethod === 'upi_manual')
-        ? body.paymentMethod
-        : 'cod';
+    const paymentMethod = !isGuestCheckout && requestedPaymentMethod === 'upi_manual' ? 'upi_manual' : 'cod';
 
     // SECURITY: Online orders ALWAYS start as payment_status = 'pending' until HMAC verified!
     const insertRes = await env.DB.prepare(
@@ -551,7 +559,10 @@ export async function onRequestPost(context: PagesContext): Promise<Response> {
     if (!order) return errorJson('Order not found.', 404);
     const isBuyer =
       order.customer_user_id === auth.user.id || order.customer_user_id === auth.user.authSubject;
-    const isOwner = order.owner_id === auth.user.id || auth.user.isSuperAdmin;
+    const isOwner =
+      order.owner_id === auth.user.id ||
+      order.owner_id === auth.user.authSubject ||
+      auth.user.isSuperAdmin;
     if (!isBuyer && !isOwner) {
       return errorJson('Forbidden: you do not have permission to cancel or return this order.', 403);
     }

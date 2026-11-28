@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  CONTACT_INFO,
   PLATFORM_SECTION,
   PLATFORM_SERVICES_DATA,
   TEMPLATE_CATEGORY_COUNT,
@@ -175,6 +176,16 @@ await test('36 templates and 36 distinct categories are preserved', () => {
   assert.match(templateSource, /Portrait & Event Photography/);
   assert.match(templateSource, /Creator Video Portfolio/);
   assert.match(templateSource, /Wedding Photography Business/);
+});
+
+await test('Customer Dashboard fallback contact uses the single configured source', () => {
+  assert.equal(CONTACT_INFO.phone, '+91 9381362201');
+  assert.equal(CONTACT_INFO.email, 'vk66278@gmail.com');
+  const dashboard = read('src/components/DashboardsHub.tsx');
+  assert.match(dashboard, /import \{ CONTACT_INFO, Lang \} from '\.\.\/data\/content'/);
+  assert.match(dashboard, /profile\.phone \|\| CONTACT_INFO\.phone/);
+  assert.match(dashboard, /profile\.email \|\| CONTACT_INFO\.email/);
+  assert.doesNotMatch(dashboard, /'\+91 9381362201'|'919381362201'|'vk66278@gmail\.com'/);
 });
 
 console.log(`\n${passed}/${passed} brand cleanup checks passed.`);

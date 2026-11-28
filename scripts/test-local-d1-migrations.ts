@@ -55,7 +55,16 @@ try {
     'store_products',
     'store_orders',
     'media_assets',
-    'payment_webhook_events'
+    'payment_webhook_events',
+    'website_revisions',
+    'vv_audit_log',
+    'cashfree_payments',
+    'cashfree_seller_settlements',
+    'tenant_ai_usage',
+    'platform_owner',
+    'platform_feedback',
+    'business_locations',
+    'platform_announcements'
   ];
 
   for (const req of requiredTables) {
@@ -66,6 +75,38 @@ try {
       process.exit(1);
     }
   }
+
+  console.log('\n--- VERIFYING MIGRATION 0009 (AI IDEMPOTENCY SCOPE) ---');
+  const aiColumns = db.prepare(`PRAGMA table_info(tenant_ai_usage);`).all() as Array<{ name: string }>;
+  if (!aiColumns.some((column) => column.name === 'idempotency_scope')) {
+    throw new Error('tenant_ai_usage.idempotency_scope is missing from fresh-schema migration 0009');
+  }
+  const aiIndexes = db.prepare(`PRAGMA index_list(tenant_ai_usage);`).all() as Array<{ name: string }>;
+  if (!aiIndexes.some((index) => index.name === 'idx_tenant_ai_usage_request_scope')) {
+    throw new Error('tenant_ai_usage request+scope idempotency index is missing');
+  }
+  console.log(' [PASS] tenant_ai_usage.idempotency_scope and scoped index exist');
+
+  console.log('\n--- VERIFYING MIGRATION 0026 (PREVIEW COMPLETION TABLES) ---');
+  const feedbackColumns = db.prepare(`PRAGMA table_info(platform_feedback);`).all() as Array<{ name: string }>;
+  const locationColumns = db.prepare(`PRAGMA table_info(business_locations);`).all() as Array<{ name: string }>;
+  const announcementColumns = db.prepare(`PRAGMA table_info(platform_announcements);`).all() as Array<{ name: string }>;
+  const auditColumns = db.prepare(`PRAGMA table_info(vv_audit_log);`).all() as Array<{ name: string }>;
+  const hasColumns = (columns: Array<{ name: string }>, names: string[]) =>
+    names.every((name) => columns.some((column) => column.name === name));
+  if (!hasColumns(feedbackColumns, ['author_name', 'author_email', 'feedback_type', 'status'])) {
+    throw new Error('platform_feedback columns do not match /api/feedback');
+  }
+  if (!hasColumns(locationColumns, ['website_id', 'branch_name', 'latitude', 'longitude', 'active'])) {
+    throw new Error('business_locations columns do not match owner location CRUD');
+  }
+  if (!hasColumns(announcementColumns, ['title', 'message', 'severity', 'active', 'created_by'])) {
+    throw new Error('platform_announcements columns do not match admin/public announcement APIs');
+  }
+  if (!hasColumns(auditColumns, ['id', 'actor_user_id', 'action', 'entity_type', 'entity_id', 'metadata_json', 'created_at'])) {
+    throw new Error('vv_audit_log columns do not match writeAuditLog and ecosystem history queries');
+  }
+  console.log(' [PASS] Preview completion tables match their API surfaces');
 
   // Verify 0007 content in subscription_plans
   console.log('\n--- VERIFYING MIGRATION 0007 (PLAN SEEDING & STRUCTURE) ---');

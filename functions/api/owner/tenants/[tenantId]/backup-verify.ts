@@ -52,7 +52,7 @@ export async function onRequestPost(
   } catch {}
 
   try {
-    const verRes = await env.DB.prepare('SELECT COUNT(*) as cnt FROM website_version_snapshots WHERE website_id = ?').bind(websiteId).first<{ cnt: number }>();
+    const verRes = await env.DB.prepare('SELECT COUNT(*) as cnt FROM website_revisions WHERE website_id = ?').bind(websiteId).first<{ cnt: number }>();
     versionsCount = Number(verRes?.cnt || 0);
   } catch {}
 

@@ -6,6 +6,10 @@
 
 import { requireAdmin } from '../../../_auth';
 import {
+  UI_ROLE_TO_SUPABASE_PROFILE_ROLE,
+  updateSupabaseProfileRole,
+} from '../../../auth/_supabaseAdmin';
+import {
   PagesContext,
   errorJson,
   jsonResponse,
@@ -20,6 +24,16 @@ const ALLOWED_ROLES = new Set([
   'delivery_partner',
   'customer',
 ]);
+
+// vv_users is a mirror. Supabase `profiles.role` stays authoritative and is
+// rewritten from it on every authenticated request.
+const D1_ROLE_BY_UI_ROLE: Record<string, string> = {
+  super_admin: 'admin',
+  business_owner: 'business_owner',
+  staff: 'staff',
+  delivery_partner: 'delivery_partner',
+  customer: 'customer',
+};
 
 interface UserRow {
   d1_rowid?: number;
@@ -116,10 +130,27 @@ export async function onRequestPatch(
     if (!existing) return errorJson('User not found.', 404);
     if (!existing.id) return errorJson('User not found.', 404);
 
+    const authSubject =
+      existing.auth_subject ||
+      (/^[A-Za-z0-9_-]{3,80}$/.test(String(existing.id)) ? String(existing.id) : '');
+    if (!authSubject) {
+      return errorJson('This user has no linked identity; role change was not saved.', 409);
+    }
+
+    const supabaseRole =
+      UI_ROLE_TO_SUPABASE_PROFILE_ROLE[role as keyof typeof UI_ROLE_TO_SUPABASE_PROFILE_ROLE];
+    const identityUpdate = await updateSupabaseProfileRole(env, authSubject, supabaseRole);
+    if (!identityUpdate.ok) {
+      return errorJson(
+        `Unable to update the authoritative identity role (${identityUpdate.code}). No role change was saved.`,
+        identityUpdate.status
+      );
+    }
+
     await env.DB.prepare(
       'UPDATE vv_users SET role = ?, updated_at = datetime(\'now\') WHERE id = ?'
     )
-      .bind(role, existing.id)
+      .bind(D1_ROLE_BY_UI_ROLE[role] || 'customer', existing.id)
       .run();
 
     await writeAuditLog(env, {
@@ -128,7 +159,7 @@ export async function onRequestPatch(
       action: 'USER_ROLE_CHANGED',
       targetType: 'vv_users',
       targetId: String(existing.id),
-      details: { email: existing.email, role },
+      details: { email: existing.email, role, supabaseRole, source: 'supabase_profile' },
     });
 
     return jsonResponse({ user: mapUser(existing, id, role) });

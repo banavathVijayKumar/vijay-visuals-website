@@ -52,6 +52,7 @@ import {
   OrderRecord,
   ProductRecord,
   ReviewRecord,
+  TenantLogoConfig,
   TenantModules,
   TenantRecord,
 } from '../types/platform';
@@ -115,6 +116,111 @@ function resolveTenantModules(tenant: TenantRecord | null): TenantModules {
     coupons: true,
     wholesale: false,
   };
+}
+
+function logoShapeStyle(shape: TenantLogoConfig['badgeShape']): React.CSSProperties {
+  switch (shape) {
+    case 'rounded_square':
+      return { borderRadius: '0.65rem' };
+    case 'minimal_frame':
+      return { borderRadius: '0.2rem', background: 'transparent', borderWidth: 2, borderStyle: 'solid' };
+    case 'shield':
+      return { borderRadius: '0.75rem 0.75rem 1.5rem 1.5rem' };
+    case 'hexagon':
+      return { clipPath: 'polygon(25% 5%, 75% 5%, 100% 50%, 75% 95%, 25% 95%, 0% 50%)', borderRadius: 0 };
+    default:
+      return { borderRadius: '9999px' };
+  }
+}
+
+function StorefrontLogo({
+  tenant,
+  variant,
+}: {
+  tenant: TenantRecord;
+  variant: 'compact' | 'hero';
+}) {
+  const cfg = tenant.logoConfig;
+  const compact = variant === 'compact';
+  const imageUrl =
+    cfg?.type === 'image' && cfg.imageUrl ? cfg.imageUrl : tenant.logoImage || '';
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt={tenant.name}
+        width={compact ? 36 : 48}
+        height={compact ? 36 : 48}
+        loading="lazy"
+        decoding="async"
+        className={compact ? 'h-9 w-9 rounded-lg object-cover border border-white/15 shrink-0' : 'h-12 w-12 rounded-lg object-cover border border-white/15 shrink-0'}
+      />
+    );
+  }
+
+  const initials = cfg?.initials || tenant.logoText;
+  const badgeSize =
+    cfg?.size === 'sm'
+      ? 'h-9 w-9 text-[10px]'
+      : cfg?.size === 'lg'
+        ? 'h-14 w-14 text-sm'
+        : 'h-12 w-12 text-xs';
+  const badge = (sizeClass: string) => (
+    <span
+      className={`${sizeClass} flex shrink-0 items-center justify-center font-bold`}
+      style={{
+        ...logoShapeStyle(cfg?.badgeShape || 'circle'),
+        backgroundColor: cfg?.badgeShape === 'minimal_frame' ? undefined : cfg?.badgeBgColor || tenant.primaryColor,
+        borderColor: cfg?.badgeBorderColor || tenant.primaryColor,
+        color: cfg?.badgeTextColor || '#08080A',
+        fontFamily: getTenantFontStack(cfg?.fontFamily || tenant.fontFamily),
+        letterSpacing:
+          cfg?.letterSpacing === 'tight'
+            ? '-0.02em'
+            : cfg?.letterSpacing === 'normal'
+              ? '0'
+              : cfg?.letterSpacing === 'luxury'
+                ? '0.18em'
+                : '0.08em',
+      }}
+    >
+      {initials}
+    </span>
+  );
+
+  if (cfg && cfg.layout === 'text_only') {
+    return (
+      <span
+        className="truncate text-sm font-semibold"
+        style={{ color: cfg.nameTextColor, fontFamily: getTenantFontStack(cfg.fontFamily) }}
+      >
+        {cfg.businessName || tenant.name}
+      </span>
+    );
+  }
+
+  if (!compact && cfg?.layout === 'stacked') {
+    return (
+      <div className="flex items-center gap-3">
+        {badge(badgeSize)}
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold" style={{ color: cfg.nameTextColor }}>
+            {cfg.businessName || tenant.name}
+          </p>
+          {cfg.tagline && (
+            <p className="truncate text-[11px]" style={{ color: cfg.taglineTextColor }}>
+              {cfg.tagline}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (compact) {
+    return badge('h-9 w-9 text-[11px]');
+  }
+  return badge(badgeSize);
 }
 
 interface StorefrontViewProps {
@@ -423,6 +529,28 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
   }, [cart, cartHydrated, slug]);
 
   const modules = useMemo(() => resolveTenantModules(tenant), [tenant]);
+
+  // The builder persists sectionOrder inside website_json. Honour it on the
+  // public storefront instead of always rendering the historical fixed order.
+  const resolvedSectionOrder = useMemo(() => {
+    const knownSections = ['hero', 'catalog', 'gallery', 'booking', 'reviews', 'contact'];
+    const saved = Array.isArray(tenant?.sectionOrder)
+      ? tenant!.sectionOrder!
+          .map((section) => String(section || '').trim().toLowerCase())
+          .filter((section) => knownSections.includes(section))
+      : [];
+    const ordered = saved.length > 0 ? saved : ['hero', 'catalog', 'gallery', 'booking', 'reviews', 'contact'];
+    for (const section of knownSections) {
+      if (!ordered.includes(section)) ordered.push(section);
+    }
+    return ordered;
+  }, [tenant?.sectionOrder]);
+
+  const sectionStyle = (section: string, offset = 0): React.CSSProperties => {
+    const index = resolvedSectionOrder.indexOf(section);
+    const position = index >= 0 ? index : resolvedSectionOrder.length;
+    return { order: position * 10 + offset };
+  };
 
   const galleryItems: GalleryItem[] = useMemo(() => {
     if (!tenant) return [];
@@ -905,12 +1033,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
               aria-label={`${tenant.name} home`}
               className="inline-flex min-h-11 min-w-0 items-center gap-2 md:hidden"
             >
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold text-[#08080A] font-luxury"
-                style={{ backgroundColor: tenant.primaryColor }}
-              >
-                {tenant.logoText}
-              </span>
+              <StorefrontLogo tenant={tenant} variant="compact" />
               <span className="truncate text-xs font-semibold text-white">{tenant.name}</span>
             </a>
             <nav aria-label="Storefront sections" className="hidden md:flex items-center gap-4 text-xs text-[#B8B8C8]">
@@ -989,29 +1112,13 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
         </nav>
       </div>
 
+      <div className="flex flex-col">
       {/* Storefront Hero Banner */}
-      <section id="store-home" className="scroll-mt-36 border-b border-[#1D1D28] md:scroll-mt-24">
+      <section id="store-home" className="scroll-mt-36 border-b border-[#1D1D28] md:scroll-mt-24" style={sectionStyle('hero')}>
         <div className="max-w-7xl mx-auto px-4 py-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch sm:px-6">
           <div className="lg:col-span-6 flex flex-col justify-center">
             <div className="flex items-center gap-3 mb-4">
-              {tenant.logoImage ? (
-                <img
-                  src={tenant.logoImage}
-                  alt={tenant.name}
-                  width={48}
-                  height={48}
-                  loading="lazy"
-                  decoding="async"
-                  className="w-12 h-12 rounded-lg object-cover border border-white/15 shrink-0"
-                />
-              ) : (
-                <span
-                  className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold text-[#08080A] font-luxury shrink-0"
-                  style={{ backgroundColor: tenant.primaryColor }}
-                >
-                  {tenant.logoText}
-                </span>
-              )}
+              <StorefrontLogo tenant={tenant} variant="hero" />
               <div className="text-xs text-[#9D9DB0]">
                 <span className="capitalize">{tenant.category.replace(/[-_]/g, ' ')}</span>
                 {tenant.address && (
@@ -1141,7 +1248,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
       {/* Catalog Controls & Product Grid (shown when ecommerce enabled or products exist) */}
       {(modules.ecommerce || products.length > 0) && (
-        <section id="store-catalog" className="max-w-7xl mx-auto scroll-mt-36 px-4 pt-8 pb-4 sm:px-6 md:scroll-mt-24">
+        <section id="store-catalog" className="max-w-7xl mx-auto scroll-mt-36 px-4 pt-8 pb-4 sm:px-6 md:scroll-mt-24" style={sectionStyle('catalog')}>
           <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
             <div className="flex flex-wrap items-center gap-2">
               {categories.map((cat) => (
@@ -1421,7 +1528,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
       {/* Business Photo & Portfolio Gallery + Lightbox */}
       {modules.gallery && galleryItems.length > 0 && (
-        <section id="store-gallery" className="max-w-7xl mx-auto scroll-mt-36 px-4 py-10 border-t border-[#1D1D28] sm:px-6 md:scroll-mt-24">
+        <section id="store-gallery" className="max-w-7xl mx-auto scroll-mt-36 px-4 py-10 border-t border-[#1D1D28] sm:px-6 md:scroll-mt-24" style={sectionStyle('gallery')}>
           <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
             <div>
               <p className="text-xs font-medium text-[#D4AF37] mb-1 flex items-center gap-1.5">
@@ -1483,7 +1590,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
       {/* Delivery Info & Return Policy Strip */}
       {(tenant.deliveryInfo || tenant.returnPolicy) && (
-        <section className="max-w-7xl mx-auto px-6 pb-8">
+        <section className="max-w-7xl mx-auto px-6 pb-8" style={sectionStyle('catalog', 1)}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             {tenant.deliveryInfo && (
               <div className="rounded-xl border border-[#20202E] bg-[#0D0D14] p-4 flex items-start gap-3">
@@ -1509,21 +1616,23 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
 
       {/* Customer Reviews & Ratings Section (1 to 5 Stars, Verified Purchases, Photos, Google Integration) */}
       {modules.reviews && (
-        <StorefrontReviews
-          websiteId={tenant.websiteId || tenant.slug}
-          slug={tenant.slug}
-          businessName={tenant.name}
-          products={products}
-          initialReviews={reviews}
-          googleReviewUrl={tenant.googleReviewUrl}
-          googlePlaceId={tenant.googlePlaceId}
-          isDemoStore={demoSample}
-          onNotify={onNotify}
-        />
+        <div style={sectionStyle('reviews', 2)}>
+          <StorefrontReviews
+            websiteId={tenant.websiteId || tenant.slug}
+            slug={tenant.slug}
+            businessName={tenant.name}
+            products={products}
+            initialReviews={reviews}
+            googleReviewUrl={tenant.googleReviewUrl}
+            googlePlaceId={tenant.googlePlaceId}
+            isDemoStore={demoSample}
+            onNotify={onNotify}
+          />
+        </div>
       )}
 
       {/* Stage 3 & Stage 5: Published Multi-Branch Map Preview, Direct Contact/Quote Actions & Consent Newsletter */}
-      <section id="store-contact" className="max-w-7xl mx-auto scroll-mt-36 px-4 pb-16 space-y-6 sm:px-6 md:scroll-mt-24">
+      <section id="store-contact" className="max-w-7xl mx-auto scroll-mt-36 px-4 pb-16 space-y-6 sm:px-6 md:scroll-mt-24" style={sectionStyle('contact')}>
         <StorefrontMapPreview
           slug={tenant.slug}
           tenantName={tenant.name}
@@ -1721,6 +1830,7 @@ export const StorefrontView: React.FC<StorefrontViewProps> = ({
           </form>
         </div>
       </section>
+      </div>
 
       {/* Quote Request Modal */}
       {quoteOpen && (

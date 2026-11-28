@@ -58,6 +58,7 @@ export function applyStorefrontMetadata(
   const createdNodes: Element[] = [];
   const removedScripts: HTMLScriptElement[] = [];
   const removedAlternates: LinkChange[] = [];
+  const removedBrandLinks: LinkChange[] = [];
 
   const computeTitle =
     input.seoTitle || `${input.name}${input.tagline || input.category ? ` — ${input.tagline || input.category}` : ''}`;
@@ -137,6 +138,32 @@ export function applyStorefrontMetadata(
     removedAlternates.push({ element: link, previousParent });
   }
 
+  // Client-side hydration must not leave the platform favicon, touch icon, or
+  // PWA manifest attached to a tenant-owned document. Restore them on cleanup.
+  const brandLinkSelectors = [
+    'link[rel="icon"]',
+    'link[rel="shortcut icon"]',
+    'link[rel="apple-touch-icon"]',
+    'link[rel="manifest"]',
+  ];
+  for (const selector of brandLinkSelectors) {
+    for (const link of Array.from(doc.querySelectorAll<HTMLLinkElement>(selector))) {
+      const previousParent = link.parentNode;
+      link.remove();
+      removedBrandLinks.push({ element: link, previousParent });
+    }
+  }
+  if (tenantImage) {
+    for (const rel of ['icon', 'apple-touch-icon'] as const) {
+      const icon = doc.createElement('link');
+      icon.setAttribute('rel', rel);
+      icon.setAttribute('href', tenantImage);
+      icon.setAttribute('data-vv-tenant-icon', 'true');
+      doc.head.appendChild(icon);
+      createdNodes.push(icon);
+    }
+  }
+
   let canonicalElement = doc.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   const previousCanonical = canonicalElement?.getAttribute('href') || '';
   if (!canonicalElement) {
@@ -192,6 +219,9 @@ export function applyStorefrontMetadata(
       }
     }
     for (const link of removedAlternates) {
+      link.previousParent?.appendChild(link.element);
+    }
+    for (const link of removedBrandLinks) {
       link.previousParent?.appendChild(link.element);
     }
     if (canonicalElement) {
