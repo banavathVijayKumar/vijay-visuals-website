@@ -21,21 +21,10 @@ import {
   type PlatformOwnerRow,
 } from '../functions/api/_ownerRole.ts';
 import { onRequestGet as dashboardGet } from '../functions/api/platform-owner/dashboard.ts';
-import { onRequestPost as provisionPost } from '../functions/api/platform-owner/provision.ts';
 import { onRequestGet as meGet } from '../functions/api/me.ts';
 import { canAccessBusinessOwnerDashboard } from '../src/lib/dashboardAccess.ts';
 
 const read = (p: string) => fs.readFileSync(p, 'utf8');
-
-const TEST_TOKEN = 'test-only-preview-token';
-async function sha256Hex(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-const TEST_TOKEN_HASH = await sha256Hex(TEST_TOKEN);
 
 let passed = 0;
 const test = async (name: string, fn: () => void | Promise<void>) => {
@@ -70,11 +59,6 @@ class MockStatement {
 
 class MockD1 {
   ownerRow: PlatformOwnerRow | null = null;
-  provisionRow: { singleton_id: number; token_hash: string; consumed_at: string | null } = {
-    singleton_id: 1,
-    token_hash: TEST_TOKEN_HASH,
-    consumed_at: null,
-  };
   users: Row[] = [
     {
       id: 'admin-d1-id',
@@ -105,10 +89,6 @@ class MockD1 {
   select(sql: string, params: any[]): Row[] {
     const n = this.norm(sql);
     const p = params.map((value) => String(value ?? '').toLowerCase());
-
-    if (n.includes('from platform_owner_provision')) {
-      return this.provisionRow ? [{ ...this.provisionRow }] : [];
-    }
 
     if (n.includes('from platform_owner')) {
       return this.ownerRow ? [{ ...this.ownerRow }] : [];
@@ -148,20 +128,6 @@ class MockD1 {
 
   mutate(sql: string, params: any[]): { success: boolean; meta: { changes: number; last_row_id: number } } {
     const n = this.norm(sql);
-    if (n.includes('insert into platform_owner')) {
-      this.ownerRow = {
-        singleton_id: 1,
-        user_id: String(params[0]),
-        email: String(params[1]),
-        full_name: String(params[2]),
-        status: 'active',
-      };
-      return { success: true, meta: { changes: 1, last_row_id: 1 } };
-    }
-    if (n.includes('update platform_owner_provision')) {
-      this.provisionRow.consumed_at = '2026-11-28T00:00:00Z';
-      return { success: true, meta: { changes: 1, last_row_id: 0 } };
-    }
     return { success: true, meta: { changes: 1, last_row_id: 0 } };
   }
 }
@@ -184,12 +150,6 @@ const tokens: Record<string, string> = {
     email_confirmed_at: '2026-11-28T00:00:00Z',
     role: 'customer',
     full_name: 'Vijay Kumar',
-  }),
-  unverifiedOwner: makeJwt({
-    sub: 'owner-sub-1',
-    email: PLATFORM_OWNER_EMAIL,
-    email_confirmed_at: null,
-    role: 'customer',
   }),
   fakeOwnerProfile: makeJwt({
     sub: 'attacker-sub-1',
@@ -305,52 +265,14 @@ await test('unprovisioned Owner candidate is denied; raw profile string does not
   assert.equal(fakeMe.user.isPlatformOwner, false);
 });
 
-await test('provisioning rejects wrong token, unverified email, wrong email, and password fields', async () => {
-  const url = 'https://preview.local/api/platform-owner/provision';
-  const wrongToken = await provisionPost(ctx(req(url, tokens.ownerCandidate, 'POST', { token: 'wrong' })));
-  assert.equal(wrongToken.status, 403);
-  assert.equal(db.ownerRow, null);
-
-  const unverified = await provisionPost(ctx(req(url, tokens.unverifiedOwner, 'POST', { token: TEST_TOKEN })));
-  assert.equal(unverified.status, 403);
-  assert.equal(db.ownerRow, null);
-
-  const wrongEmail = await provisionPost(ctx(req(url, tokens.fakeOwnerProfile, 'POST', { token: TEST_TOKEN })));
-  assert.equal(wrongEmail.status, 403);
-  assert.equal(db.ownerRow, null);
-
-  const passwordField = await provisionPost(
-    ctx(req(url, tokens.ownerCandidate, 'POST', { token: TEST_TOKEN, password: 'does-not-belong-here' }))
-  );
-  assert.equal(passwordField.status, 400);
-  assert.equal(db.ownerRow, null);
-});
-
-await test('token-gated browser provisioning binds exact singleton identity without account mutation', async () => {
-  const before = db.users.map((u) => ({ ...u }));
-  const res = await provisionPost(
-    ctx(
-      req('https://preview.local/api/platform-owner/provision', tokens.ownerCandidate, 'POST', {
-        token: TEST_TOKEN,
-      })
-    )
-  );
-  assert.equal(res.status, 201);
-  const body = await jsonOf(res);
-  assert.equal(body.ok, true);
-  assert.equal(body.provisioned, true);
-  assert.deepEqual(db.ownerRow, {
+await test('verified Owner is recognized by /api/me while Supabase profile remains customer', async () => {
+  db.ownerRow = {
     singleton_id: 1,
     user_id: 'owner-sub-1',
     email: PLATFORM_OWNER_EMAIL,
     full_name: PLATFORM_OWNER_FULL_NAME,
     status: 'active',
-  });
-  assert.deepEqual(db.users, before);
-  assert.equal(typeof db.provisionRow.consumed_at, 'string');
-});
-
-await test('verified Owner is recognized by /api/me while Supabase profile remains customer', async () => {
+  };
   const auth = await requireUser(req('https://preview.local/api/me', tokens.ownerCandidate), env as any);
   assert.equal(auth.ok, true);
   if (auth.ok) {
@@ -450,34 +372,14 @@ await test('Customer stays end_customer with no platform Owner or Super Admin gr
   assert.equal(customerDashboard.status, 403);
 });
 
-await test('provisioning is idempotent for the same identity and blocks a different singleton', async () => {
-  const url = 'https://preview.local/api/platform-owner/provision';
-  const again = await provisionPost(ctx(req(url, tokens.ownerCandidate, 'POST', { token: TEST_TOKEN })));
-  assert.equal(again.status, 200);
-  assert.equal((await jsonOf(again)).provisioned, false);
-
-  db.ownerRow = {
-    singleton_id: 1,
-    user_id: 'attacker-sub-1',
-    email: PLATFORM_OWNER_EMAIL,
-    full_name: 'Wrong Identity',
-    status: 'active',
-  };
-  const conflict = await provisionPost(ctx(req(url, tokens.ownerCandidate, 'POST', { token: TEST_TOKEN })));
-  assert.equal(conflict.status, 409);
-});
-
 await test('source guards keep Owner additive, read-only, tenant-safe, and free of secret handling', () => {
   const migration = read('cloudflare/d1/migrations/0023_platform_owner_singleton.sql');
   assert.match(migration, /singleton_id INTEGER PRIMARY KEY CHECK \(singleton_id = 1\)/);
   assert.match(migration, /status TEXT NOT NULL CHECK \(status IN \('active', 'suspended'\)\)/);
   assert.doesNotMatch(migration, /ALTER TABLE vv_users|DROP TABLE|profiles/i);
 
-  const tokenMigration = read('cloudflare/d1/migrations/0024_platform_owner_provision_token.sql');
-  assert.match(tokenMigration, /CREATE TABLE IF NOT EXISTS platform_owner_provision/);
-  assert.match(tokenMigration, /token_hash TEXT NOT NULL/);
-  assert.match(tokenMigration, /consumed_at TEXT/);
-  assert.doesNotMatch(tokenMigration, /raw_token|token TEXT/i);
+  const cleanupMigration = read('cloudflare/d1/migrations/0025_platform_owner_remove_provision_token.sql');
+  assert.match(cleanupMigration, /DROP TABLE IF EXISTS platform_owner_provision/);
 
   const authSource = read('functions/api/_auth.ts');
   assert.match(authSource, /isAuthorizedPlatformOwnerRow\(ownerRow, supaUser\.id, normalizedEmail\)/);
@@ -493,22 +395,13 @@ await test('source guards keep Owner additive, read-only, tenant-safe, and free 
     /\b(user_email|user_phone|payment_session_id|bank_reference|raw_response_json|raw_webhook_json|notes_json|payload_json|order_id|customer_name|shipping_address|password|otp)\b/i
   );
 
-  const provisionSource = read('functions/api/platform-owner/provision.ts');
-  assert.match(provisionSource, /authenticatedEmail !== ownerEmail/);
-  assert.match(provisionSource, /emailVerified !== true/);
-  assert.match(provisionSource, /SELECT token_hash, consumed_at FROM platform_owner_provision/);
-  assert.match(provisionSource, /sha256Hex\(String\(body\.token \|\| ''\)\)/);
-  assert.match(provisionSource, /tokenMatches\(submittedHash, String\(tokenRow\.token_hash \|\| ''\)\)/);
-  assert.match(provisionSource, /UPDATE platform_owner_provision SET consumed_at/);
-  assert.match(provisionSource, /Password, OTP, reset, and token-substitution fields are not accepted here/);
-  assert.doesNotMatch(provisionSource, /password\s*[:=]\s*['"][^'"]+['"]/i);
-  assert.doesNotMatch(provisionSource, /PLATFORM_OWNER_PROVISION_TOKEN/);
+  assert.equal(fs.existsSync('functions/api/platform-owner/provision.ts'), false);
 
   const client = read('src/components/BusinessOwnerDashboard.tsx');
   assert.match(client, /canAccessBusinessOwnerDashboard\(isPlatformOwner\)/);
-  assert.match(client, /\/api\/platform-owner\/provision/);
   assert.match(client, /OWNER_EMAIL = 'vk66278@gmail\.com'/);
   assert.doesNotMatch(client, /profile\?\.role === 'platform_owner'/);
+  assert.doesNotMatch(client, /platform-owner\/provision|provisionToken|provisioning/i);
 
   const navbar = read('src/components/Navbar.tsx');
   assert.match(navbar, /\{isPlatformOwner && \(/);

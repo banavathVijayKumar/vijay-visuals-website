@@ -212,17 +212,12 @@ export const BusinessOwnerDashboard: React.FC<BusinessOwnerDashboardProps> = ({
   onNotify,
   onGoDashboards,
 }) => {
-  const { profile, isPlatformOwner, loading, refreshProfile, openAuthModal } = useAuth();
+  const { isPlatformOwner, loading, openAuthModal } = useAuth();
   const hasAccess = !loading && canAccessBusinessOwnerDashboard(isPlatformOwner);
   const [data, setData] = useState<OwnerDashboardData | null>(null);
   const [module, setModule] = useState<ModuleKey>('overview');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [provisionToken, setProvisionToken] = useState('');
-  const [provisioning, setProvisioning] = useState(false);
-  const [provisionError, setProvisionError] = useState<string | null>(null);
-  const signedInAsOwner =
-    String(profile?.email || '').trim().toLowerCase() === OWNER_EMAIL.toLowerCase();
 
   const load = useCallback(async () => {
     if (!hasAccess) return;
@@ -243,36 +238,6 @@ export const BusinessOwnerDashboard: React.FC<BusinessOwnerDashboardProps> = ({
   useEffect(() => {
     void load();
   }, [load]);
-
-  const provisionOwner = useCallback(
-    async (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (!signedInAsOwner || !provisionToken.trim()) return;
-      setProvisioning(true);
-      setProvisionError(null);
-      try {
-        const result = await apiFetch<{ ok: boolean; provisioned: boolean }>(
-          '/api/platform-owner/provision',
-          { method: 'POST', body: { token: provisionToken } }
-        );
-        setProvisionToken('');
-        onNotify(
-          result.provisioned
-            ? 'Business Owner identity provisioned successfully.'
-            : 'Business Owner identity was already authorized.',
-          'success'
-        );
-        await refreshProfile();
-      } catch (err: any) {
-        const message = String(err?.message || 'Owner provisioning failed.');
-        setProvisionError(message);
-        onNotify(message, 'error');
-      } finally {
-        setProvisioning(false);
-      }
-    },
-    [signedInAsOwner, provisionToken, onNotify, refreshProfile]
-  );
 
   const revenueChart = useMemo(() => {
     const series = data?.finance.monthlyRevenue || [];
@@ -301,44 +266,13 @@ export const BusinessOwnerDashboard: React.FC<BusinessOwnerDashboardProps> = ({
             This workspace is restricted to the verified Business Owner account. Super Admin and
             customer sessions cannot access it.
           </p>
-          {signedInAsOwner ? (
-            <form onSubmit={provisionOwner} className="mt-7 space-y-3 text-left">
-              <label htmlFor="owner-provision-token" className="block text-xs text-[#D4AF37]">
-                One-time Owner provisioning token
-              </label>
-              <input
-                id="owner-provision-token"
-                type="password"
-                autoComplete="off"
-                value={provisionToken}
-                onChange={(event) => setProvisionToken(event.target.value)}
-                placeholder="Enter the Preview provisioning token"
-                className="w-full rounded-lg border border-[#303044] bg-[#0B0B11] px-3 py-2 text-sm text-white outline-none focus:border-[#D4AF37]"
-              />
-              <p className="text-[11px] text-[#77778A]">
-                No password, OTP, or email body is handled here. Your signed-in{' '}
-                {OWNER_EMAIL} session is bound to the singleton Owner record.
-              </p>
-              {provisionError ? (
-                <p className="text-xs text-rose-300">{provisionError}</p>
-              ) : null}
-              <button
-                type="submit"
-                disabled={provisioning || !provisionToken.trim()}
-                className="w-full rounded-full bg-gold-gradient px-5 py-2.5 text-sm font-semibold text-[#08080A] disabled:opacity-60"
-              >
-                {provisioning ? 'Verifying…' : 'Activate Owner Access'}
-              </button>
-            </form>
-          ) : (
-            <button
-              type="button"
-              onClick={() => openAuthModal('signin')}
-              className="mt-6 rounded-full bg-gold-gradient px-5 py-2.5 text-sm font-semibold text-[#08080A]"
-            >
-              Sign in as {OWNER_EMAIL}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => openAuthModal('signin')}
+            className="mt-6 rounded-full bg-gold-gradient px-5 py-2.5 text-sm font-semibold text-[#08080A]"
+          >
+            Sign in as {OWNER_EMAIL}
+          </button>
           <button
             type="button"
             onClick={onGoDashboards}
