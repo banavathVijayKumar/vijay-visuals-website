@@ -31,6 +31,11 @@ const PUBLIC_PLATFORM_EXACT_ROUTES = new Set([
   '/demo-builder',
   '/ai',
   '/payments/cashfree/return',
+  '/privacy',
+  '/terms',
+  '/refund',
+  '/shipping',
+  '/cancellation',
 ]);
 const PUBLIC_OR_APP_PREFIXES = [
   '/builder/',

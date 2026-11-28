@@ -73,9 +73,14 @@ await test('policies invent no GSTIN, legal entity, address or grievance contact
 await test('standalone policy routes and rewrites remain intact', () => {
   const app = read('src/App.tsx');
   const redirects = read('public/_redirects');
+  const seoRules = read('shared/seo.ts');
   for (const route of ['/privacy', '/terms', '/refund', '/shipping', '/cancellation']) {
     assert.ok(app.includes(`'${route}'`), `App must map ${route}`);
     assert.match(redirects, new RegExp(`^${route.replace('/', '\\/')}\\s+\\/index\\.html\\s+200$`, 'm'));
+    assert.ok(
+      seoRules.includes(`'${route}'`),
+      `Middleware platform-route allowlist must include ${route} or Pages returns 404`
+    );
   }
 });
 
